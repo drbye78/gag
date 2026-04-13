@@ -21,16 +21,10 @@ import httpx
 logger = logging.getLogger(__name__)
 
 
-# LlamaIndex multimodal
-LLAMA_MULTIMODAL_AVAILABLE = False
-OpenAIMultiModal = None
-try:
-    from llama_index.multi_modal_llms.openai import OpenAIMultiModal
-    from llama_index.core import SimpleDirectoryReader
+# LlamaIndex multimodal (mandatory)
+from llama_index.multi_modal_llms.openai import OpenAIMultiModal
 
-    LLAMA_MULTIMODAL_AVAILABLE = True
-except ImportError:
-    OpenAIMultiModal = None
+LLAMA_MULTIMODAL_AVAILABLE = True
 
 # Docling
 DOCLING_AVAILABLE = False
