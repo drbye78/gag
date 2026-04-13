@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//home/**)"
+    ]
+  },
+  "$version": 3
+}
