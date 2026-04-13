@@ -134,10 +134,11 @@ class LlamaIndexParser:
 
 
 class DoclingParser:
-    """Docling-based advanced document parser with OCR."""
+    """Docling-based advanced document parser with optional OCR."""
 
-    def __init__(self):
+    def __init__(self, use_ocr: bool = False):
         self._converter = None
+        self._use_ocr = use_ocr
 
     @property
     def available(self) -> bool:
@@ -149,7 +150,12 @@ class DoclingParser:
 
         if self._converter is None:
             try:
-                self._converter = PdfConverter()
+                if self._use_ocr:
+                    self._converter = PdfConverter(
+                        ocr=DoclingProxyOcr(),
+                    )
+                else:
+                    self._converter = PdfConverter()
             except Exception as e:
                 logger.error("Failed to initialize Docling PdfConverter: %s", e)
 
@@ -182,6 +188,45 @@ class DoclingParser:
                 os.unlink(tmp_path)
         except Exception as e:
             return ParsedDocumentResult(text="", error=str(e))
+
+    async def parse_with_elements(
+        self,
+        content: bytes,
+    ) -> tuple[str, list[dict], dict]:
+        """Parse PDF and return (text, elements, metadata).
+
+        Returns raw tuples for callers to wrap in their own result types.
+        """
+        converter = self._get_converter()
+
+        if not converter:
+            return "", [], {}
+
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                tmp.write(content)
+                tmp_path = tmp.name
+
+            try:
+                note = PdfNote.from_path(tmp_path)
+                result = converter.convert(note)
+                text = result.document.export_to_markdown()
+
+                elements = []
+                for item in result.document.iter_inferred_terms():
+                    elements.append({
+                        "element_id": item.id or "",
+                        "type": item.label or "unknown",
+                        "label": item.text,
+                        "confidence": getattr(item, "score", 0.0),
+                    })
+
+                metadata = {"page_count": len(result.pages)}
+                return text, elements, metadata
+            finally:
+                os.unlink(tmp_path)
+        except Exception as e:
+            return "", [], {"error": str(e)}
 
 
 class FallbackParser:

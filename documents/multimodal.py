@@ -1,11 +1,11 @@
 """
 Multimodal Parser - Vision-based document understanding.
 
-Integrates:
-- LlamaIndex multimodal (primary when available)
-- Docling (advanced PDF/OCR)
-- ColPal (if available)
-- Vision APIs (GPT-4O, Qwen-VL, Claude)
+Uses:
+- LlamaIndex multimodal for GPT-4O
+- Docling for advanced PDF/OCR (shared with parse.py)
+- ColPali for visual embeddings
+- Vision APIs (Qwen-VL, Claude)
 """
 
 import base64
@@ -20,27 +20,13 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-
 # LlamaIndex multimodal (mandatory)
 from llama_index.multi_modal_llms.openai import OpenAIMultiModal
 
 LLAMA_MULTIMODAL_AVAILABLE = True
 
-# Docling
-DOCLING_AVAILABLE = False
-PdfConverter = None
-PdfNote = None
-DoclingProxyOcr = None
-try:
-    from docling.document import PdfConverter
-    from docling.datamodel.base import PdfNote
-    from docling.datamodel.pipeline_output import DoclingProxyOcr
-
-    DOCLING_AVAILABLE = True
-except ImportError:
-    PdfConverter = None
-    PdfNote = None
-    DoclingProxyOcr = None
+# Shared Docling parser (OCR-enabled for multimodal use)
+from documents.parse import DoclingParser as _SharedDoclingParser
 
 
 class VisionModel(str, Enum):
@@ -183,73 +169,6 @@ Return structured information about each component and connection."""
 Return structured information about each component."""
 
         return await self.parse(image_path, prompt)
-
-
-class DoclingParser:
-    """Docling document parser with OCR."""
-
-    def __init__(self):
-        self._converter = None
-
-    @property
-    def available(self) -> bool:
-        return DOCLING_AVAILABLE
-
-    def _get_converter(self):
-        if not self.available:
-            return None
-
-        if self._converter is None:
-            try:
-                self._converter = PdfConverter(
-                    ocr=DoclingProxyOcr(),
-                )
-            except Exception as e:
-                logger.error("Failed to initialize Docling PdfConverter: %s", e)
-
-        return self._converter
-
-    async def parse(
-        self,
-        content: bytes,
-    ) -> MultimodalResult:
-        converter = self._get_converter()
-
-        if not converter:
-            return MultimodalResult(text="", error="Docling not available")
-
-        try:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                tmp.write(content)
-                tmp_path = tmp.name
-
-            try:
-                note = PdfNote.from_path(tmp_path)
-                result = converter.convert(note)
-
-                text = result.document.export_to_markdown()
-
-                elements = []
-                for item in result.document.iter_inferred_terms():
-                    elements.append(
-                        VisualElement(
-                            element_id=item.id or "",
-                            type=item.label or "unknown",
-                            label=item.text,
-                            confidence=getattr(item, "score", 0.0),
-                        )
-                    )
-
-                return MultimodalResult(
-                    text=text,
-                    elements=elements,
-                    metadata={"page_count": len(result.pages)},
-                    used_docling=True,
-                )
-            finally:
-                os.unlink(tmp_path)
-        except Exception as e:
-            return MultimodalResult(text="", error=str(e))
 
 
 class VisionAPIParser:
@@ -445,7 +364,7 @@ class HybridMultimodalParser:
         default_model: VisionModel = VisionModel.GPT4O,
     ):
         self.llama_parser = LlamaIndexMultimodalParser()
-        self.docling_parser = DoclingParser()
+        self.docling_parser = _SharedDoclingParser(use_ocr=True)
         self.vision_parser = VisionAPIParser(default_model)
         self.prefer_llama = prefer_llama
         self.default_model = default_model
@@ -541,4 +460,4 @@ def is_llama_multimodal_available() -> bool:
 
 
 def is_docling_available() -> bool:
-    return DOCLING_AVAILABLE
+    return _SharedDoclingParser().available

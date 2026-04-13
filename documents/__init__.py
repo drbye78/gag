@@ -67,7 +67,6 @@ from documents.confluence import ConfluenceClient, ConfluencePage
 from documents.webdav import WebDAVClient, WebDAVFile
 from documents.multimodal import (
     LlamaIndexMultimodalParser,
-    DoclingParser as MultimodalDoclingParser,
     VisionAPIParser,
     HybridMultimodalParser,
     MultimodalResult,
