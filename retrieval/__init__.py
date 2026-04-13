@@ -43,6 +43,7 @@ from retrieval.entity_centric import (
     EntityCentricRetriever,
     get_entity_centric_retriever,
 )
+
 # Late interaction requires ColPali/torch — lazy import
 try:
     from retrieval.late_interaction import (
@@ -59,6 +60,17 @@ try:
         DiagramSearchResult,
         DiagramRetrievalResult,
         get_diagram_retriever,
+    )
+except ImportError:
+    pass
+
+try:
+    from retrieval.colbert import (
+        ColBERTIndexer,
+        ColBERTIndexResult,
+        ColBERTRetriever,
+        get_colbert_indexer,
+        get_colbert_retriever,
     )
 except ImportError:
     pass
@@ -104,4 +116,9 @@ __all__ = [
     "DiagramSearchResult",
     "DiagramRetrievalResult",
     "get_diagram_retriever",
+    "ColBERTIndexer",
+    "ColBERTIndexResult",
+    "ColBERTRetriever",
+    "get_colbert_indexer",
+    "get_colbert_retriever",
 ]

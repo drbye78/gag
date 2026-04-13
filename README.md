@@ -2,7 +2,7 @@
 
 A production-grade **Cognitive Architecture** for domain-specific reasoning within enterprise AI PDLC pipelines. Goes beyond traditional RAG by combining multimodal understanding, hybrid retrieval (vector + graph + runtime), structured reasoning, tool-augmented decision making, and stateful orchestration.
 
-![Version](https://img.shields.io/badge/version-2.4.0-blue)
+![Version](https://img.shields.io/badge/version-3.0.0-blue)
 ![Python](https://img.shields.io/badge/python-3.12+-green)
 ![Tests](https://img.shields.io/badge/tests-182%20passing-brightgreen)
 ![License](https://img.shields.io/badge/license-Proprietary-red)
@@ -60,10 +60,17 @@ This system answers complex engineering questions by reasoning over your codebas
 - Retry logic with exponential backoff
 - Streaming execution with step-by-step progress yields
 
-### 🖼️ Multimodal
+### 🖼️ Multimodal & Diagrams
 - Vision Language Model (VLM) processor for architecture diagrams
 - Supports Qwen Vision and OpenAI vision providers
 - IR (Intermediate Representation) builder with entity/relation extraction
+- **Diagram Formats**: UML (Class, Sequence, Component, Activity, State), C4, BPMN 2.0, PlantUML, Draw.io, OpenAPI
+
+### 🌐 Multilingual
+- Language detection (Russian, English, and 20+ languages)
+- Russian text normalization (Cyrillic, ё→е equivalence)
+- Language-aware chunking and sentence splitting
+- Multilingual reranking with `rerank-multilingual-v3.0`
 
 ### 📥 Ingestion Pipeline
 - **7 source types**: Git repositories, Documents, Tickets, Telemetry, Knowledge Base, Architecture, Requirements

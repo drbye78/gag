@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 from core.config import get_settings
+from core.text_utils import detect_language, TextLanguage
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,9 @@ class EmbeddingPipeline:
         # Embedding cache: text hash → embedding vector
         self._cache_capacity = cache_capacity
         self._cache_ttl = cache_ttl
-        self._embedding_cache: OrderedDict[str, tuple] = OrderedDict()  # hash → (vector, timestamp)
+        self._embedding_cache: OrderedDict[str, tuple] = (
+            OrderedDict()
+        )  # hash → (vector, timestamp)
 
         settings = get_settings()
 
@@ -98,6 +101,21 @@ class EmbeddingPipeline:
             "capacity": self._cache_capacity,
             "ttl_seconds": self._cache_ttl,
         }
+
+    def get_model_for_language(self, text: str) -> str:
+        if not text:
+            return self.model
+
+        lang = detect_language(text)
+
+        if lang == TextLanguage.RUSSIAN:
+            if self.provider == "qwen":
+                return "text-embedding-v3"
+            elif self.provider == "ollama":
+                return "nomic-embed-text"
+            return "text-embedding-3-small"
+
+        return self.model
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -215,9 +233,7 @@ class EmbeddingPipeline:
             resp.raise_for_status()
             data = resp.json()
             embedding = (
-                data.get("output", {})
-                .get("embeddings", [{}])[0]
-                .get("embedding", [])
+                data.get("output", {}).get("embeddings", [{}])[0].get("embedding", [])
             )
             results.append(embedding)
         return results

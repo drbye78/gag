@@ -10,6 +10,7 @@ import time
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+from core.text_utils import detect_language, normalize_text, TextLanguage
 from retrieval.docs import get_docs_retriever
 from retrieval.code import get_code_retriever
 from retrieval.graph import get_graph_retriever
@@ -18,6 +19,7 @@ from retrieval.ticket import get_ticket_retriever
 from retrieval.telemetry import get_telemetry_retriever
 from retrieval.hybrid import get_hybrid_retriever
 from retrieval.classifier import get_query_classifier
+from retrieval.diagram import get_diagram_retriever
 
 
 class RetrievalSource(str, Enum):
@@ -27,6 +29,8 @@ class RetrievalSource(str, Enum):
     CODE_GRAPH = "code_graph"
     TICKETS = "tickets"
     TELEMETRY = "telemetry"
+    DIAGRAM = "diagram"
+    MULTIMODAL = "multimodal"
 
 
 class RetrievalMode(str, Enum):
@@ -44,6 +48,7 @@ class RetrievalOrchestrator:
         self.code_graph_retriever = get_code_graph_retriever()
         self.ticket_retriever = get_ticket_retriever()
         self.telemetry_retriever = get_telemetry_retriever()
+        self.diagram_retriever = get_diagram_retriever()
         self.hybrid_retriever = get_hybrid_retriever()
         self.classifier = get_query_classifier()
 
@@ -55,6 +60,10 @@ class RetrievalOrchestrator:
         filters: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         start = int(time.time() * 1000)
+
+        normalized_query = self._preprocess_query(query)
+        if normalized_query != query:
+            query = normalized_query
 
         if not sources:
             sources = list(RetrievalSource)
@@ -73,6 +82,8 @@ class RetrievalOrchestrator:
                 tasks.append(self._retrieve_tickets(query, limit, filters))
             elif source == RetrievalSource.TELEMETRY:
                 tasks.append(self._retrieve_telemetry(query, limit, filters))
+            elif source == RetrievalSource.DIAGRAM:
+                tasks.append(self._retrieve_diagram(query, limit, filters))
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -145,6 +156,14 @@ class RetrievalOrchestrator:
         except Exception:
             return {"source": "telemetry", "results": [], "total": 0, "took_ms": 0}
 
+    async def _retrieve_diagram(
+        self, query: str, limit: int, filters: Optional[Dict]
+    ) -> Dict:
+        try:
+            return await self.diagram_retriever.search_diagrams(query, limit=limit)
+        except Exception:
+            return {"source": "diagram", "results": [], "total": 0, "took_ms": 0}
+
     async def route_hybrid(
         self,
         query: str,
@@ -152,6 +171,20 @@ class RetrievalOrchestrator:
         limit: int = 10,
     ) -> Dict[str, Any]:
         start = int(time.time() * 1000)
+
+        return await self.hybrid_retriever.search(
+            query=query,
+            limit=limit,
+            use_reasoning=True,
+        )
+
+    def _preprocess_query(self, query: str) -> str:
+        lang = detect_language(query)
+        if lang == TextLanguage.RUSSIAN:
+            return normalize_text(query, language=TextLanguage.RUSSIAN)
+        if lang == TextLanguage.ENGLISH:
+            return normalize_text(query, language=TextLanguage.ENGLISH)
+        return normalize_text(query)
 
         classification = self.classifier.classify(query)
         classification["took_ms"] = int(time.time() * 1000) - start

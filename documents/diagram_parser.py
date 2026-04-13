@@ -40,6 +40,10 @@ class DiagramType(str, Enum):
     C4_CODE = "c4_code"
     ARCHITECTURE = "architecture"
     FLOWCHART = "flowchart"
+DRAW_IO = "drawio"
+    PLANTUML = "plantuml"
+    BPMN = "bpmn"
+    OPENAPI = "openapi"
 
 
 @dataclass
@@ -417,6 +421,355 @@ class UMLDeploymentExtractor:
         )
 
 
+class ERDExtractor:
+    @classmethod
+    def extract(cls, text: str) -> DiagramExtractionResult:
+        entities = []
+        relationships = []
+
+        entity_pattern = r"(\w+)\s*\(([^)]+)\)"
+        for match in re.finditer(entity_pattern, text):
+            name = match.group(1).strip()
+            etype = match.group(2).strip() if match.group(2) else "entity"
+            if name and name not in [e.get("name") for e in entities]:
+                entities.append(
+                    {
+                        "name": name,
+                        "type": etype,
+                        "is_primary_key": "PK" in etype.upper(),
+                        "is_foreign_key": "FK" in etype.upper(),
+                    }
+                )
+
+        for line in text.split("\n"):
+            line = line.strip()
+            if "--" in line or "->" in line:
+                parts = re.split(r"--+|---+", line)
+                if len(parts) >= 2:
+                    src = parts[0].strip()
+                    tgt = parts[-1].strip()
+                    cardinality = "1:1"
+                    if "N" in line or "M" in line or "*" in line:
+                        cardinality = "1:N"
+                    relationships.append(
+                        {
+                            "from": src,
+                            "to": tgt,
+                            "type": "foreign_key",
+                            "cardinality": cardinality,
+                        }
+                    )
+
+        return DiagramExtractionResult(
+            diagram_type=DiagramType.UNKNOWN,
+            entities=entities,
+            relationships=relationships,
+            confidence=0.7 if entities else 0.3,
+        )
+
+
+class UMLActivityExtractor:
+    @classmethod
+    def extract(cls, text: str) -> DiagramExtractionResult:
+        actions = []
+        flows = []
+
+        for line in text.split("\n"):
+            line = line.strip()
+            if line and "->" in line:
+                parts = line.split("->")
+                if len(parts) == 2:
+                    src = parts[0].strip()
+                    tgt = parts[1].strip()
+                    flows.append({"from": src, "to": tgt, "type": "flow"})
+            elif line and line[0].isupper():
+                action_name = re.sub(r"\s*\([^)]*\)", "", line)
+                if action_name:
+                    actions.append({"name": action_name, "type": "action"})
+
+        return DiagramExtractionResult(
+            diagram_type=DiagramType.UML_ACTIVITY,
+            entities=actions,
+            relationships=flows,
+            confidence=0.6 if actions else 0.3,
+        )
+
+
+class UMLStateMachineExtractor:
+    @classmethod
+    def extract(cls, text: str) -> DiagramExtractionResult:
+        states = []
+        transitions = []
+
+        for line in text.split("\n"):
+            line = line.strip()
+            if "-->" in line or "->" in line:
+                parts = re.split(r"--+|---+", line)
+                if len(parts) >= 2:
+                    src = parts[0].strip()
+                    tgt = parts[-1].strip()
+                    label = ""
+                    if "[" in line:
+                        label = line.split("[")[1].split("]")[0] if "[" in line else ""
+                    transitions.append(
+                        {"from": src, "to": tgt, "event": label, "type": "transition"}
+                    )
+            elif line and line[0].isupper():
+                states.append({"name": line, "type": "state"})
+
+        return DiagramExtractionResult(
+            diagram_type=DiagramType.UML_STATE,
+            entities=states,
+            relationships=transitions,
+            confidence=0.6 if states else 0.3,
+        )
+
+
+class UMLPackageExtractor:
+    @classmethod
+    def extract(cls, text: str) -> DiagramExtractionResult:
+        packages = []
+        imports = []
+
+        for line in text.split("\n"):
+            if "package" in line.lower() or "folder" in line.lower():
+                name = line.replace("package", "").replace("Folder", "").strip()
+                if name:
+                    packages.append({"name": name, "type": "package"})
+            elif "::" in line:
+                parts = line.split("::")
+                if len(parts) == 2:
+                    imports.append(
+                        {
+                            "from": parts[0].strip(),
+                            "to": parts[1].strip(),
+                            "type": "import",
+                        }
+                    )
+
+        return DiagramExtractionResult(
+            diagram_type=DiagramType.UML_PACKAGE,
+            entities=packages,
+            relationships=imports,
+            confidence=0.6 if packages else 0.3,
+        )
+
+
+class UMLObjectExtractor:
+    @classmethod
+    def extract(cls, text: str) -> DiagramExtractionResult:
+        objects = []
+        links = []
+
+        for line in text.split("\n"):
+            if ":" in line and not "->" in line:
+                name = line.split(":")[0].strip()
+                otype = line.split(":")[-1].strip() if ":" in line else "Object"
+                if name:
+                    objects.append({"name": name, "type": otype, "instance": True})
+            elif "--" in line or "->" in line:
+                parts = re.split(r"--+|---+", line)
+                if len(parts) >= 2:
+                    links.append(
+                        {
+                            "from": parts[0].strip(),
+                            "to": parts[-1].strip(),
+                            "type": "link",
+                        }
+                    )
+
+        return DiagramExtractionResult(
+            diagram_type=DiagramType.UML_OBJECT,
+            entities=objects,
+            relationships=links,
+            confidence=0.6 if objects else 0.3,
+        )
+
+
+class UMLUseCaseExtractor:
+    @classmethod
+    def extract(cls, text: str) -> DiagramExtractionResult:
+        actors = []
+        use_cases = []
+        includes = []
+        extends = []
+
+        for line in text.split("\n"):
+            line = line.strip()
+            if "actor" in line.lower() or (
+                "->" not in line and ":" in line and "use" not in line.lower()
+            ):
+                name = line.split(":")[0].strip()
+                if name and name not in [a.get("name") for a in actors]:
+                    actors.append({"name": name, "type": "actor"})
+            elif "use case" in line.lower() or "ellipse" in line.lower():
+                name = line.replace("use case", "").replace("ellipse", "").strip()
+                if name:
+                    use_cases.append({"name": name, "type": "use_case"})
+            elif "<" in line and ">" in line:
+                parts = re.split(r"[<>]", line)
+                if len(parts) >= 3:
+                    extends.append(
+                        {
+                            "from": parts[0].strip(),
+                            "to": parts[2].strip(),
+                            "type": "extends",
+                        }
+                    )
+            elif "include" in line.lower():
+                parts = line.split("include")
+                if len(parts) == 2:
+                    includes.append(
+                        {
+                            "from": parts[0].strip(),
+                            "to": parts[1].strip(),
+                            "type": "include",
+                        }
+                    )
+
+        all_rels = includes + extends
+        for a in actors:
+            all_rels.append(a)
+
+        return DiagramExtractionResult(
+            diagram_type=DiagramType.UML_USECASE,
+            entities=use_cases + actors,
+            relationships=all_rels,
+            confidence=0.6 if use_cases else 0.3,
+        )
+
+
+class PlantUMLGenerator:
+    @staticmethod
+    def generate_uml_class(diagram_result: DiagramExtractionResult) -> str:
+        lines = ["@startuml", "skinparam classAttributeIconSize 0"]
+
+        for ent in diagram_result.entities:
+            name = ent.get("name", "Unknown")
+            attrs = ent.get("attributes", [])
+            methods = ent.get("methods", [])
+
+            if attrs or methods:
+                lines.append(f"class {name} {{")
+                for a in attrs[:5]:
+                    vis = a.get("visibility", "+")
+                    lines.append(f"  {vis} {a.get('name')}: {a.get('type', 'any')}")
+                for m in methods[:5]:
+                    vis = m.get("visibility", "+")
+                    lines.append(f"  {vis} {m.get('name')}()")
+                lines.append("}")
+
+        for rel in diagram_result.relationships:
+            from_ent = rel.get("from", "")
+            to_ent = rel.get("to", "")
+            rtype = rel.get("type", "association")
+
+            arrow = "-->"
+            if rtype == "dependency":
+                arrow = "-.->"
+            elif rtype == "inheritance":
+                arrow = "^--"
+            elif rtype == "composition":
+                arrow = "*--"
+
+            if from_ent and to_ent:
+                lines.append(f"{from_ent} {arrow} {to_ent}")
+
+        lines.append("@enduml")
+        return "\n".join(lines)
+
+    @staticmethod
+    def generate_sequence(diagram_result: DiagramExtractionResult) -> str:
+        lines = ["@startuml"]
+
+        for ent in diagram_result.entities:
+            lines.append(f"participant {ent.get('name', 'Actor')}")
+
+        for rel in diagram_result.relationships:
+            from_ent = rel.get("from", "")
+            to_ent = rel.get("to", "")
+            msg = rel.get("message", "message")
+            mtype = rel.get("type", "sync")
+
+            arrow = "->>"
+            if mtype == "async":
+                arrow = "-->"
+
+            lines.append(f"{from_ent} {arrow} {to_ent}: {msg}")
+
+        lines.append("@enduml")
+        return "\n".join(lines)
+
+    @staticmethod
+    def generate_c4(diagram_result: DiagramExtractionResult) -> str:
+        lines = ["@startuml", "LAYOUT_AS_IS", "skinparam wrapWidth 200"]
+
+        for ent in diagram_result.entities:
+            ctype = ent.get("type", "container")
+            name = ent.get("name", "Unknown")
+            tech = ent.get("technology", "")
+
+            if ctype == "person":
+                lines.append(f'Person(person, "{name}", "User")')
+            elif ctype == "container":
+                lines.append(f'Container(container, "{name}", "{tech}")')
+            else:
+                lines.append(f'System(system, "{name}")')
+
+        for rel in diagram_result.relationships:
+            lines.append(f"{rel.get('from')} -- {rel.get('to')}")
+
+        lines.append("@enduml")
+        return "\n".join(lines)
+
+
+class MermaidGenerator:
+    @staticmethod
+    def generate_class(diagram_result: DiagramExtractionResult) -> str:
+        lines = ["classDiagram"]
+
+        for ent in diagram_result.entities:
+            name = ent.get("name", "Unknown")
+            lines.append(f"  class {name} {{")
+            for a in ent.get("attributes", [])[:5]:
+                lines.append(f"    + {a.get('name')}: {a.get('type', 'any')}")
+            lines.append("  }")
+
+        for rel in diagram_result.relationships:
+            rtype = rel.get("type", "<|--")
+            lines.append(f"  {rel.get('from')} {rtype} {rel.get('to')}")
+
+        return "\n".join(lines)
+
+    @staticmethod
+    def generate_sequence(diagram_result: DiagramExtractionResult) -> str:
+        lines = ["sequenceDiagram"]
+
+        for ent in diagram_result.entities:
+            name = ent.get("name", "Actor")
+            lines.append(f"  participant {name}")
+
+        for rel in diagram_result.relationships:
+            lines.append(
+                f"  {rel.get('from')}->>{rel.get('to')}: {rel.get('message', 'msg')}"
+            )
+
+        return "\n".join(lines)
+
+    @staticmethod
+    def generate_flowchart(diagram_result: DiagramExtractionResult) -> str:
+        lines = ["flowchart TD"]
+
+        for ent in diagram_result.entities:
+            name = ent.get("name", "Node")
+            lines.append(f"  {name}[{name}]")
+
+        for rel in diagram_result.relationships:
+            lines.append(f"  {rel.get('from')} --> {rel.get('to')}")
+
+        return "\n".join(lines)
+
+
 class UnifiedDiagramParser:
     EXTRACTORS = {
         DiagramType.UML_CLASS: UMLClassExtractor,
@@ -424,6 +777,22 @@ class UnifiedDiagramParser:
         DiagramType.C4_CONTAINER: C4ContainerExtractor,
         DiagramType.UML_COMPONENT: UMLComponentExtractor,
         DiagramType.UML_DEPLOYMENT: UMLDeploymentExtractor,
+        DiagramType.UML_ACTIVITY: UMLActivityExtractor,
+        DiagramType.UML_STATE: UMLStateMachineExtractor,
+        DiagramType.UML_PACKAGE: UMLPackageExtractor,
+        DiagramType.UML_OBJECT: UMLObjectExtractor,
+        DiagramType.UML_USECASE: UMLUseCaseExtractor,
+    }
+
+    PLANTUML_GENERATORS = {
+        DiagramType.UML_CLASS: PlantUMLGenerator.generate_uml_class,
+        DiagramType.UML_SEQUENCE: PlantUMLGenerator.generate_sequence,
+        DiagramType.C4_CONTAINER: PlantUMLGenerator.generate_c4,
+    }
+
+    MERMAID_GENERATORS = {
+        DiagramType.UML_CLASS: MermaidGenerator.generate_class,
+        DiagramType.UML_SEQUENCE: MermaidGenerator.generate_sequence,
     }
 
     def __init__(self):

@@ -3,6 +3,7 @@ Chunker - Text chunking for documents and code.
 
 Provides DocumentChunker and CodeChunker with configurable
 chunk sizes, overlap, and metadata extraction.
+Language-aware for Russian and English.
 """
 
 import re
@@ -11,6 +12,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 from pathlib import Path
+
+from core.text_utils import detect_language, split_sentences, TextLanguage
 
 
 @dataclass
@@ -45,12 +48,17 @@ class DocumentChunker(TextChunker):
         chunk_size: int = 1000,
         chunk_overlap: int = 200,
         min_chunk_size: int = 100,
-        language: str = "en",
+        language: str = "auto",
     ):
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         self.min_chunk_size = min_chunk_size
         self.language = language
+        self._detected_lang: Optional[TextLanguage] = None
+
+    @property
+    def detected_language(self) -> Optional[TextLanguage]:
+        return self._detected_lang
 
     def chunk(self, text: str, source_id: str) -> ChunkResult:
         import time
@@ -65,6 +73,15 @@ class DocumentChunker(TextChunker):
                 chunks=[],
                 total_chars=0,
                 took_ms=0,
+            )
+
+        if self.language == "auto":
+            self._detected_lang = detect_language(text)
+        else:
+            self._detected_lang = (
+                TextLanguage(self.language)
+                if self.language in ("ru", "en")
+                else TextLanguage.UNKNOWN
             )
 
         text_len = len(text)
@@ -108,12 +125,12 @@ class DocumentChunker(TextChunker):
         )
 
     def _split_on_sentence_boundary(self, text: str) -> str:
-        sentence_endings = r"[.!?]+\s+"
-        matches = list(re.finditer(sentence_endings, text))
-        if not matches:
+        detected = self._detected_lang or TextLanguage.ENGLISH
+        sentences = split_sentences(text, detected)
+        if len(sentences) <= 1:
             return text
-        last_match = matches[-1]
-        return text[: last_match.end()]
+        combined = " ".join(sentences[:-1])
+        return combined if combined else text
 
     def _make_chunk_id(self, source_id: str, chunk_idx: int) -> str:
         raw = f"{source_id}:{chunk_idx}"

@@ -39,11 +39,12 @@ qdrant-client>=1.7.0
 python-docx>=1.1.0     # .docx files
 openpyxl>=3.1.0        # .xlsx files
 python-pptx>=0.6.23    # .pptx files
-pymupdf>=1.23.0        # PDF parsing (import fitz)
+pdfplumber>=0.10.0     # PDF parsing (MIT licensed)
 markdown>=3.5.0        # .md → HTML conversion
 python-magic>=0.4.27   # MIME type detection
 pyyaml>=6.0.0          # YAML config files
 docling>=2.0.0         # Universal document parser
+pillow>=10.0.0        # Image processing for diagrams
 
 # Embeddings — required for local embedding generation
 sentence-transformers>=2.2.0
@@ -53,3 +54,10 @@ llama-index>=0.10.0
 
 # Redis — required for distributed caching
 redis>=5.0.0
+
+# Vision models — required for multimodal
+torch>=2.0.0
+torchvision>=0.15.0
+
+# Language detection — required for multilingual documents
+langdetect>=1.0.9

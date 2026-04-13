@@ -78,6 +78,31 @@ class DiagramRetriever:
 
         return indexed
 
+    async def search_diagrams(
+        self,
+        query: str,
+        limit: int = 10,
+    ) -> Dict[str, Any]:
+        result = await self.search(query, limit)
+        return {
+            "source": "diagram",
+            "results": [
+                {
+                    "doc_id": r.doc_id,
+                    "score": r.score,
+                    "diagram_type": r.diagram_type,
+                    "entities": r.entities,
+                    "relationships": r.relationships,
+                    "generated_code": r.generated_code,
+                }
+                for r in result.results
+            ],
+            "total": len(result.results),
+            "detected_type": result.detected_type,
+            "took_ms": result.took_ms,
+            "error": result.error,
+        }
+
     async def search(
         self,
         query: str,

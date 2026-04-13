@@ -47,7 +47,7 @@ class LayoutBlock:
     layout_type: LayoutType
     text: str
     page: int = 0
-    bbox: Optional[Tuple[int, int, int, int]] = None
+    bbox: Optional[Tuple[float, float, float, float]] = None
     confidence: float = 1.0
     children: List["LayoutBlock"] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -79,70 +79,52 @@ class PDFLayoutAnalyzer:
     """PDF layout analysis using available backends."""
 
     def __init__(self):
-        self._pymupdf_available = False
-        self._pymupdf = None
+        self._pdfplumber_available = False
+        self._pdfplumber = None
 
         try:
-            import fitz
+            import pdfplumber
 
-            self._pymupdf = fitz
-            self._pymupdf_available = True
+            self._pdfplumber = pdfplumber
+            self._pdfplumber_available = True
         except ImportError:
             pass
 
     @property
     def available(self) -> bool:
-        return self._pymupdf_available
+        return self._pdfplumber_available
 
     async def analyze(
         self,
         content: bytes,
     ) -> LayoutAnalysisResult:
-        if not self._pymupdf_available:
+        if not self._pdfplumber_available:
             return LayoutAnalysisResult(blocks=[])
 
         try:
-            with self._pymupdf.open(stream=content, filetype="pdf") as doc:
+            import io
+
+            with self._pdfplumber.open(io.BytesIO(content)) as doc:
                 blocks = []
                 metadata = {}
-                page_count = len(doc)
+                page_count = len(doc.pages)
                 table_count = 0
                 figure_count = 0
 
-                for page_num, page in enumerate(doc):
-                    text_dict = page.get_text("dict")
+                for page_num, page in enumerate(doc.pages):
+                    words = page.extract_words() or []
+                    tables = page.extract_tables() or []
 
-                    for block in text_dict.get("blocks", []):
-                        block_type = block.get("type", 0)
+                    page_blocks = self._build_blocks_from_words(
+                        words, tables, page_num + 1
+                    )
 
-                        if block_type == 0:
-                            bbox = block.get("bbox", (0, 0, 0, 0))
-                            lines = block.get("lines", [])
-
-                            text_parts = []
-                            for line in lines:
-                                for span in line.get("spans", []):
-                                    text_parts.append(span.get("text", ""))
-
-                            text = "".join(text_parts)
-
-                            layout_type = self._classify_text_block(
-                                text, bbox, page_num + 1
-                            )
-
-                            block_obj = LayoutBlock(
-                                layout_type=layout_type,
-                                text=text.strip(),
-                                page=page_num + 1,
-                                bbox=tuple(bbox) if bbox else None,
-                            )
-
-                            if layout_type == LayoutType.TABLE:
-                                table_count += 1
-                            elif layout_type == LayoutType.FIGURE:
-                                figure_count += 1
-
-                            blocks.append(block_obj)
+                    for block in page_blocks:
+                        if block.layout_type == LayoutType.TABLE:
+                            table_count += 1
+                        elif block.layout_type == LayoutType.FIGURE:
+                            figure_count += 1
+                        blocks.append(block)
 
                 heading_tree = self._build_heading_tree(blocks)
 
@@ -158,6 +140,89 @@ class PDFLayoutAnalyzer:
         except Exception as e:
             logger.error("Failed to analyze PDF layout: %s", e)
             return LayoutAnalysisResult(blocks=[])
+
+    def _build_blocks_from_words(
+        self, words: List[Dict], tables: List[Any], page: int
+    ) -> List[LayoutBlock]:
+        blocks = []
+        if not words:
+            return blocks
+
+        word_rows = self._group_words_into_rows(words)
+        table_bboxes = self._get_table_bboxes(tables)
+
+        for row_words in word_rows:
+            row_text = " ".join(w["text"] for w in row_words)
+            bbox = self._get_row_bbox(row_words)
+
+            is_in_table = any(
+                self._bbox_overlaps(bbox, tbbox) for tbbox in table_bboxes
+            )
+            layout_type = (
+                LayoutType.TABLE
+                if is_in_table
+                else self._classify_text_block(row_text, bbox, page)
+            )
+
+            block_obj = LayoutBlock(
+                layout_type=layout_type,
+                text=row_text.strip(),
+                page=page,
+                bbox=tuple(bbox) if bbox else None,
+            )
+            blocks.append(block_obj)
+
+        return blocks
+
+    def _group_words_into_rows(self, words: List[Dict]) -> List[List[Dict]]:
+        if not words:
+            return []
+
+        words_sorted = sorted(words, key=lambda w: (w["top"], w["x0"]))
+
+        rows = []
+        current_row = [words_sorted[0]]
+        row_threshold = 5
+
+        for word in words_sorted[1:]:
+            if abs(word["top"] - current_row[0]["top"]) <= row_threshold:
+                current_row.append(word)
+            else:
+                rows.append(sorted(current_row, key=lambda w: w["x0"]))
+                current_row = [word]
+
+        if current_row:
+            rows.append(sorted(current_row, key=lambda w: w["x0"]))
+
+        return rows
+
+    def _get_row_bbox(self, words: List[Dict]) -> Tuple[float, float, float, float]:
+        if not words:
+            return (0, 0, 0, 0)
+        return (
+            min(w["x0"] for w in words),
+            min(w["top"] for w in words),
+            max(w["x1"] for w in words),
+            max(w["bottom"] for w in words),
+        )
+
+    def _get_table_bboxes(self, tables: List[Any]) -> List[Tuple]:
+        bboxes = []
+        for table in tables:
+            if hasattr(table, "bbox"):
+                bboxes.append(table.bbox)
+            elif isinstance(table, dict) and "bbox" in table:
+                bboxes.append(table["bbox"])
+        return bboxes
+
+    def _bbox_overlaps(self, bbox1: Tuple, bbox2: Tuple) -> bool:
+        if not bbox1 or not bbox2:
+            return False
+        x1_min, y1_min, x1_max, y1_max = bbox1
+        x2_min, y2_min, x2_max, y2_max = bbox2
+        return not (
+            x1_max < x2_min or x1_min > x2_max or y1_max < y2_min or y1_min > y2_max
+        )
 
     def _classify_text_block(self, text: str, bbox: Tuple, page: int) -> LayoutType:
         text = text.strip()

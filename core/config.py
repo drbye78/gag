@@ -106,6 +106,13 @@ class Settings:
         self.webdav_user = os.getenv("WEBDAV_USER", "")
         self.webdav_pass = os.getenv("WEBDAV_PASS", "")
 
+        # --- Multilingual ---
+        self.default_language = os.getenv("DEFAULT_LANGUAGE", "auto")
+        self.enable_language_detection = (
+            os.getenv("ENABLE_LANGUAGE_DETECTION", "true").lower() == "true"
+        )
+        self.russian_model = os.getenv("RUSSIAN_EMBEDDING_MODEL", "text-embedding-v3")
+
         # --- Prometheus ---
         self.prometheus_url = os.getenv("PROMETHEUS_URL", "http://localhost:9090")
         self.prometheus_user = os.getenv("PROMETHEUS_USER", "")
@@ -147,11 +154,11 @@ class Settings:
             os.getenv("ITERATIVE_CONFIDENCE_THRESHOLD", "0.7")
         )
 
-
     def validate(self) -> None:
         """Validate critical security settings at startup."""
         if self.jwt_secret == "change-me-in-production":
             import warnings
+
             warnings.warn(
                 "SECURITY WARNING: JWT_SECRET is using the default placeholder value. "
                 "Set JWT_SECRET to a strong random value before deploying to production.",
@@ -160,6 +167,7 @@ class Settings:
             )
         if not self.credential_encrypt_key:
             import warnings
+
             warnings.warn(
                 "SECURITY WARNING: CREDENTIAL_ENCRYPT_KEY is not set. "
                 "Git credential encryption will be disabled.",

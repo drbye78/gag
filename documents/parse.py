@@ -1,10 +1,10 @@
 """
 Document Parser - Multi-format document parsing with LlamaIndex + Docling.
 
-Hybrid parser using:
-- LlamaIndex readers as primary (when available)
-- Docling for advanced PDF/OCR (when available)
-- Custom fallback parsers (always available)
+Uses:
+- LlamaIndex readers for document parsing
+- Docling for advanced PDF/OCR
+- Custom fallback parsers
 """
 
 import logging
@@ -17,40 +17,18 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-# LlamaIndex imports
-LLAMA_INDEX_AVAILABLE = False
-MarkdownReader = None
-PDFReader = None
-DocxReader = None
-PPTXReader = None
-CSVReader = None
-HTMLReader = None
-TextReader = None
-try:
-    from llama_index.readers.file import (
-        MarkdownReader,
-        PDFReader,
-        DocxReader,
-        PPTXReader,
-        CSVReader,
-        HTMLReader,
-        TextReader,
-    )
-
-    LLAMA_INDEX_AVAILABLE = True
-except ImportError:
-    MarkdownReader = None
-    PDFReader = None
-    DocxReader = None
-    PPTXReader = None
-    CSVReader = None
-    HTMLReader = None
-    TextReader = None
+# LlamaIndex readers (mandatory dependency)
+from llama_index.readers.file import (
+    MarkdownReader,
+    PDFReader,
+    DocxReader,
+    PPTXReader,
+    CSVReader,
+    HTMLReader,
+    TextReader,
+)
 
 # Docling imports
-DOCLING_AVAILABLE = False
-PdfConverter = None
-PdfNote = None
 try:
     from docling.document import PdfConverter
     from docling.datamodel.base import PdfNote
@@ -59,6 +37,10 @@ try:
 except ImportError:
     PdfConverter = None
     PdfNote = None
+    DOCLING_AVAILABLE = False
+
+# LlamaIndex is mandatory
+LLAMA_INDEX_AVAILABLE = True
 
 
 @dataclass
@@ -112,7 +94,9 @@ class LlamaIndexParser:
             try:
                 self._readers[ext] = reader_cls()
             except Exception as e:
-                logger.error("Failed to initialize LlamaIndex reader for %s: %s", ext, e)
+                logger.error(
+                    "Failed to initialize LlamaIndex reader for %s: %s", ext, e
+                )
 
         return self._readers.get(ext)
 
@@ -235,7 +219,7 @@ class FallbackParser:
 
     def _parse_pdf(self, content: bytes) -> ParsedDocumentResult:
         try:
-            import fitz
+            import pdfplumber
 
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
                 tmp.write(content)
@@ -243,9 +227,9 @@ class FallbackParser:
 
             text_parts = []
             try:
-                with fitz.open(tmp_path) as doc:
-                    for page in doc:
-                        text_parts.append(page.get_text("text"))
+                with pdfplumber.open(tmp_path) as doc:
+                    for page in doc.pages:
+                        text_parts.append(page.extract_text() or "")
             finally:
                 os.unlink(tmp_path)
 

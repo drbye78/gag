@@ -17,14 +17,17 @@ from core.middleware import setup_middleware
 
 app = FastAPI(
     title="SAP BTP Engineering Intelligence API",
-    description="Production-grade engineering intelligence system with multi-RAG and multimodal support",
-    version="2.4.0",
+    description="Production-grade engineering intelligence system with multi-RAG, multimodal diagrams, and multilingual support",
+    version="3.0.0",
 )
 
 # Configure CORS from Settings (not hardcoded wildcard)
 from core.config import get_settings
+
 _cors_settings = get_settings()
-_cors_origins = _cors_settings.cors_origins if _cors_settings.cors_origins != ["*"] else ["*"]
+_cors_origins = (
+    _cors_settings.cors_origins if _cors_settings.cors_origins != ["*"] else ["*"]
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -41,6 +44,7 @@ app.add_middleware(
 # Ingestion API
 try:
     from ingestion.api import router as ingestion_router
+
     app.include_router(ingestion_router)
 except ImportError:
     pass
@@ -48,6 +52,7 @@ except ImportError:
 # Git API
 try:
     from git.api import router as git_router
+
     app.include_router(git_router)
 except ImportError:
     pass
@@ -55,6 +60,7 @@ except ImportError:
 # Documents API
 try:
     from documents.api import router as documents_router
+
     app.include_router(documents_router)
 except ImportError:
     pass
@@ -66,6 +72,7 @@ setup_middleware(app)
 # ---------------------------------------------------------------------------
 # Request / Response models
 # ---------------------------------------------------------------------------
+
 
 class QueryRequest(BaseModel):
     query: str
@@ -173,6 +180,7 @@ class CitationResponse(BaseModel):
 # Endpoints
 # ---------------------------------------------------------------------------
 
+
 @app.get("/health", response_model=HealthResponse)
 async def health():
     from core.health import get_health_checker
@@ -190,7 +198,7 @@ async def health():
 async def root():
     return {
         "service": "SAP BTP Engineering Intelligence",
-        "version": "2.4.0",
+        "version": "3.0.0",
         "endpoints": [
             "/health",
             "/query",
@@ -402,7 +410,9 @@ async def entity_cache_invalidate(request: EntityCacheInvalidateRequest):
     return EntityCacheInvalidateResponse(
         invalidated=success,
         entity_name=request.entity_name,
-        message="Cache cleared" if not request.entity_name else f"Invalidated '{request.entity_name}'",
+        message="Cache cleared"
+        if not request.entity_name
+        else f"Invalidated '{request.entity_name}'",
     )
 
 

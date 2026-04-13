@@ -95,14 +95,52 @@ def get_mcp_tools() -> List[MCPToolDefinition]:
         ),
         MCPToolDefinition(
             name="search",
-            description="Search across all document and code sources",
+            description="Search across all document and code sources (supports multilingual)",
             input_schema={
                 "type": "object",
                 "properties": {
                     "query": {"type": "string"},
                     "limit": {"type": "integer", "default": 10},
+                    "language": {"type": "string", "default": "auto"},
                 },
                 "required": ["query"],
+            },
+        ),
+        MCPToolDefinition(
+            name="diagram_search",
+            description="Search architecture diagrams (UML, C4, BPMN, PlantUML)",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "diagram_type": {"type": "string"},
+                    "limit": {"type": "integer", "default": 10},
+                },
+                "required": ["query"],
+            },
+        ),
+        MCPToolDefinition(
+            name="diagram_index",
+            description="Index a diagram for retrieval",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "diagram_content": {"type": "string"},
+                    "doc_id": {"type": "string"},
+                    "diagram_type": {"type": "string"},
+                },
+                "required": ["diagram_content", "doc_id"],
+            },
+        ),
+        MCPToolDefinition(
+            name="multilingual_detect",
+            description="Detect language of text (Russian, English, etc.)",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string"},
+                },
+                "required": ["text"],
             },
         ),
         MCPToolDefinition(

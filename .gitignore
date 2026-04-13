@@ -11,6 +11,8 @@ env/
 .env
 .eggs/
 .qwen/
+.opencode/
+.claude/
 *.egg-info/
 dist/
 build/

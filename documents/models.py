@@ -14,6 +14,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
 
+from core.text_utils import detect_language, TextLanguage
+
 
 class DocumentSource(str, Enum):
     UPLOAD = "upload"
@@ -113,8 +115,14 @@ class Document(BaseModel):
         source_url: Optional[str] = None,
     ) -> "Document":
         doc_id = str(uuid.uuid4())[:8]
-
         content_hash = hashlib.sha256(content.encode()).hexdigest()[:16]
+
+        detected_lang = ""
+        if content:
+            lang = detect_language(content)
+            detected_lang = lang.value if lang else ""
+
+        metadata = {"language": detected_lang} if detected_lang else {}
 
         return cls(
             document_id=doc_id,
@@ -125,6 +133,7 @@ class Document(BaseModel):
             format=format,
             content=content,
             content_hash=content_hash,
+            metadata=metadata,
         )
 
     def create_version(
