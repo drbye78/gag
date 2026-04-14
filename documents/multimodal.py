@@ -161,12 +161,17 @@ Return structured information about each component and connection."""
         self,
         image_path: str,
     ) -> MultimodalResult:
-        prompt = """Analyze this UI screenshot. Identify and extract:
-1. All UI components (buttons, inputs, menus, navigation)
-2. Layout structure and hierarchy
-3. Interactive elements and states
-4. Visual design elements (colors, typography)
-Return structured information about each component."""
+        prompt = """Analyze this UI screenshot. Return ONLY JSON:
+{
+  "source_type": "sketch|screenshot|wireframe|diagram",
+  "page_type": "object-page|list-report|worklist|overview|custom",
+  "layout": {"type": "single-column|two-column|header-content-footer|free-form", "regions": []},
+  "elements": [
+    {"id": "e1", "type": "table|form|button|input|select|chart|navigation|tab|card",
+     "label": "text", "position": {}, "attributes": {}, "interactions": [], "confidence": 0.85}
+  ],
+  "user_actions": [{"trigger": "action", "expected_result": "result"}]
+}"""
 
         return await self.parse(image_path, prompt)
 
@@ -346,11 +351,16 @@ class VisionAPIParser:
         return await self.parse(image_url, prompt)
 
     async def extract_ui(self, image_url: str) -> MultimodalResult:
-        prompt = """Analyze this UI screenshot. Extract into JSON format:
+        prompt = """Analyze this UI screenshot. Return ONLY JSON:
 {
-  "components": [{"id", "type", "label", "position", "actions"}],
-  "layout": {"header", "sidebar", "main", "footer"},
-  "interactions": [{"element", "event", "handler"}]
+  "source_type": "sketch|screenshot|wireframe|diagram",
+  "page_type": "object-page|list-report|worklist|overview|custom",
+  "layout": {"type": "single-column|two-column|header-content-footer|free-form", "regions": []},
+  "elements": [
+    {"id": "e1", "type": "table|form|button|input|select|chart|navigation|tab|card",
+     "label": "text", "position": {}, "attributes": {}, "interactions": [], "confidence": 0.85}
+  ],
+  "user_actions": [{"trigger": "action", "expected_result": "result"}]
 }"""
         return await self.parse(image_url, prompt)
 

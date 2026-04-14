@@ -146,6 +146,12 @@ class UIIR(IRNode):
     screen_id: Optional[str] = Field(None)
     user_flows: list[str] = Field(default_factory=list)
     image_urls: list[str] = Field(default_factory=list)
+    # Graph-first fields
+    graph_node_id: Optional[str] = Field(None)
+    element_count: int = Field(default=0)
+    pattern_matches: list[str] = Field(default_factory=list)
+    sap_candidates: list[str] = Field(default_factory=list)
+    visual_embedding_id: Optional[str] = Field(None)
 
 
 class CodeIR(IRNode):

@@ -31,6 +31,7 @@ class RetrievalSource(str, Enum):
     TELEMETRY = "telemetry"
     DIAGRAM = "diagram"
     MULTIMODAL = "multimodal"
+    UI_SKETCH = "ui_sketch"
 
 
 class RetrievalMode(str, Enum):
@@ -51,6 +52,8 @@ class RetrievalOrchestrator:
         self.diagram_retriever = get_diagram_retriever()
         self.hybrid_retriever = get_hybrid_retriever()
         self.classifier = get_query_classifier()
+        from ui.retriever import get_ui_retriever
+        self.ui_retriever = get_ui_retriever()
 
     async def retrieve(
         self,
@@ -84,6 +87,8 @@ class RetrievalOrchestrator:
                 tasks.append(self._retrieve_telemetry(query, limit, filters))
             elif source == RetrievalSource.DIAGRAM:
                 tasks.append(self._retrieve_diagram(query, limit, filters))
+            elif source == RetrievalSource.UI_SKETCH:
+                tasks.append(self._retrieve_ui(query, limit, filters))
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -164,6 +169,15 @@ class RetrievalOrchestrator:
         except Exception:
             return {"source": "diagram", "results": [], "total": 0, "took_ms": 0}
 
+    async def _retrieve_ui(self, query: str, limit: int, filters: Optional[Dict]) -> Dict:
+        try:
+            results = await self.ui_retriever.search_combined(
+                element_types=[query.lower()], limit=limit
+            )
+            return {"source": "ui_sketch", "results": results, "total": len(results), "took_ms": 0}
+        except Exception:
+            return {"source": "ui_sketch", "results": [], "total": 0, "took_ms": 0}
+
     async def route_hybrid(
         self,
         query: str,
@@ -185,19 +199,6 @@ class RetrievalOrchestrator:
         if lang == TextLanguage.ENGLISH:
             return normalize_text(query, language=TextLanguage.ENGLISH)
         return normalize_text(query)
-
-        classification = self.classifier.classify(query)
-        classification["took_ms"] = int(time.time() * 1000) - start
-
-        result = await self.hybrid_retriever.search(
-            query=query,
-            limit=limit,
-            use_reasoning=True,
-        )
-
-        result["classification"] = classification
-
-        return result
 
     async def route_by_intent(
         self,

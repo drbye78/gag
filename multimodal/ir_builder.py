@@ -115,6 +115,23 @@ class IRBuilder:
         )
         if self._deduplicate(node):
             self._nodes.append(node)
+            # Graph-first: build graph nodes if extraction result available
+            if "extraction_result" in kwargs:
+                try:
+                    from ui.graph_builder import UIGraphBuilder
+                    import asyncio
+                    builder = UIGraphBuilder()
+                    loop = asyncio.get_event_loop()
+                    er = kwargs["extraction_result"]
+                    if loop.is_running():
+                        asyncio.ensure_future(builder.build(er))
+                    else:
+                        loop.run_until_complete(builder.build(er))
+                    node.graph_node_id = er.sketch.sketch_id
+                    node.element_count = len(er.elements)
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).warning("UI graph build failed: %s", e)
             return node
         return None
 
