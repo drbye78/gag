@@ -76,7 +76,7 @@ class ExecutionPlan:
 
 class PlannerAgent:
     def __init__(self):
-        self._default_sources = ["docs", "code", "graph", "tickets", "telemetry"]
+        self._default_sources = ["docs", "code", "graph", "tickets", "telemetry", "diagram", "ui_sketch"]
         # High-level intent mapping from QueryClassifier fine-grained intents
         self._classifier_intent_map = {
             "causal": Intent.TROUBLESHOOT,

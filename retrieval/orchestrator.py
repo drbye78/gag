@@ -223,6 +223,8 @@ class RetrievalRouter:
             RetrievalSource.CODE_GRAPH,
             RetrievalSource.TICKETS,
             RetrievalSource.TELEMETRY,
+            RetrievalSource.DIAGRAM,
+            RetrievalSource.UI_SKETCH,
         ]
 
     async def route(
