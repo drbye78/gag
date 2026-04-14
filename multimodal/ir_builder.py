@@ -116,12 +116,16 @@ class IRBuilder:
             if "extraction_result" in kwargs:
                 try:
                     from ui.graph_builder import UIGraphBuilder
+                    from ui.pattern_matcher import get_pattern_matcher
                     import asyncio
                     builder = UIGraphBuilder()
                     er = kwargs["extraction_result"]
                     asyncio.run(builder.build(er))
                     node.graph_node_id = er.sketch.sketch_id
                     node.element_count = len(er.elements)
+                    matcher = get_pattern_matcher()
+                    matches = matcher.match_patterns(er)
+                    node.pattern_matches = [m.pattern_name for m in matches]
                 except Exception as e:
                     logging.getLogger(__name__).warning("UI graph build failed: %s", e)
             return node

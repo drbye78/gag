@@ -11,10 +11,16 @@ class UIGraphBuilder:
 
     def build_cypher(self, result: UIExtractionResult) -> str:
         """Build complete Cypher for all nodes and relationships."""
+        from ui.pattern_matcher import get_pattern_matcher
+
+        matcher = get_pattern_matcher()
+        matches = matcher.match_patterns(result)
+
         parts = []
         parts.append(self._build_sketch_node_cypher(result))
         parts.append(self._build_layout_node_cypher(result))
         parts.append(self._build_element_nodes_cypher(result))
+        parts.append(matcher.build_pattern_cypher(result, matches))
         return "\n".join(parts)
 
     def _build_sketch_node_cypher(self, result: UIExtractionResult) -> str:
