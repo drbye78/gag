@@ -94,59 +94,48 @@ class TestUIExtractionSchema:
 
 
 class TestParseVLMResponse:
-    def test_valid_json_returns_schema(self):
-        from ui.vlm_extractor import parse_vlm_response
+    @pytest.fixture
+    def extractor(self):
+        from ui.vlm_extractor import VLMUIExtractor
+        return VLMUIExtractor(api_key_env="DUMMY_KEY")
 
-        result = parse_vlm_response(VALID_EXTRACT_JSON)
+    def test_valid_json_returns_schema(self, extractor):
+        result = extractor.parse_vlm_response(VALID_EXTRACT_JSON)
         assert result is not None
         assert result.source_type == "sketch"
 
-    def test_markdown_code_blocks_strips_and_parses(self):
-        from ui.vlm_extractor import parse_vlm_response
-
+    def test_markdown_code_blocks_strips_and_parses(self, extractor):
         wrapped = f"```json\n{VALID_EXTRACT_JSON}\n```"
-        result = parse_vlm_response(wrapped)
+        result = extractor.parse_vlm_response(wrapped)
         assert result is not None
         assert result.source_type == "sketch"
 
-    def test_markdown_backticks_no_language(self):
-        from ui.vlm_extractor import parse_vlm_response
-
+    def test_markdown_backticks_no_language(self, extractor):
         wrapped = f"```\n{VALID_EXTRACT_JSON}\n```"
-        result = parse_vlm_response(wrapped)
+        result = extractor.parse_vlm_response(wrapped)
         assert result is not None
         assert result.source_type == "sketch"
 
-    def test_invalid_text_returns_none(self):
-        from ui.vlm_extractor import parse_vlm_response
-
-        result = parse_vlm_response("This is not JSON at all")
+    def test_invalid_text_returns_none(self, extractor):
+        result = extractor.parse_vlm_response("This is not JSON at all")
         assert result is None
 
-    def test_empty_string_returns_none(self):
-        from ui.vlm_extractor import parse_vlm_response
-
-        result = parse_vlm_response("")
+    def test_empty_string_returns_none(self, extractor):
+        result = extractor.parse_vlm_response("")
         assert result is None
 
-    def test_empty_json_object_returns_none(self):
-        from ui.vlm_extractor import parse_vlm_response
-
-        result = parse_vlm_response("{}")
+    def test_empty_json_object_returns_none(self, extractor):
+        result = extractor.parse_vlm_response("{}")
         assert result is None
 
-    def test_partial_json_missing_required_returns_none(self):
-        from ui.vlm_extractor import parse_vlm_response
-
+    def test_partial_json_missing_required_returns_none(self, extractor):
         # Missing layout, elements, etc.
-        result = parse_vlm_response('{"source_type": "sketch"}')
+        result = extractor.parse_vlm_response('{"source_type": "sketch"}')
         assert result is None
 
-    def test_code_block_with_surrounding_text(self):
-        from ui.vlm_extractor import parse_vlm_response
-
+    def test_code_block_with_surrounding_text(self, extractor):
         wrapped = f"Here is the result:\n```json\n{VALID_EXTRACT_JSON}\n```\nHope this helps!"
-        result = parse_vlm_response(wrapped)
+        result = extractor.parse_vlm_response(wrapped)
         assert result is not None
         assert result.source_type == "sketch"
 

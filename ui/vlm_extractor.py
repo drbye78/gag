@@ -62,31 +62,6 @@ class UIExtractionSchema(BaseModel):
         return self
 
 
-# ── Helper Functions ───────────────────────────────────────────────────────
-
-def parse_vlm_response(response_text: str) -> Optional[UIExtractionSchema]:
-    """Strip markdown code blocks, parse JSON, return UIExtractionSchema or None."""
-    if not response_text or not response_text.strip():
-        return None
-
-    text = response_text.strip()
-
-    # Strip markdown code blocks (with or without language tag)
-    match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
-    if match:
-        text = match.group(1).strip()
-
-    try:
-        data = json.loads(text)
-    except (json.JSONDecodeError, ValueError):
-        return None
-
-    try:
-        return UIExtractionSchema(**data)
-    except (ValueError, TypeError):
-        return None
-
-
 # ── VLMUIExtractor Class ──────────────────────────────────────────────────
 
 class VLMUIExtractor:
@@ -107,17 +82,40 @@ class VLMUIExtractor:
             '  "layout": {\n'
             '    "type": "layout type (e.g., single-column, two-column)",\n'
             '    "regions": [\n'
-            '      {"name": "region name", "elements": [{"id": "string", "type": "element type", "label": "string", "position": {"x": 0, "y": 0, "width": 0, "height": 0}, "attributes": {}, "interactions": [], "confidence": 0.0}]}\n'
+            '      {"name": "region name", "elements": []}\n'
             "    ]\n"
             "  },\n"
-            '  "elements": [{"id": "string", "type": "element type", "label": "string", "position": {"x": 0, "y": 0, "width": 0, "height": 0}, "attributes": {}, "interactions": [], "confidence": 0.0}],\n'
-            '  "user_actions": [{"trigger": "string", "expected_result": "string"}]\n'
+            '  "elements": [{"id": "e1", "type": "table", "label": "Orders", "position": {}, '
+            '"attributes": {}, "interactions": [], "confidence": 0.85}],\n'
+            '  "user_actions": [{"trigger": "click Save", "expected_result": "form-submitted"}]\n'
             "}\n\n"
             "Valid element types: table, form, button, input, select, chart, navigation, tab, card, "
             "dropdown, checkbox, radio, textarea, link, image, icon, divider, toolbar, sidebar, "
             "header, footer, modal, toast, breadcrumb, pagination, filter.\n\n"
             "Return ONLY valid JSON. No explanations, no markdown."
         )
+
+    def parse_vlm_response(self, response_text: str) -> Optional[UIExtractionSchema]:
+        """Strip markdown code blocks, parse JSON, return UIExtractionSchema or None."""
+        if not response_text or not response_text.strip():
+            return None
+
+        text = response_text.strip()
+
+        # Strip markdown code blocks (with or without language tag)
+        match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
+        if match:
+            text = match.group(1).strip()
+
+        try:
+            data = json.loads(text)
+        except (json.JSONDecodeError, ValueError):
+            return None
+
+        try:
+            return UIExtractionSchema(**data)
+        except (ValueError, TypeError):
+            return None
 
     async def _call_vlm(self, image_url: str, prompt: str) -> str:
         """Call OpenAI GPT-4o API via httpx with image_url and response_format json_object."""
@@ -167,7 +165,7 @@ class VLMUIExtractor:
             attempts += 1
             try:
                 response_text = await self._call_vlm(image_url, prompt)
-                result = parse_vlm_response(response_text)
+                result = self.parse_vlm_response(response_text)
                 if result is not None:
                     return result
             except Exception:
