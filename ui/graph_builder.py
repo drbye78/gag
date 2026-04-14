@@ -1,7 +1,7 @@
 """Graph builder for UI sketch understanding - constructs FalkorDB graph nodes and relationships."""
 
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from ui.models import UIExtractionResult
 
