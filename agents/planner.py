@@ -106,6 +106,11 @@ class PlannerAgent:
             if any(kw in query_lower for kw in keywords):
                 return intent
 
+        # Check UI implementation keywords → DESIGN intent
+        ui_keywords = ["ui", "sketch", "wireframe", "implement ui", "screen layout", "mockup"]
+        if any(kw in query_lower for kw in ui_keywords):
+            return Intent.DESIGN
+
         # 2. Delegate to QueryClassifier for fine-grained classification
         try:
             from retrieval.classifier import get_query_classifier
@@ -148,6 +153,10 @@ class PlannerAgent:
             sources.append("tickets")
         if any(kw in query_lower for kw in ["metric", "log", "performance", "monitor"]):
             sources.append("telemetry")
+
+        # UI implementation keywords
+        if any(kw in query_lower for kw in ["ui", "sketch", "wireframe", "screen", "layout", "mockup"]):
+            sources.append("ui_sketch")
 
         if not sources:
             sources = self._default_sources

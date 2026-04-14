@@ -371,6 +371,8 @@ class ToolRegistry:
         self.register(EntitySearchTool())
         self.register(IngestSourceTool())
         self.register(GetJobStatusTool())
+        from ui.suggestion_tool import UISuggestionTool
+        self.register(UISuggestionTool())
 
     def register(self, tool: BaseTool):
         self._tools[tool.name] = tool

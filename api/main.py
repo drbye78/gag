@@ -65,6 +65,13 @@ try:
 except ImportError:
     pass
 
+# UI sketch understanding
+try:
+    from ui.api import router as ui_router
+    app.include_router(ui_router)
+except ImportError:
+    pass
+
 # Configure middleware
 setup_middleware(app)
 
