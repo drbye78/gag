@@ -22,10 +22,10 @@ from llama_index.readers.file import (
     MarkdownReader,
     PDFReader,
     DocxReader,
-    PPTXReader,
+    PptxReader,
     CSVReader,
-    HTMLReader,
-    TextReader,
+    HTMLTagReader,
+    FlatReader,
 )
 
 # Docling imports
@@ -81,12 +81,12 @@ class LlamaIndexParser:
             ".markdown": MarkdownReader,
             ".pdf": PDFReader,
             ".docx": DocxReader,
-            ".pptx": PPTXReader,
+            ".pptx": PptxReader,
             ".csv": CSVReader,
-            ".html": HTMLReader,
-            ".htm": HTMLReader,
-            ".txt": TextReader,
-            ".text": TextReader,
+            ".html": HTMLTagReader,
+            ".htm": HTMLTagReader,
+            ".txt": FlatReader,
+            ".text": FlatReader,
         }
 
         reader_cls = reader_map.get(ext)
