@@ -22,3 +22,5 @@ build/
 .ruff_cache/
 .DS_Store
 *.log
+.python-version
+.worktrees/
