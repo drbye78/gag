@@ -10,14 +10,12 @@ Models:
 - vidore/colSmol-500M (500M, lightweight)
 """
 
-import os
 import io
-import json
 import base64
 import torch
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from PIL import Image
 
@@ -270,46 +268,6 @@ class ColPaliClient:
                         score=score_val,
                         page_num=doc.get("page_num", 0),
                         metadata=doc.get("metadata", {}),
-                    )
-                )
-
-            return ColPaliResult(
-                query=query,
-                results=results,
-                took_ms=int(time.time() * 1000) - start,
-            )
-
-        except Exception as e:
-            return ColPaliResult(
-                query=query,
-                results=[],
-                error=str(e),
-                took_ms=int(time.time() * 1000) - start,
-            )
-
-            results = []
-            for i_idx in range(top_k):
-                idx_val = top_indices[i_idx].item()
-                score_val = top_scores[i_idx].item()
-                doc = valid_docs[idx_val]
-                results.append(
-                    ColPaliSearchResult(
-                        doc_id=doc.get("doc_id", f"doc_{idx_val}"),
-                        score=score_val,
-                        page_num=doc.get("page_num", 0),
-                        metadata=doc.get("metadata", {}),
-                    )
-                )
-
-            results = []
-            for idx in top_indices:
-                i = idx.item()
-                results.append(
-                    ColPaliSearchResult(
-                        doc_id=valid_docs[i].get("doc_id", f"doc_{i}"),
-                        score=scores[0, i].item(),
-                        page_num=valid_docs[i].get("page_num", 0),
-                        metadata=valid_docs[i].get("metadata", {}),
                     )
                 )
 
