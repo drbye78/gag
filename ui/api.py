@@ -60,6 +60,22 @@ async def analyze_ui(request: UIAnalyzeRequest):
     aggregator = EvidenceAggregator()
     result = aggregator.aggregate(image_url=request.image_url, vlm_schema=vlm_schema)
 
+    # Get ColPali visual embedding
+    try:
+        from ui.colpali_integration import get_ui_visual_indexer
+        visual_indexer = get_ui_visual_indexer()
+        embedding = await visual_indexer.get_embedding(request.image_url)
+        if embedding is not None and embedding.embeddings is not None:
+            # Re-aggregate with embedding
+            visual_embedding_list = embedding.embeddings[0].cpu().tolist() if embedding.embeddings.numel() > 0 else None
+            result = aggregator.aggregate(
+                image_url=request.image_url,
+                vlm_schema=vlm_schema,
+                visual_embedding=visual_embedding_list,
+            )
+    except Exception as e:
+        logger.debug("ColPali embedding failed in /ui/analyze: %s", e)
+
     graph_builder = UIGraphBuilder()
     graph_result = await graph_builder.build(result)
     if not graph_result.get("success"):

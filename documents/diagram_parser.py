@@ -40,7 +40,7 @@ class DiagramType(str, Enum):
     C4_CODE = "c4_code"
     ARCHITECTURE = "architecture"
     FLOWCHART = "flowchart"
-DRAW_IO = "drawio"
+    DRAW_IO = "drawio"
     PLANTUML = "plantuml"
     BPMN = "bpmn"
     OPENAPI = "openapi"
