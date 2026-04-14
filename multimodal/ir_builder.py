@@ -1,10 +1,6 @@
 import hashlib
 import logging
-import uuid
-from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
-
-logger = logging.getLogger(__name__)
 
 from models.ir import (
     ArchitectureIR,
@@ -14,7 +10,8 @@ from models.ir import (
     UIIR,
     CodeIR,
 )
-from agents.prompts import IR_PROMPT
+
+logger = logging.getLogger(__name__)
 
 _indexing: Optional[Any] = None
 _embedder: Optional[Any] = None
@@ -121,16 +118,11 @@ class IRBuilder:
                     from ui.graph_builder import UIGraphBuilder
                     import asyncio
                     builder = UIGraphBuilder()
-                    loop = asyncio.get_event_loop()
                     er = kwargs["extraction_result"]
-                    if loop.is_running():
-                        asyncio.ensure_future(builder.build(er))
-                    else:
-                        loop.run_until_complete(builder.build(er))
+                    asyncio.run(builder.build(er))
                     node.graph_node_id = er.sketch.sketch_id
                     node.element_count = len(er.elements)
                 except Exception as e:
-                    import logging
                     logging.getLogger(__name__).warning("UI graph build failed: %s", e)
             return node
         return None
@@ -206,7 +198,6 @@ class IRBuilder:
             embed = _get_embedder()
 
             vi = vector_indexer or VectorIndexerCls()
-            gi = graph_indexer or GraphIndexerCls()
 
             embeddings = []
             for text in text_content:
