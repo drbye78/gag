@@ -21,6 +21,8 @@ class _MockRetriever:
 class _MockCatalog:
     def find_for_element_type(self, *args):
         return getattr(self, "_elem_result", [])
+    def get_all_services(self):
+        return []
 
 
 class TestValidateInput:
@@ -93,3 +95,26 @@ class TestExecute:
                 result = _run(tool.execute(ToolInput(args={"detail_level": 1})))
                 assert result.result["sketch_id"] is None
                 assert result.result["image_url"] is None
+
+    def test_execute_detail_level_2_includes_snippets(self):
+        """Level 2 returns code_snippets."""
+        tool = UISuggestionTool()
+        mock_retriever = _MockRetriever()
+        mock_catalog = _MockCatalog()
+
+        with patch("ui.suggestion_tool.get_ui_retriever", return_value=mock_retriever):
+            with patch("ui.suggestion_tool.get_sap_catalog", return_value=mock_catalog):
+                result = _run(tool.execute(ToolInput(args={"ui_sketch_id": "sk_test", "detail_level": 2})))
+                assert "code_snippets" in result.result
+
+    def test_execute_detail_level_3_includes_services(self):
+        """Level 3 returns btp_services and project_structure."""
+        tool = UISuggestionTool()
+        mock_retriever = _MockRetriever()
+        mock_catalog = _MockCatalog()
+
+        with patch("ui.suggestion_tool.get_ui_retriever", return_value=mock_retriever):
+            with patch("ui.suggestion_tool.get_sap_catalog", return_value=mock_catalog):
+                result = _run(tool.execute(ToolInput(args={"ui_sketch_id": "sk_test", "detail_level": 3})))
+                assert "btp_services" in result.result
+                assert "project_structure" in result.result
