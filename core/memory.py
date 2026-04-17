@@ -14,6 +14,9 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 import httpx
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class MemoryTier(str, Enum):
@@ -312,8 +315,8 @@ class LongTermMemory:
                     },
                     timeout=10.0,
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Error saving to memory backend: %s", e)
 
     async def _fetch_from_backend(self, scope: str, key: str) -> Optional[Any]:
         try:
@@ -338,8 +341,8 @@ class LongTermMemory:
                         return json.loads(
                             results[0].get("payload", {}).get("value", "{}")
                         )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Error fetching from memory backend: %s", e)
         return None
 
     async def _load_recent(self, scope: str) -> int:
@@ -355,8 +358,8 @@ class LongTermMemory:
                 )
                 if response.status_code == 200:
                     return len(response.json().get("result", []))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Error loading recent from memory backend: %s", e)
         return 0
 
 

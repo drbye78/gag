@@ -46,6 +46,9 @@ class PrometheusBackend(TelemetryBackend):
         return self._client
 
     async def _query(self, query: str) -> List[Dict[str, Any]]:
+        import logging
+
+        logger = logging.getLogger(__name__)
         try:
             client = self._get_client()
             resp = await client.get(f"{self.url}/api/v1/query", params={"query": query})
@@ -57,7 +60,11 @@ class PrometheusBackend(TelemetryBackend):
                 {"metric": r.get("metric", {}), "value": r.get("value", [None, 0])[1]}
                 for r in data.get("data", {}).get("result", [])
             ]
-        except Exception:
+        except httpx.HTTPError as e:
+            logger.warning("HTTP error querying Prometheus: %s", e)
+            return []
+        except Exception as e:
+            logger.warning("Error querying Prometheus: %s", e)
             return []
 
     async def search_events(
@@ -156,7 +163,17 @@ class ElasticSearchBackend(TelemetryBackend):
                 }
                 for hit in data.get("hits", {}).get("hits", [])
             ]
-        except Exception:
+        except httpx.HTTPError as e:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "HTTP error querying Elasticsearch: %s", e
+            )
+            return []
+        except Exception as e:
+            import logging
+
+            logging.getLogger(__name__).warning("Error querying Elasticsearch: %s", e)
             return []
 
     async def search_metrics(

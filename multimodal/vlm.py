@@ -1,18 +1,19 @@
 import os
+import logging
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
 import httpx
 
+logger = logging.getLogger(__name__)
+
 
 class VLMProvider(ABC):
     @abstractmethod
-    async def analyze_image(self, image_url: str, prompt: str) -> Dict[str, Any]:
-        pass
+    async def analyze_image(self, image_url: str, prompt: str) -> Dict[str, Any]: ...
 
     @abstractmethod
-    async def extract_text(self, image_url: str) -> str:
-        pass
+    async def extract_text(self, image_url: str) -> str: ...
 
 
 class QwenVLProvider(VLMProvider):
@@ -38,7 +39,8 @@ class QwenVLProvider(VLMProvider):
                 )
                 resp.raise_for_status()
                 return resp.json()
-        except Exception:
+        except Exception as e:
+            logger.warning("Error analyzing image with Qwen: %s", e)
             return {"error": "Failed to analyze image"}
 
     async def extract_text(self, image_url: str) -> str:
@@ -80,7 +82,8 @@ class OpenAIVisionProvider(VLMProvider):
                     data.get("choices", [{}])[0].get("message", {}).get("content", "")
                 )
                 return {"output": {"text": content}}
-        except Exception:
+        except Exception as e:
+            logger.warning("Error analyzing image with OpenAI: %s", e)
             return {"error": "Failed to analyze image"}
 
     async def extract_text(self, image_url: str) -> str:

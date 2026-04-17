@@ -14,10 +14,10 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from llama_index.core.node_parser import (
-    SemanticChunker as LISemanticChunker,
+    SemanticSplitterNodeParser as LISemanticChunker,
     SentenceSplitter as LISentenceSplitter,
-    JSONSplitter as LIJSONSplitter,
-    HTMLTagSplitter as LIHTMLTagSplitter,
+    JSONNodeParser as LIJSONSplitter,
+    HTMLNodeParser as LIHTMLTagSplitter,
 )
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 
@@ -262,9 +262,7 @@ class MarkdownImageExtractor:
                     {
                         "url": url.strip(),
                         "alt": alt.strip() if alt else "",
-                        "context": markdown_text[
-                            max(0, match.start() - 200) : match.end() + 200
-                        ],
+                        "context": markdown_text[max(0, match.start() - 200) : match.end() + 200],
                     }
                 )
         return images
@@ -325,15 +323,12 @@ class HTMLImageExtractor:
             for match in re.finditer(pattern, html_text, re.IGNORECASE):
                 url = match.group(1)
                 if url and any(
-                    ext in url.lower()
-                    for ext in [".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"]
+                    ext in url.lower() for ext in [".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"]
                 ):
                     images.append(
                         {
                             "url": url.strip(),
-                            "context": html_text[
-                                max(0, match.start() - 100) : match.end() + 100
-                            ],
+                            "context": html_text[max(0, match.start() - 100) : match.end() + 100],
                         }
                     )
         return images

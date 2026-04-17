@@ -20,10 +20,14 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-# LlamaIndex multimodal (mandatory)
-from llama_index.multi_modal_llms.openai import OpenAIMultiModal
+# LlamaIndex multimodal (optional - may not be installed)
+try:
+    from llama_index.core.multi_modal_llms.base import MultiModalLLM as OpenAIMultiModal
 
-LLAMA_MULTIMODAL_AVAILABLE = True
+    LLAMA_MULTIMODAL_AVAILABLE = True
+except ImportError:
+    OpenAIMultiModal = None
+    LLAMA_MULTIMODAL_AVAILABLE = False
 
 # Shared Docling parser (OCR-enabled for multimodal use)
 from documents.parse import DoclingParser as _SharedDoclingParser
@@ -126,9 +130,7 @@ class LlamaIndexMultimodalParser:
         model = self._get_model()
 
         if not model:
-            return MultimodalResult(
-                text="", error="LlamaIndex multimodal not available"
-            )
+            return MultimodalResult(text="", error="LlamaIndex multimodal not available")
 
         try:
             response = model.complete(
@@ -427,9 +429,7 @@ class HybridMultimodalParser:
         use_specialized: bool = False,
     ) -> MultimodalResult:
         if use_specialized and self.docling_available:
-            return await self.docling_parser.parse(
-                await self._get_image_bytes(image_url)
-            )
+            return await self.docling_parser.parse(await self._get_image_bytes(image_url))
 
         if self.llama_available:
             return await self.llama_parser.extract_diagram(image_url)

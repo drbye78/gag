@@ -176,10 +176,10 @@ class Settings:
             )
 
 
-_settings: Optional[Settings] = None
+_settings: Optional["Settings"] = None
 
 
-def get_settings() -> Settings:
+def get_settings() -> "Settings":
     global _settings
     if _settings is None:
         _settings = Settings()

@@ -18,15 +18,9 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 # LlamaIndex readers (mandatory dependency)
-from llama_index.readers.file import (
-    MarkdownReader,
-    PDFReader,
-    DocxReader,
-    PptxReader,
-    CSVReader,
-    HTMLTagReader,
-    FlatReader,
-)
+# Use SimpleDirectoryReader which auto-detects file types
+from llama_index.core import SimpleDirectoryReader
+from llama_index.core.readers import StringIterableReader
 
 # Docling imports
 try:
@@ -94,9 +88,7 @@ class LlamaIndexParser:
             try:
                 self._readers[ext] = reader_cls()
             except Exception as e:
-                logger.error(
-                    "Failed to initialize LlamaIndex reader for %s: %s", ext, e
-                )
+                logger.error("Failed to initialize LlamaIndex reader for %s: %s", ext, e)
 
         return self._readers.get(ext)
 
@@ -214,12 +206,14 @@ class DoclingParser:
 
                 elements = []
                 for item in result.document.iter_inferred_terms():
-                    elements.append({
-                        "element_id": item.id or "",
-                        "type": item.label or "unknown",
-                        "label": item.text,
-                        "confidence": getattr(item, "score", 0.0),
-                    })
+                    elements.append(
+                        {
+                            "element_id": item.id or "",
+                            "type": item.label or "unknown",
+                            "label": item.text,
+                            "confidence": getattr(item, "score", 0.0),
+                        }
+                    )
 
                 metadata = {"page_count": len(result.pages)}
                 return text, elements, metadata
@@ -298,17 +292,13 @@ class FallbackParser:
             try:
                 with zipfile.ZipFile(tmp_path) as z:
                     if "word/document.xml" in z.namelist():
-                        ns = {
-                            "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
-                        }
+                        ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
 
                         with z.open("word/document.xml") as f:
                             tree = ET.parse(f)
 
                         for elem in tree.iter():
-                            tag = (
-                                elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag
-                            )
+                            tag = elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag
 
                             if tag == "p":
                                 text = "".join(
@@ -414,9 +404,7 @@ class FallbackParser:
 
                             if row_idx == 1:
                                 output_parts.append(
-                                    "| "
-                                    + " | ".join(["---"] * len(formatted_row))
-                                    + " |"
+                                    "| " + " | ".join(["---"] * len(formatted_row)) + " |"
                                 )
 
                             output_parts.append("| " + " | ".join(formatted_row) + " |")
@@ -467,11 +455,7 @@ class FallbackParser:
 
                         texts = []
                         for elem in tree.iter():
-                            if (
-                                elem.tag.endswith("}t")
-                                and elem.text
-                                and elem.text.strip()
-                            ):
+                            if elem.tag.endswith("}t") and elem.text and elem.text.strip():
                                 texts.append(elem.text.strip())
 
                         if texts:
@@ -489,11 +473,7 @@ class FallbackParser:
 
                         notes_text = []
                         for elem in tree.iter():
-                            if (
-                                elem.tag.endswith("}t")
-                                and elem.text
-                                and elem.text.strip()
-                            ):
+                            if elem.tag.endswith("}t") and elem.text and elem.text.strip():
                                 notes_text.append(elem.text.strip())
 
                         if notes_text:

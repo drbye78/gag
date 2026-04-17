@@ -4,7 +4,7 @@ A production-grade **Cognitive Architecture** for domain-specific reasoning with
 
 ![Version](https://img.shields.io/badge/version-3.0.0-blue)
 ![Python](https://img.shields.io/badge/python-3.12+-green)
-![Tests](https://img.shields.io/badge/tests-182%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-311%20passing-brightgreen)
 ![License](https://img.shields.io/badge/license-Proprietary-red)
 
 ---

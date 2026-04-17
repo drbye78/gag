@@ -31,13 +31,11 @@ class BaseReranker(ABC):
         query: str,
         results: List[Dict[str, Any]],
         top_n: Optional[int] = None,
-    ) -> List[RerankResult]:
-        pass
+    ) -> List[RerankResult]: ...
 
     @property
     @abstractmethod
-    def provider(self) -> RerankProvider:
-        pass
+    def provider(self) -> RerankProvider: ...
 
     @property
     def available(self) -> bool:

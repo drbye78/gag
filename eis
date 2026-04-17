@@ -1,0 +1,174 @@
+#!/usr/bin/env python3
+"""
+Engineering Intelligence System - CLI Wrapper
+
+Simplifies running the project without 'uv run' prefix.
+Automatically detects and uses the virtual environment.
+"""
+
+import argparse
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).parent
+VENV_PYTHON = PROJECT_ROOT / ".venv" / "bin" / "python"
+UV = "uv"
+
+
+def get_python():
+    """Get Python executable from venv or fall back to system."""
+    if VENV_PYTHON.exists():
+        return str(VENV_PYTHON)
+    return sys.executable
+
+
+def run_command(cmd, use_uv=False, capture=False):
+    """Run a command with the appropriate Python."""
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+
+    if use_uv:
+        result = subprocess.run(
+            [UV, "run", "python", "-c", cmd] if cmd.startswith("import") else [UV, "run"] + cmd.split(),
+            cwd=PROJECT_ROOT,
+            env=env,
+            capture_output=capture,
+            text=True,
+        )
+    else:
+        python = get_python()
+        result = subprocess.run(
+            python + " -c " + cmd if cmd else python.split() + cmd.split(),
+            cwd=PROJECT_ROOT,
+            env=env,
+            capture_output=capture,
+            text=True,
+            shell=True,
+        )
+
+    if result.returncode != 0:
+        print(result.stderr, file=sys.stderr)
+    return result.returncode
+
+
+def cmd_api(args):
+    """Start the API server."""
+    host = args.host or "0.0.0.0"
+    port = args.port or "8000"
+    reload = "--reload" if args.reload else ""
+
+    print(f"Starting API at http://{host}:{port}")
+    return subprocess.run(
+        [get_python(), "-m", "uvicorn", "api.main:app", "--host", host, "--port", port, reload],
+        cwd=PROJECT_ROOT,
+    ).returncode
+
+
+def cmd_test(args):
+    """Run tests."""
+    if args.file:
+        cmd = f"-m pytest tests/{args.file} -v"
+    elif args.keyword:
+        cmd = f'-m pytest -k "{args.keyword}" -v'
+    elif args.unit:
+        cmd = "-m pytest tests/test_core.py tests/test_agents.py -v"
+    else:
+        cmd = "-m pytest tests/ -v"
+
+    print(f"Running: {cmd}")
+    return subprocess.run(
+        f'{get_python()} {cmd}',
+        cwd=PROJECT_ROOT,
+        shell=True,
+    ).returncode
+
+
+def cmd_shell(args):
+    """Start an interactive Python shell."""
+    print("Starting Python shell... (Ctrl+D to exit)")
+    return subprocess.run(
+        [get_python()],
+        cwd=PROJECT_ROOT,
+    ).returncode
+
+
+def cmd_install(args):
+    """Install dependencies."""
+    return subprocess.run(
+        [UV, "pip", "install", "-r", "requirements.txt"],
+        cwd=PROJECT_ROOT,
+    ).returncode
+
+
+def cmd_check(args):
+    """Run linting and type checking."""
+    print("Running ruff...")
+    result = subprocess.run(
+        [get_python(), "-m", "ruff", "check", "."],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+    )
+    if result.returncode == 0:
+        print("✓ Ruff: OK")
+
+    print("Running mypy...")
+    result = subprocess.run(
+        [get_python(), "-m", "mypy", "core/", "--ignore-missing-imports"],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+    )
+    if result.returncode == 0:
+        print("✓ Mypy: OK")
+
+    return 0
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Engineering Intelligence System CLI",
+        prog="eis"
+    )
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+
+    # api command
+    api_parser = subparsers.add_parser("api", help="Start the API server")
+    api_parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
+    api_parser.add_argument("--port", default="8000", help="Port to bind to")
+    api_parser.add_argument("--reload", action="store_true", help="Enable auto-reload")
+
+    # test command
+    test_parser = subparsers.add_parser("test", help="Run tests")
+    test_parser.add_argument("--file", help="Specific test file (e.g., test_core.py)")
+    test_parser.add_argument("--keyword", help="Test keyword to filter")
+    test_parser.add_argument("--unit", action="store_true", help="Run unit tests only")
+
+    # shell command
+    shell_parser = subparsers.add_parser("shell", help="Start Python shell")
+
+    # install command
+    install_parser = subparsers.add_parser("install", help="Install dependencies")
+
+    # check command
+    check_parser = subparsers.add_parser("check", help="Run linting and type checking")
+
+    args = parser.parse_args()
+
+    if not args.command:
+        parser.print_help()
+        return 0
+
+    commands = {
+        "api": cmd_api,
+        "test": cmd_test,
+        "shell": cmd_shell,
+        "install": cmd_install,
+        "check": cmd_check,
+    }
+
+    return commands.get(args.command, lambda a: parser.print_help())(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -46,31 +46,40 @@ try:
     from ingestion.api import router as ingestion_router
 
     app.include_router(ingestion_router)
-except ImportError:
-    pass
+except ImportError as e:
+    import logging
+
+    logging.getLogger(__name__).warning("Ingestion API not available: %s", e)
 
 # Git API
 try:
     from git.api import router as git_router
 
     app.include_router(git_router)
-except ImportError:
-    pass
+except ImportError as e:
+    import logging
+
+    logging.getLogger(__name__).warning("Git API not available: %s", e)
 
 # Documents API
 try:
     from documents.api import router as documents_router
 
     app.include_router(documents_router)
-except ImportError:
-    pass
+except ImportError as e:
+    import logging
+
+    logging.getLogger(__name__).warning("Documents API not available: %s", e)
 
 # UI sketch understanding
 try:
     from ui.api import router as ui_router
+
     app.include_router(ui_router)
-except ImportError:
-    pass
+except ImportError as e:
+    import logging
+
+    logging.getLogger(__name__).warning("UI API not available: %s", e)
 
 # Configure middleware
 setup_middleware(app)

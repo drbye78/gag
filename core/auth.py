@@ -63,15 +63,30 @@ class RBACManager:
         self._users: Dict[str, User] = {}
 
     def hash_password(self, password: str) -> str:
-        return hashlib.pbkdf2_hmac(
+        """Hash password with random salt (not jwt_secret)."""
+        salt = secrets.token_bytes(32)
+        key = hashlib.pbkdf2_hmac(
             "sha256",
             password.encode(),
-            get_settings().jwt_secret.encode(),
+            salt,
             100000,
-        ).hex()
+        )
+        return key.hex() + ":" + salt.hex()
 
     def verify_password(self, password: str, hashed: str) -> bool:
-        return hmac.compare_digest(self.hash_password(password), hashed)
+        """Verify password against stored hash."""
+        try:
+            key_hex, salt_hex = hashed.rsplit(":", 1)
+            salt = bytes.fromhex(salt_hex)
+            key = hashlib.pbkdf2_hmac(
+                "sha256",
+                password.encode(),
+                salt,
+                100000,
+            )
+            return hmac.compare_digest(key.hex(), key_hex)
+        except Exception:
+            return False
 
     def create_user(
         self,

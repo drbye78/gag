@@ -7,10 +7,13 @@ with in-memory fallback for development.
 
 import os
 import time
+import logging
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 
 class EmbeddingProvider(ABC):
@@ -46,7 +49,8 @@ class QdrantEmbeddingProvider(EmbeddingProvider):
             resp.raise_for_status()
             data = resp.json()
             return data.get("result", [[0.0] * 1024] * len(texts))
-        except Exception:
+        except Exception as e:
+            logger.warning("Error in Qdrant embed_batch: %s", e)
             return [[0.0] * 1024 for _ in texts]
 
 
@@ -78,7 +82,8 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
             resp.raise_for_status()
             data = resp.json()
             return [d["embedding"] for d in data.get("data", [])]
-        except Exception:
+        except Exception as e:
+            logger.warning("Error in OpenAI embed_batch: %s", e)
             return [[0.0] * 1536 for _ in texts]
 
 
@@ -110,7 +115,7 @@ class QdrantDocsBackend(DocsBackend):
         self.port = port
         self.collection = collection
         self.base_url = f"http://{self.host}:{self.port}"
-        self.embedding_provider = embedding_provider or EmbeddingProvider.get_default()
+        self.embedding_provider = embedding_provider or QdrantEmbeddingProvider()
 
     @staticmethod
     def _create_embedding_provider() -> EmbeddingProvider:
@@ -146,7 +151,8 @@ class QdrantDocsBackend(DocsBackend):
                 response.raise_for_status()
                 data = response.json()
                 return data.get("result", [])
-        except Exception:
+        except Exception as e:
+            logger.warning("Error searching Qdrant: %s", e)
             return []
 
     async def get(self, doc_id: str) -> Optional[Dict[str, Any]]:
@@ -157,7 +163,8 @@ class QdrantDocsBackend(DocsBackend):
                 )
                 response.raise_for_status()
                 return response.json().get("result")
-        except Exception:
+        except Exception as e:
+            logger.warning("Error getting doc from Qdrant: %s", e)
             return None
 
 

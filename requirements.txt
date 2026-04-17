@@ -51,6 +51,7 @@ sentence-transformers>=2.2.0
 
 # LlamaIndex — required for LlamaIndex-based readers & reranking
 llama-index>=0.10.0
+llama-index-embeddings-huggingface>=0.7.0
 
 # Redis — required for distributed caching
 redis>=5.0.0

@@ -6,10 +6,13 @@ Supports Jira and GitHub Issues backends with in-memory fallback.
 
 import os
 import time
+import logging
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 
 class TicketBackend(ABC):
@@ -84,7 +87,8 @@ class JiraBackend(TicketBackend):
                 }
                 for issue in data.get("issues", [])
             ]
-        except Exception:
+        except Exception as e:
+            logger.warning("Error querying Jira search: %s", e)
             return []
 
     async def get(self, ticket_id: str) -> Optional[Dict[str, Any]]:
@@ -101,7 +105,8 @@ class JiraBackend(TicketBackend):
                 "status": issue["fields"]["status"]["name"],
                 "priority": issue["fields"]["priority"]["name"],
             }
-        except Exception:
+        except Exception as e:
+            logger.warning("Error getting Jira ticket: %s", e)
             return None
 
 
