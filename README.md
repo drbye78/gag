@@ -46,7 +46,9 @@ This system answers complex engineering questions by reasoning over your codebas
 - **Entity graph cache**: LRU eviction (500 entries, 1h TTL) with REST API for monitoring
 - **4 fusion methods**: RRF, Score-normalized, Weighted, Combined
 - **5 rerank providers**: Cohere, BGE, SentenceTransformers, Jina, LlamaIndex
-- **5 citation styles**: Parenthetical, Verbatim, Footnote, Highlight, Structured
+- **5 citation styles**: Parenthetical, Verbatim, Footnote, Highlight, Structured, Diagram
+- **ColBERT support**: Late interaction embeddings for enhanced semantic search
+- **CodeGraphContext integration**: Live indexing, multi-repo switching, bundle loading, graph visualization, Cypher queries
 
 ### 🧠 Cognitive Agents
 - **Planner** — Detects intent (design/explain/troubleshoot/optimize), decomposes tasks, assigns tools
@@ -64,7 +66,11 @@ This system answers complex engineering questions by reasoning over your codebas
 - Vision Language Model (VLM) processor for architecture diagrams
 - Supports Qwen Vision and OpenAI vision providers
 - IR (Intermediate Representation) builder with entity/relation extraction
-- **Diagram Formats**: UML (Class, Sequence, Component, Activity, State), C4, BPMN 2.0, PlantUML, Draw.io, OpenAPI
+- **Diagram Formats**: UML (Class, Sequence, Component, Activity, State), C4, BPMN 2.0, PlantUML, Draw.io, OpenAPI, Mermaid
+- **Qdrant Integration**: Vector-based diagram indexing with entity/relationship storage
+- **FalkorDB Integration**: Graph storage for diagram entities and relationships
+- **UI Sketches**: Graph-based UI retriever with structural similarity search
+- **ColPali Support**: Visual embeddings for UI sketch similarity
 
 ### 🌐 Multilingual
 - Language detection (Russian, English, and 20+ languages)
@@ -75,8 +81,9 @@ This system answers complex engineering questions by reasoning over your codebas
 ### 📥 Ingestion Pipeline
 - **7 source types**: Git repositories, Documents, Tickets, Telemetry, Knowledge Base, Architecture, Requirements
 - Full pipeline: Collect → Normalize → Parse → Chunk → Enrich → Embed → Index
-- Code chunking with entity extraction (Python, JS/TS, Go, Rust, Java)
+- Code chunking with entity extraction (Python, JavaScript, TypeScript, Go, Rust, Java, Kotlin)
 - Structural and hierarchical chunking for markdown
+- **Tooling chunkers**: Kubernetes manifests, Helm charts, Dockerfiles, GraphQL schemas
 
 ### 🔧 Tool System (MCP)
 - **13 tools** exposed via Model Context Protocol: architecture evaluation, security validation, cost estimation, search, hybrid search, reranking, chain/entity/iterative reasoning, graph queries, entity search, ingestion, job status
@@ -106,15 +113,24 @@ The API is available at `http://localhost:8000`.
 ### Manual Setup
 
 ```bash
-# Create virtual environment
-python3.12 -m venv .venv
-source .venv/bin/activate
+# Using uv (recommended)
+uv sync
 
-# Install dependencies
-pip install -r requirements.txt
+# Or using pip
+pip install -e ".[all]"
 
 # Run with uvicorn
 uvicorn api.main:app --host 0.0.0.0 --port 8000
+
+# Or use the CLI
+./eis api
+```
+
+**Install extras individually:**
+```bash
+pip install -e ".[qdrant,docs,embeddings]"  # Core features
+pip install -e ".[dev]"                       # Development
+pip install -e ".[prod]"                     # Production
 ```
 
 ---
@@ -135,6 +151,18 @@ uvicorn api.main:app --host 0.0.0.0 --port 8000
 | `/hybrid/enhanced` | POST | Enhanced hybrid search with entity cache |
 | `/entity/cache/stats` | GET | Entity cache statistics |
 | `/entity/cache/invalidate` | POST | Invalidate entity cache |
+| `/search/kubernetes` | POST | Search Kubernetes manifests |
+| `/search/helm` | POST | Search Helm charts |
+| `/search/dockerfile` | POST | Search Dockerfiles |
+| `/search/graphql` | POST | Search GraphQL schemas |
+| `/search/istio` | POST | Search Istio configurations |
+| `/codegraph/find` | POST | Find code snippets |
+| `/codegraph/relationships` | POST | Find code relationships |
+| `/codegraph/complex` | GET | Most complex functions |
+| `/codegraph/dead-code` | GET | Unused functions |
+| `/codegraph/visualize` | POST | Visualize code graph |
+| `/search/colpal` | POST | ColPali visual search |
+| `/search/ui-sketch` | POST | UI sketch search |
 | `/ingestion/ingest` | POST | Ingest a single document |
 | `/ingestion/batch` | POST | Batch ingest documents |
 | `/ingestion/codebase` | POST | Ingest a codebase |
@@ -174,9 +202,10 @@ export LLM_API_KEY=your-api-key
 ├── models/             # Pydantic data models (IR, graph, retrieval, MCP)
 ├── multimodal/         # VLM processor and IR builder
 ├── retrieval/          # Hybrid retrieval, reranking, citations, fusion
+├── ui/                 # UI sketch retrieval, ColPali, SAP knowledge
 ├── tools/              # Tool registry (13 tools via MCP)
 ├── docs/               # Architecture, API, deployment, configuration docs
-└── tests/              # 182 unit and integration tests
+└── tests/              # 311 unit and integration tests
 ```
 
 ---
@@ -200,18 +229,22 @@ export LLM_API_KEY=your-api-key
 ## Testing
 
 ```bash
-# Run all tests
+# Using pytest directly
 python -m pytest tests/ -v
 
+# Using the CLI
+./eis test
+
 # Run specific test categories
-python -m pytest tests/test_core.py -v          # Core infrastructure
-python -m pytest tests/test_agents.py -v        # Agent system
-python -m pytest tests/test_ingestion.py -v     # Ingestion pipeline
-python -m pytest tests/test_retrieval.py -v     # Retrieval layer
-python -m pytest tests/test_new_features.py -v  # Entity cache, LLM router, config
+./eis test --file test_core.py          # Core infrastructure
+./eis test --file test_agents.py        # Agent system
+./eis test --file test_ingestion.py    # Ingestion pipeline
+./eis test --file test_retrieval.py     # Retrieval layer
+./eis test --unit                       # Unit tests only
+./eis test --keyword Health             # Tests matching keyword
 ```
 
-**182 tests, all passing.**
+**311 tests, all passing.**
 
 ---
 
@@ -230,6 +263,7 @@ python -m pytest tests/test_new_features.py -v  # Entity cache, LLM router, conf
 
 | Version | Highlights |
 |---|---|
+| **v3.0** | Python 3.12+, pyproject.toml, Diagram Qdrant/FalkorDB indexing, UI sketch retrieval, Mermaid parser, ColPali integration, ColBERT support, Diagram citations |
 | **v2.4** | Entity graph cache, lazy retriever init, config consolidation, input validation, Cypher injection prevention, logging, CORS config, embedding cache |
 | **v2.3** | Unit tests, new API endpoints, configuration settings, pipeline integration |
 | **v2.2** | GraphRAG, cross-reference extraction, structural chunking, entity-centric retrieval |

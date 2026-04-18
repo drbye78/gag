@@ -22,14 +22,37 @@ try:
         calculate_cyclomatic_complexity,
     )
 
+    from CodeGraphContext_watch_directory import watch_directory
+    from CodeGraphContext_add_code_to_graph import add_code_to_graph
+    from CodeGraphContext_switch_context import switch_context
+    from CodeGraphContext_discover_codegraph_contexts import discover_codegraph_contexts
+    from CodeGraphContext_list_indexed_repositories import list_indexed_repositories
+    from CodeGraphContext_load_bundle import load_bundle
+    from CodeGraphContext_search_registry_bundles import search_registry_bundles
+    from CodeGraphContext_add_package_to_graph import add_package_to_graph
+    from CodeGraphContext_execute_cypher_query import execute_cypher_query
+    from CodeGraphContext_visualize_graph_query import visualize_graph_query
+
     CODEGRAPH_AVAILABLE = True
+    CODEGRAPH_FULL_AVAILABLE = True
 except ImportError:
     CODEGRAPH_AVAILABLE = False
+    CODEGRAPH_FULL_AVAILABLE = False
     find_code = None
     analyze_code_relationships = None
     find_dead_code = None
     find_most_complex_functions = None
     calculate_cyclomatic_complexity = None
+    watch_directory = None
+    add_code_to_graph = None
+    switch_context = None
+    discover_codegraph_contexts = None
+    list_indexed_repositories = None
+    load_bundle = None
+    search_registry_bundles = None
+    add_package_to_graph = None
+    execute_cypher_query = None
+    visualize_graph_query = None
 
 
 class CodeGraphQueryType(str, Enum):
@@ -59,8 +82,8 @@ class CodeGraphRetriever:
         query: str,
         limit: int = 10,
         filters: Optional[Dict[str, Any]] = None,
+        method: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Generic code search via content matching."""
         if not CODEGRAPH_AVAILABLE:
             return {
                 "source": "code_graph",
@@ -71,12 +94,19 @@ class CodeGraphRetriever:
                 "error": "CodeGraphContext not available",
             }
 
+        if method:
+            return await self._route_to_method(method, query, limit)
+
+        return await self._content_search(query, limit)
+
+    async def _content_search(
+        self,
+        query: str,
+        limit: int = 10,
+    ) -> Dict[str, Any]:
         start = int(time.time() * 1000)
-
         result = await find_code(query=query, repo_path=self.repo_path)
-
         took = int(time.time() * 1000) - start
-
         return {
             "source": "code_graph",
             "query": query,
@@ -84,6 +114,63 @@ class CodeGraphRetriever:
             "total": result.get("total_matches", 0),
             "took_ms": took,
         }
+
+    async def _route_to_method(
+        self,
+        method: str,
+        query: str,
+        limit: int = 10,
+    ) -> Dict[str, Any]:
+        import re
+
+        if method == "find_callers":
+            func_name = self._extract_function_name(query)
+            return await self.find_callers(func_name, limit)
+        elif method == "find_callees":
+            func_name = self._extract_function_name(query)
+            return await self.find_callees(func_name, limit)
+        elif method == "dead_code":
+            return await self.find_dead_code(limit)
+        elif method == "complexity":
+            func_name = self._extract_function_name(query)
+            return await self.get_complexity(func_name)
+        elif method == "class_hierarchy":
+            class_name = self._extract_class_name(query)
+            return await self.get_class_hierarchy(class_name, limit)
+        elif method == "module_deps":
+            module = self._extract_module(query)
+            return await self.get_module_deps(module)
+        elif method == "call_chain":
+            func_name = self._extract_function_name(query)
+            return await self.get_call_chain(func_name, limit)
+        else:
+            return await self._content_search(query, limit)
+
+    def _extract_function_name(self, query: str) -> str:
+        import re
+        match = re.search(r"(?:of|for|to)\s+(\w+)", query, re.IGNORECASE)
+        if match:
+            return match.group(1)
+        words = query.split()
+        for i, w in enumerate(words):
+            if w.lower() in ("find", "get", "show", "calls", "callees"):
+                if i + 1 < len(words):
+                    return words[i + 1]
+        return query
+
+    def _extract_class_name(self, query: str) -> str:
+        import re
+        match = re.search(r"(?:class|parent)\s+(\w+)", query, re.IGNORECASE)
+        if match:
+            return match.group(1)
+        return self._extract_function_name(query)
+
+    def _extract_module(self, query: str) -> str:
+        import re
+        match = re.search(r"(?:module|import)\s+(\w+)", query, re.IGNORECASE)
+        if match:
+            return match.group(1)
+        return self._extract_function_name(query)
 
     async def find_callers(
         self,
@@ -412,6 +499,224 @@ class CodeGraphRetriever:
             "took_ms": took,
         }
 
+    async def watch_directory(self, path: str) -> Dict[str, Any]:
+        """Start watching a directory for live code indexing."""
+        if not CODEGRAPH_FULL_AVAILABLE:
+            return {"source": "code_graph", "action": "watch_directory", "watching": False, "error": "CodeGraphContext not available"}
+
+        start = int(time.time() * 1000)
+        result = await watch_directory(path=path)
+        took = int(time.time() * 1000) - start
+
+        return {
+            "source": "code_graph",
+            "action": "watch_directory",
+            "path": path,
+            "watching": result.get("job_id") is not None,
+            "job_id": result.get("job_id"),
+            "took_ms": took,
+        }
+
+    async def add_code_to_graph(self, path: str, is_dependency: bool = False) -> Dict[str, Any]:
+        """Add code to graph index."""
+        if not CODEGRAPH_FULL_AVAILABLE:
+            return {"source": "code_graph", "action": "add_code_to_graph", "indexed": False, "error": "CodeGraphContext not available"}
+
+        start = int(time.time() * 1000)
+        result = await add_code_to_graph(path=path, is_dependency=is_dependency)
+        took = int(time.time() * 1000) - start
+
+        return {
+            "source": "code_graph",
+            "action": "add_code_to_graph",
+            "path": path,
+            "indexed": result.get("job_id") is not None,
+            "job_id": result.get("job_id"),
+            "took_ms": took,
+        }
+
+    async def switch_context(self, context_path: str, save: bool = True) -> Dict[str, Any]:
+        """Switch to a different repository context."""
+        if not CODEGRAPH_FULL_AVAILABLE:
+            return {"source": "code_graph", "action": "switch_context", "switched": False, "error": "CodeGraphContext not available"}
+
+        start = int(time.time() * 1000)
+        result = await switch_context(context_path=context_path, save=save)
+        took = int(time.time() * 1000) - start
+
+        return {
+            "source": "code_graph",
+            "action": "switch_context",
+            "path": context_path,
+            "switched": result.get("success", False),
+            "took_ms": took,
+        }
+
+    async def discover_contexts(self, path: str = ".", max_depth: int = 1) -> Dict[str, Any]:
+        """Discover indexed code graph contexts in subdirectories."""
+        if not CODEGRAPH_FULL_AVAILABLE:
+            return {"source": "code_graph", "action": "discover_contexts", "contexts": [], "error": "CodeGraphContext not available"}
+
+        start = int(time.time() * 1000)
+        result = await discover_codegraph_contexts(path=path, max_depth=max_depth)
+        took = int(time.time() * 1000) - start
+
+        return {
+            "source": "code_graph",
+            "action": "discover_contexts",
+            "path": path,
+            "contexts": result.get("contexts", []),
+            "took_ms": took,
+        }
+
+    async def list_repositories(self) -> Dict[str, Any]:
+        """List all indexed repositories."""
+        if not CODEGRAPH_FULL_AVAILABLE:
+            return {"source": "code_graph", "action": "list_repositories", "repositories": [], "error": "CodeGraphContext not available"}
+
+        start = int(time.time() * 1000)
+        result = await list_indexed_repositories()
+        took = int(time.time() * 1000) - start
+
+        return {
+            "source": "code_graph",
+            "action": "list_repositories",
+            "repositories": result.get("repositories", []),
+            "took_ms": took,
+        }
+
+    async def load_bundle(self, bundle_name: str, clear_existing: bool = False) -> Dict[str, Any]:
+        """Load a pre-indexed bundle."""
+        if not CODEGRAPH_FULL_AVAILABLE:
+            return {"source": "code_graph", "action": "load_bundle", "loaded": False, "error": "CodeGraphContext not available"}
+
+        start = int(time.time() * 1000)
+        result = await load_bundle(bundle_name=bundle_name, clear_existing=clear_existing)
+        took = int(time.time() * 1000) - start
+
+        return {
+            "source": "code_graph",
+            "action": "load_bundle",
+            "bundle": bundle_name,
+            "loaded": result.get("success", False),
+            "took_ms": took,
+        }
+
+    async def search_registry_bundles(self, query: str = "", unique_only: bool = True) -> Dict[str, Any]:
+        """Search available bundles in the registry."""
+        if not CODEGRAPH_FULL_AVAILABLE:
+            return {"source": "code_graph", "action": "search_bundles", "bundles": [], "error": "CodeGraphContext not available"}
+
+        start = int(time.time() * 1000)
+        result = await search_registry_bundles(query=query, unique_only=unique_only)
+        took = int(time.time() * 1000) - start
+
+        return {
+            "source": "code_graph",
+            "action": "search_bundles",
+            "query": query,
+            "bundles": result.get("bundles", []),
+            "took_ms": took,
+        }
+
+    async def add_package_to_graph(self, package_name: str, language: str = "python") -> Dict[str, Any]:
+        """Add a package to the graph."""
+        if not CODEGRAPH_FULL_AVAILABLE:
+            return {"source": "code_graph", "action": "add_package", "added": False, "error": "CodeGraphContext not available"}
+
+        start = int(time.time() * 1000)
+        result = await add_package_to_graph(package_name=package_name, language=language)
+        took = int(time.time() * 1000) - start
+
+        return {
+            "source": "code_graph",
+            "action": "add_package",
+            "package": package_name,
+            "language": language,
+            "added": result.get("job_id") is not None,
+            "job_id": result.get("job_id"),
+            "took_ms": took,
+        }
+
+    async def execute_cypher(self, cypher_query: str) -> Dict[str, Any]:
+        """Execute raw Cypher query against the code graph."""
+        if not CODEGRAPH_FULL_AVAILABLE:
+            return {"source": "code_graph", "action": "execute_cypher", "results": [], "error": "CodeGraphContext not available"}
+
+        dangerous = ["DELETE", "DROP", "ALTER", "CREATE", "SET", "REMOVE"]
+        if any(p in cypher_query.upper() for p in dangerous):
+            return {"source": "code_graph", "action": "execute_cypher", "results": [], "error": "Query contains dangerous operations"}
+
+        start = int(time.time() * 1000)
+        result = await execute_cypher_query(cypher_query=cypher_query)
+        took = int(time.time() * 1000) - start
+
+        return {
+            "source": "code_graph",
+            "action": "execute_cypher",
+            "query": cypher_query,
+            "results": result.get("results", []),
+            "took_ms": took,
+        }
+
+    async def visualize(self, cypher_query: str) -> Dict[str, Any]:
+        """Generate Mermaid diagram from Cypher query."""
+        if not CODEGRAPH_FULL_AVAILABLE:
+            return {"source": "code_graph", "action": "visualize", "url": None, "error": "CodeGraphContext not available"}
+
+        start = int(time.time() * 1000)
+        result = await visualize_graph_query(cypher_query=cypher_query)
+        took = int(time.time() * 1000) - start
+
+        return {
+            "source": "code_graph",
+            "action": "visualize",
+            "query": cypher_query,
+            "url": result.get("url"),
+            "mermaid": result.get("mermaid"),
+            "took_ms": took,
+        }
+
+    async def get_module_deps(self, module_name: str) -> Dict[str, Any]:
+        """Get module dependencies for a given module."""
+        if not CODEGRAPH_AVAILABLE:
+            return {"source": "code_graph", "query": f"module_deps:{module_name}", "dependencies": [], "error": "CodeGraphContext not available"}
+
+        start = int(time.time() * 1000)
+        result = await analyze_code_relationships(
+            query_type=CodeGraphQueryType.MODULE_DEPS.value,
+            target=module_name,
+            context=self.repo_path,
+        )
+        took = int(time.time() * 1000) - start
+
+        return {
+            "source": "code_graph",
+            "query": f"module_deps:{module_name}",
+            "dependencies": result.get("results", []),
+            "took_ms": took,
+        }
+
+    async def get_call_chain(self, function_name: str) -> Dict[str, Any]:
+        """Get full call chain for a function."""
+        if not CODEGRAPH_AVAILABLE:
+            return {"source": "code_graph", "query": f"call_chain:{function_name}", "chain": [], "error": "CodeGraphContext not available"}
+
+        start = int(time.time() * 1000)
+        result = await analyze_code_relationships(
+            query_type=CodeGraphQueryType.CALL_CHAIN.value,
+            target=function_name,
+            context=self.repo_path,
+        )
+        took = int(time.time() * 1000) - start
+
+        return {
+            "source": "code_graph",
+            "query": f"call_chain:{function_name}",
+            "chain": result.get("results", []),
+            "took_ms": took,
+        }
+
     async def execute_query(
         self,
         query_type: str,
@@ -434,6 +739,8 @@ class CodeGraphRetriever:
             CodeGraphQueryType.FIND_DEFINITION.value: lambda: self.search(
                 target, limit
             ),
+            CodeGraphQueryType.MODULE_DEPS.value: self.get_module_deps,
+            CodeGraphQueryType.CALL_CHAIN.value: self.get_call_chain,
         }
 
         if query_type in query_map:

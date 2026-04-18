@@ -350,6 +350,353 @@ class GetJobStatusTool(BaseTool):
         return "job_id" in input
 
 
+class KubernetesSearchTool(BaseTool):
+    name = "kubernetes_search"
+    description = "Search Kubernetes manifests"
+
+    async def execute(self, input: ToolInput) -> ToolOutput:
+        try:
+            from retrieval.tooling import get_kubernetes_retriever
+            retriever = get_kubernetes_retriever()
+            result = await retriever.search(
+                query=input.args.get("query", ""),
+                limit=input.args.get("limit", 10),
+                kind=input.args.get("kind"),
+                namespace=input.args.get("namespace"),
+            )
+            return ToolOutput(result=result, metadata={"source": "kubernetes"})
+        except Exception as e:
+            return ToolOutput(result=None, error=str(e), metadata={})
+
+    def validate_input(self, input: Dict[str, Any]) -> bool:
+        return "query" in input
+
+
+class HelmSearchTool(BaseTool):
+    name = "helm_search"
+    description = "Search Helm charts"
+
+    async def execute(self, input: ToolInput) -> ToolOutput:
+        try:
+            from retrieval.tooling import get_helm_retriever
+            retriever = get_helm_retriever()
+            result = await retriever.search(
+                query=input.args.get("query", ""),
+                limit=input.args.get("limit", 10),
+                chart_name=input.args.get("chart_name"),
+            )
+            return ToolOutput(result=result, metadata={"source": "helm"})
+        except Exception as e:
+            return ToolOutput(result=None, error=str(e), metadata={})
+
+    def validate_input(self, input: Dict[str, Any]) -> bool:
+        return "query" in input
+
+
+class DockerfileSearchTool(BaseTool):
+    name = "dockerfile_search"
+    description = "Search Dockerfiles"
+
+    async def execute(self, input: ToolInput) -> ToolOutput:
+        try:
+            from retrieval.tooling import get_dockerfile_retriever
+            retriever = get_dockerfile_retriever()
+            result = await retriever.search(
+                query=input.args.get("query", ""),
+                limit=input.args.get("limit", 10),
+                instruction=input.args.get("instruction"),
+            )
+            return ToolOutput(result=result, metadata={"source": "dockerfile"})
+        except Exception as e:
+            return ToolOutput(result=None, error=str(e), metadata={})
+
+    def validate_input(self, input: Dict[str, Any]) -> bool:
+        return "query" in input
+
+
+class GraphQLSearchTool(BaseTool):
+    name = "graphql_search"
+    description = "Search GraphQL schemas"
+
+    async def execute(self, input: ToolInput) -> ToolOutput:
+        try:
+            from retrieval.tooling import get_graphql_retriever
+            retriever = get_graphql_retriever()
+            result = await retriever.search(
+                query=input.args.get("query", ""),
+                limit=input.args.get("limit", 10),
+                kind=input.args.get("kind"),
+            )
+            return ToolOutput(result=result, metadata={"source": "graphql"})
+        except Exception as e:
+            return ToolOutput(result=None, error=str(e), metadata={})
+
+    def validate_input(self, input: Dict[str, Any]) -> bool:
+        return "query" in input
+
+
+class IstioSearchTool(BaseTool):
+    name = "istio_search"
+    description = "Search Istio resources"
+
+    async def execute(self, input: ToolInput) -> ToolOutput:
+        try:
+            from retrieval.tooling import get_istio_retriever
+            retriever = get_istio_retriever()
+            result = await retriever.search(
+                query=input.args.get("query", ""),
+                limit=input.args.get("limit", 10),
+                kind=input.args.get("kind"),
+                namespace=input.args.get("namespace"),
+            )
+            return ToolOutput(result=result, metadata={"source": "istio"})
+        except Exception as e:
+            return ToolOutput(result=None, error=str(e), metadata={})
+
+    def validate_input(self, input: Dict[str, Any]) -> bool:
+        return "query" in input
+
+
+class FindCallersTool(BaseTool):
+    name = "find_callers"
+    description = "Find functions that call a function"
+
+    async def execute(self, input: ToolInput) -> ToolOutput:
+        try:
+            from retrieval.code_graph import get_code_graph_retriever
+            retriever = get_code_graph_retriever()
+            result = await retriever.find_callers(
+                function_name=input.args.get("function_name", ""),
+                limit=input.args.get("limit", 20),
+            )
+            return ToolOutput(result=result, metadata={"method": "find_callers"})
+        except Exception as e:
+            return ToolOutput(result=None, error=str(e), metadata={})
+
+    def validate_input(self, input: Dict[str, Any]) -> bool:
+        return "function_name" in input
+
+
+class FindCalleesTool(BaseTool):
+    name = "find_callees"
+    description = "Find functions called by a function"
+
+    async def execute(self, input: ToolInput) -> ToolOutput:
+        try:
+            from retrieval.code_graph import get_code_graph_retriever
+            retriever = get_code_graph_retriever()
+            result = await retriever.find_callees(
+                function_name=input.args.get("function_name", ""),
+                limit=input.args.get("limit", 20),
+            )
+            return ToolOutput(result=result, metadata={"method": "find_callees"})
+        except Exception as e:
+            return ToolOutput(result=None, error=str(e), metadata={})
+
+    def validate_input(self, input: Dict[str, Any]) -> bool:
+        return "function_name" in input
+
+
+class FindDeadCodeTool(BaseTool):
+    name = "find_dead_code"
+    description = "Find unused code"
+
+    async def execute(self, input: ToolInput) -> ToolOutput:
+        try:
+            from retrieval.code_graph import get_code_graph_retriever
+            retriever = get_code_graph_retriever()
+            result = await retriever.search(
+                query="unused",
+                method="dead_code",
+                limit=input.args.get("limit", 20),
+            )
+            return ToolOutput(result=result, metadata={"method": "dead_code"})
+        except Exception as e:
+            return ToolOutput(result=None, error=str(e), metadata={})
+
+    def validate_input(self, input: Dict[str, Any]) -> bool:
+        return True
+
+
+class GetComplexityTool(BaseTool):
+    name = "get_complexity"
+    description = "Get function complexity"
+
+    async def execute(self, input: ToolInput) -> ToolOutput:
+        try:
+            from retrieval.code_graph import get_code_graph_retriever
+            retriever = get_code_graph_retriever()
+            function_name = input.args.get("function_name", "")
+            result = await retriever.search(
+                query=f"complexity {function_name}",
+                method="complexity",
+                limit=1,
+            )
+            return ToolOutput(result=result, metadata={"method": "complexity"})
+        except Exception as e:
+            return ToolOutput(result=None, error=str(e), metadata={})
+
+    def validate_input(self, input: Dict[str, Any]) -> bool:
+        return "function_name" in input
+
+
+class ClassHierarchyTool(BaseTool):
+    name = "class_hierarchy"
+    description = "Get class hierarchy"
+
+    async def execute(self, input: ToolInput) -> ToolOutput:
+        try:
+            from retrieval.code_graph import get_code_graph_retriever
+            retriever = get_code_graph_retriever()
+            class_name = input.args.get("class_name", "")
+            result = await retriever.search(
+                query=f"class {class_name}",
+                method="class_hierarchy",
+                limit=input.args.get("limit", 10),
+            )
+            return ToolOutput(result=result, metadata={"method": "class_hierarchy"})
+        except Exception as e:
+            return ToolOutput(result=None, error=str(e), metadata={})
+
+    def validate_input(self, input: Dict[str, Any]) -> bool:
+        return "class_name" in input
+
+
+class GetModuleDepsTool(BaseTool):
+    name = "get_module_deps"
+    description = "Get module dependencies"
+
+    async def execute(self, input: ToolInput) -> ToolOutput:
+        try:
+            from retrieval.code_graph import get_code_graph_retriever
+            retriever = get_code_graph_retriever()
+            module = input.args.get("module", "")
+            result = await retriever.search(
+                query=f"modules {module}",
+                method="module_deps",
+                limit=input.args.get("limit", 10),
+            )
+            return ToolOutput(result=result, metadata={"method": "module_deps"})
+        except Exception as e:
+            return ToolOutput(result=None, error=str(e), metadata={})
+
+    def validate_input(self, input: Dict[str, Any]) -> bool:
+        return True
+
+
+class ExtractFromImageTool(BaseTool):
+    name = "extract_from_image"
+    description = "Extract text from images using VLM"
+
+    async def execute(self, input: ToolInput) -> ToolOutput:
+        try:
+            from multimodal.vlm import get_vlm_provider
+            provider = get_vlm_provider()
+            if not provider:
+                return ToolOutput(result=None, error="No VLM provider configured", metadata={})
+            result = await provider.extract_text(
+                image_url=input.args.get("image_url", ""),
+            )
+            return ToolOutput(result={"extracted_text": result}, metadata={"source": "vlm"})
+        except Exception as e:
+            return ToolOutput(result=None, error=str(e), metadata={})
+
+    def validate_input(self, input: Dict[str, Any]) -> bool:
+        return "image_url" in input
+
+
+class AnalyzeVisualTool(BaseTool):
+    name = "analyze_visual"
+    description = "Analyze images/diagrams using VLM"
+
+    async def execute(self, input: ToolInput) -> ToolOutput:
+        try:
+            from multimodal.vlm import get_vlm_provider
+            provider = get_vlm_provider()
+            if not provider:
+                return ToolOutput(result=None, error="No VLM provider configured", metadata={})
+            result = await provider.analyze_image(
+                image_url=input.args.get("image_url", ""),
+                prompt=input.args.get("prompt", "Describe this image"),
+            )
+            return ToolOutput(result=result, metadata={"source": "vlm"})
+        except Exception as e:
+            return ToolOutput(result=None, error=str(e), metadata={})
+
+    def validate_input(self, input: Dict[str, Any]) -> bool:
+        return "image_url" in input and "prompt" in input
+
+
+class ParseDocumentAdvancedTool(BaseTool):
+    name = "parse_document_advanced"
+    description = "Parse documents with OCR using Docling"
+
+    async def execute(self, input: ToolInput) -> ToolOutput:
+        try:
+            from documents.parse import get_document_parser
+            parser = get_document_parser()
+            file_path = input.args.get("file_path")
+            url = input.args.get("url")
+            use_ocr = input.args.get("use_ocr", True)
+            if file_path:
+                result = await parser.parse_file(file_path, use_ocr=use_ocr)
+            elif url:
+                result = await parser.parse_url(url, use_ocr=use_ocr)
+            else:
+                return ToolOutput(result=None, error="file_path or url required", metadata={})
+            return ToolOutput(result=result, metadata={"parsed": True})
+        except Exception as e:
+            return ToolOutput(result=None, error=str(e), metadata={})
+
+    def validate_input(self, input: Dict[str, Any]) -> bool:
+        return "file_path" in input or "url" in input
+
+
+class ColpalSearchTool(BaseTool):
+    name = "colpal_search"
+    description = "Search images using visual embeddings"
+
+    async def execute(self, input: ToolInput) -> ToolOutput:
+        try:
+            from ui.colpali_integration import get_colpali_search_client
+            client = get_colpali_search_client()
+            if not client:
+                return ToolOutput(result=None, error="ColPali not configured", metadata={})
+            result = await client.search(
+                query=input.args.get("query", ""),
+                limit=input.args.get("limit", 10),
+            )
+            return ToolOutput(result=result, metadata={"source": "colpali"})
+        except Exception as e:
+            return ToolOutput(result=None, error=str(e), metadata={})
+
+    def validate_input(self, input: Dict[str, Any]) -> bool:
+        return "query" in input
+
+
+class UISketchSearchTool(BaseTool):
+    name = "ui_sketch_search"
+    description = "Search UI sketches and mockups"
+
+    async def execute(self, input: ToolInput) -> ToolOutput:
+        try:
+            from ui.retriever import get_ui_retriever
+            retriever = get_ui_retriever()
+            if not retriever:
+                return ToolOutput(result=None, error="UI retriever not configured", metadata={})
+            result = await retriever.search_combined(
+                query=input.args.get("query", ""),
+                element_types=[],
+                limit=input.args.get("limit", 10),
+            )
+            return ToolOutput(result=result, metadata={"source": "ui_sketch"})
+        except Exception as e:
+            return ToolOutput(result=None, error=str(e), metadata={})
+
+    def validate_input(self, input: Dict[str, Any]) -> bool:
+        return "query" in input
+
+
 class ToolRegistry:
     def __init__(self):
         self._tools: Dict[str, BaseTool] = {}
@@ -371,6 +718,22 @@ class ToolRegistry:
         self.register(EntitySearchTool())
         self.register(IngestSourceTool())
         self.register(GetJobStatusTool())
+        self.register(KubernetesSearchTool())
+        self.register(HelmSearchTool())
+        self.register(DockerfileSearchTool())
+        self.register(GraphQLSearchTool())
+        self.register(IstioSearchTool())
+        self.register(FindCallersTool())
+        self.register(FindCalleesTool())
+        self.register(FindDeadCodeTool())
+        self.register(GetComplexityTool())
+        self.register(ClassHierarchyTool())
+        self.register(GetModuleDepsTool())
+        self.register(ExtractFromImageTool())
+        self.register(AnalyzeVisualTool())
+        self.register(ParseDocumentAdvancedTool())
+        self.register(ColpalSearchTool())
+        self.register(UISketchSearchTool())
         from ui.suggestion_tool import UISuggestionTool
         self.register(UISuggestionTool())
 

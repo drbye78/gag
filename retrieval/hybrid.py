@@ -15,7 +15,7 @@ from retrieval.classifier import (
     get_query_classifier,
 )
 from retrieval.fusion import FusionMethod, ResultFusion, get_result_fusion
-from retrieval.reasoning import ReasoningEngine, ReasoningMode, get_reasoning_engine
+from retrieval.reasoning import ReasoningMode, get_reasoning_engine
 from retrieval.docs import DocsRetriever, get_docs_retriever
 from retrieval.graph import GraphRetriever, get_graph_retriever
 from retrieval.code import CodeRetriever, get_code_retriever
@@ -33,6 +33,7 @@ from retrieval.entity_cache import (
 )
 from retrieval.reasoning.entity_aware import get_entity_aware_reasoning_engine
 from retrieval.reasoning.iterative import get_iterative_reasoning_engine
+from retrieval.colbert import get_colbert_qdrant_retriever, get_colbert_search_client, ColBERTRetriever
 
 
 @dataclass
@@ -59,7 +60,7 @@ class HybridRetriever:
         self,
         classifier: Optional[QueryClassifier] = None,
         fusion: Optional[ResultFusion] = None,
-        reasoning: Optional[ReasoningEngine] = None,
+        reasoning: Any = None,
     ):
         self.classifier = classifier or get_query_classifier()
         self.fusion = fusion or get_result_fusion(FusionMethod.RRF)
@@ -77,6 +78,14 @@ class HybridRetriever:
         self._reranker: Optional[Any] = None
         self._entity_reasoning: Optional[Any] = None
         self._iterative_reasoning: Optional[Any] = None
+        self._colbert_retriever: Optional[Any] = None
+        self._diagram_retriever: Optional[Any] = None
+        self._ui_retriever: Optional[Any] = None
+        self._kubernetes_retriever: Optional[Any] = None
+        self._helm_retriever: Optional[Any] = None
+        self._dockerfile_retriever: Optional[Any] = None
+        self._graphql_retriever: Optional[Any] = None
+        self._istio_retriever: Optional[Any] = None
 
     # Lazy retriever properties
     @property
@@ -127,16 +136,149 @@ class HybridRetriever:
             self._iterative_reasoning = get_iterative_reasoning_engine()
         return self._iterative_reasoning
 
+    @property
+    def colbert_retriever(self) -> Optional[Any]:
+        from core.config import get_settings
+
+        settings = get_settings()
+        if not settings.colbert_enabled:
+            return None
+        if self._colbert_retriever is None:
+            self._colbert_retriever = get_colbert_search_client()
+        return self._colbert_retriever
+
+    @property
+    def diagram_retriever(self) -> Optional[Any]:
+        from core.config import get_settings
+
+        settings = get_settings()
+        if not settings.diagram_index_enabled:
+            return None
+        if self._diagram_retriever is None:
+            from retrieval.diagram import get_diagram_retriever
+            self._diagram_retriever = get_diagram_retriever()
+        return self._diagram_retriever
+
+    @property
+    def ui_retriever(self) -> Optional[Any]:
+        from core.config import get_settings
+
+        settings = get_settings()
+        if not settings.ui_sketch_enabled:
+            return None
+        if self._ui_retriever is None:
+            from ui.retriever import get_ui_retriever
+            self._ui_retriever = get_ui_retriever()
+        return self._ui_retriever
+
+    @property
+    def colpali_retriever(self) -> Optional[Any]:
+        from core.config import get_settings
+
+        settings = get_settings()
+        if not settings.colpali_enabled:
+            return None
+        if self._colpali_retriever is None:
+            from ui.colpali_integration import UISketchVisualIndexer
+            self._colpali_retriever = UISketchVisualIndexer()
+        return self._colpali_retriever
+
+    @property
+    def kubernetes_retriever(self) -> Optional[Any]:
+        if self._kubernetes_retriever is None:
+            from retrieval.tooling.kubernetes import get_kubernetes_retriever
+            self._kubernetes_retriever = get_kubernetes_retriever()
+        return self._kubernetes_retriever
+
+    @property
+    def helm_retriever(self) -> Optional[Any]:
+        if self._helm_retriever is None:
+            from retrieval.tooling.helm import get_helm_retriever
+            self._helm_retriever = get_helm_retriever()
+        return self._helm_retriever
+
+    @property
+    def dockerfile_retriever(self) -> Optional[Any]:
+        if self._dockerfile_retriever is None:
+            from retrieval.tooling.dockerfile import get_dockerfile_retriever
+            self._dockerfile_retriever = get_dockerfile_retriever()
+        return self._dockerfile_retriever
+
+    @property
+    def graphql_retriever(self) -> Optional[Any]:
+        if self._graphql_retriever is None:
+            from retrieval.tooling.graphql import get_graphql_retriever
+            self._graphql_retriever = get_graphql_retriever()
+        return self._graphql_retriever
+
+    @property
+    def istio_retriever(self) -> Optional[Any]:
+        if self._istio_retriever is None:
+            from retrieval.tooling.istio import get_istio_retriever
+            self._istio_retriever = get_istio_retriever()
+        return self._istio_retriever
+
+    async def link_query_entities(
+        self,
+        query: str,
+        limit: int = 10,
+    ) -> Dict[str, Any]:
+        query_entities = self._extract_entity_names(query)
+
+        if not query_entities:
+            return {"entities": [], "relationships": [], "communities": []}
+
+        graph_result = await self.graph_retriever.search(
+            " ".join(query_entities),
+            limit=limit,
+        )
+
+        relationships = []
+        community_ids = set()
+        for entity_name in query_entities:
+            rel_result = await self.graph_retriever.get_connected_nodes(entity_name)
+            for conn in rel_result.get("connected", []):
+                relationships.append(conn)
+                if "community" in conn.get("relationship", "").lower():
+                    community_ids.add(conn.get("node", {}).get("id", ""))
+
+        return {
+            "entities": graph_result.get("results", []),
+            "relationships": relationships,
+            "community_ids": list(community_ids),
+        }
+
+    def _extract_entity_names(self, query: str) -> List[str]:
+        words = query.split()
+        names = []
+        for word in words:
+            clean = word.rstrip(".,!?;:()[]{}'\"")
+            if clean and clean[0].isupper() and len(clean) > 1:
+                names.append(clean)
+        return names
+
     async def search(
         self,
         query: str,
         limit: int = 10,
         use_reasoning: bool = True,
+        force_graphrag: bool = False,
     ) -> Dict[str, Any]:
         start = int(time.time() * 1000)
 
         classification = self.classifier.classify(query)
         strategy = classification.get("strategy", RetrievalStrategy.VECTOR_ONLY.value)
+        primary_intent = classification.get("primary_intent", "")
+        requires_graph = classification.get("requires_graph", False)
+
+        is_relationship_query = primary_intent in ("relationship", "code_relationship") or requires_graph or force_graphrag
+        is_tooling_query = primary_intent == "tooling"
+
+        if is_relationship_query:
+            return await self._graph_aware_search(query, limit, start, use_reasoning, classification)
+
+        if is_tooling_query:
+            return await self._tooling_search(query, limit, start, classification)
 
         if strategy == RetrievalStrategy.VECTOR_ONLY.value:
             return await self._vector_only_search(query, limit, start)
@@ -150,6 +292,55 @@ class HybridRetriever:
             return await self._iterative_search(query, limit, start, use_reasoning)
         else:
             return await self._hybrid_search(query, limit, start, use_reasoning)
+
+    async def _graph_aware_search(
+        self,
+        query: str,
+        limit: int,
+        start: int,
+        use_reasoning: bool,
+        classification: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        entity_context = await self.link_query_entities(query, limit)
+
+        docs_result = await self.docs_retriever.search(query, limit=limit)
+        code_result = await self.code_retriever.search(query, limit=limit)
+        graph_result = await self.graph_retriever.search(query, limit=limit)
+
+        source_results = {
+            "docs": docs_result.get("results", []),
+            "code": code_result.get("results", []),
+            "graph": graph_result.get("results", []),
+        }
+        fused = self.fusion.fuse(source_results)
+
+        reasoning_result = None
+        if use_reasoning and entity_context.get("entities"):
+            entity_graph = {e.get("name", ""): e for e in entity_context.get("entities", [])}
+            reasoning_result = await self.entity_reasoning.reason(
+                query, fused, entity_graph
+            )
+        else:
+            reasoning_result = await self.reasoning.reason(query, fused)
+
+        answer = reasoning_result.get("answer", "") if reasoning_result else ""
+        confidence = reasoning_result.get("confidence", 0.0) if reasoning_result else 0.0
+        reasoning_mode = reasoning_result.get("reasoning_mode", "entity_aware") if reasoning_result else "direct"
+
+        took = int(time.time() * 1000) - start
+
+        return {
+            "query": query,
+            "answer": answer,
+            "results": fused[:limit],
+            "total": len(fused),
+            "confidence": confidence,
+            "reasoning_mode": reasoning_mode,
+            "entities": entity_context.get("entities", []),
+            "relationships": entity_context.get("relationships", []),
+            "strategy": "graph_aware",
+            "took_ms": took,
+        }
 
     async def _vector_only_search(
         self,
@@ -298,6 +489,58 @@ class HybridRetriever:
             "took_ms": took,
         }
 
+    async def _tooling_search(
+        self,
+        query: str,
+        limit: int,
+        start: int,
+        classification: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        source_types = classification.get("tooling_sources", [])
+        if not source_types:
+            source_types = ["kubernetes"]
+
+        tasks = []
+        source_names = []
+        if "kubernetes" in source_types:
+            tasks.append(self.kubernetes_retriever.search(query, limit))
+            source_names.append("kubernetes")
+        if "helm" in source_types:
+            tasks.append(self.helm_retriever.search(query, limit))
+            source_names.append("helm")
+        if "dockerfile" in source_types:
+            tasks.append(self.dockerfile_retriever.search(query, limit))
+            source_names.append("dockerfile")
+        if "graphql" in source_types:
+            tasks.append(self.graphql_retriever.search(query, limit))
+            source_names.append("graphql")
+        if "istio" in source_types:
+            tasks.append(self.istio_retriever.search(query, limit))
+            source_names.append("istio")
+
+        source_results = {}
+        if tasks:
+            import asyncio
+            gathered = await asyncio.gather(*tasks, return_exceptions=True)
+            for name, result in zip(source_names, gathered):
+                if isinstance(result, Exception):
+                    source_results[name] = []
+                else:
+                    source_results[name] = result.get("results", [])
+
+        fused = self.fusion.fuse(source_results)
+
+        took = int(time.time() * 1000) - start
+
+        return {
+            "query": query,
+            "results": fused[:limit],
+            "total": len(fused),
+            "strategy": "tooling",
+            "tooling_sources": source_names,
+            "took_ms": took,
+        }
+
     async def _iterative_search(
         self,
         query: str,
@@ -401,15 +644,67 @@ class HybridRetriever:
         start: int,
         use_reasoning: bool,
     ) -> Dict[str, Any]:
+        from core.config import get_settings
+
+        settings = get_settings()
+
         graph_result = await self.graph_retriever.search(query, limit=limit)
         docs_result = await self.docs_retriever.search(query, limit=limit)
         code_result = await self.code_retriever.search(query, limit=limit)
+
+        colbert_results = []
+        if settings.colbert_enabled and self.colbert_retriever:
+            try:
+                colbert_result = await self.colbert_retriever.search(
+                    query, limit=limit
+                )
+                colbert_results = colbert_result.get("results", []) if isinstance(colbert_result, dict) else []
+            except Exception:
+                pass
+
+        diagram_results = []
+        if settings.diagram_index_enabled and self.diagram_retriever:
+            try:
+                diagram_result = await self.diagram_retriever.search_diagrams(query, limit=limit, use_vector=True)
+                diagram_results = diagram_result.get("results", [])
+            except Exception:
+                pass
+
+        ui_results = []
+        if settings.ui_sketch_enabled and self.ui_retriever:
+            try:
+                ui_result = await self.ui_retriever.search_combined(
+                    element_types=[], limit=limit
+                )
+                ui_results = ui_result if isinstance(ui_result, list) else []
+            except Exception:
+                pass
+
+        colpali_results = []
+        if settings.colpali_enabled and self.colpali_retriever:
+            try:
+                colpali_result = await self.colpali_retriever.search(
+                    query, limit=limit
+                )
+                colpali_results = colpali_result.get("results", []) if isinstance(colpali_result, dict) else []
+            except Exception:
+                pass
 
         source_results = {
             "graph": graph_result.get("results", []),
             "docs": docs_result.get("results", []),
             "code": code_result.get("results", []),
         }
+
+        if colbert_results:
+            source_results["colbert"] = colbert_results
+        if diagram_results:
+            source_results["diagram"] = diagram_results
+        if ui_results:
+            source_results["ui_sketch"] = ui_results
+        if colpali_results:
+            source_results["colpali"] = colpali_results
+
         fused = self.fusion.fuse(source_results)
 
         if use_reasoning:
@@ -436,6 +731,10 @@ class HybridRetriever:
                 "graph": graph_result.get("total", 0),
                 "docs": docs_result.get("total", 0),
                 "code": code_result.get("total", 0),
+                "colbert": len(colbert_results),
+                "diagram": len(diagram_results),
+                "ui_sketch": len(ui_results),
+                "colpali": len(colpali_results),
             },
             "took_ms": took,
         }
@@ -446,10 +745,12 @@ class HybridRetriever:
         limit: int = 10,
         use_reasoning: bool = True,
         primary_sources: Optional[List[str]] = None,
+        classification: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         start = int(time.time() * 1000)
 
         sources = primary_sources or ["docs", "code", "graph"]
+        classification = classification or {}
 
         source_results = {}
         for src in sources:
@@ -471,8 +772,9 @@ class HybridRetriever:
         total_results = sum(len(v.get("results", [])) for v in source_results.values())
 
         if total_results < limit and "code_graph" not in sources:
+            codegraph_method = classification.get("codegraph_method")
             cg_result = await self.code_graph_retriever.search(
-                query, limit=limit - total_results
+                query, limit=limit - total_results, method=codegraph_method
             )
             source_results["code_graph"] = cg_result
             fused.extend(cg_result.get("results", []))

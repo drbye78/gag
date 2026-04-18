@@ -10,8 +10,8 @@ Returns service information and available endpoints.
 ```json
 {
   "service": "SAP BTP Engineering Intelligence",
-  "version": "2.4.0",
-  "endpoints": ["/health", "/query", "/mcp", ...]
+  "version": "3.0.0",
+  "endpoints": ["/health", "/query", "/mcp", "/search/*", "/codegraph/*", ...]
 }
 ```
 
@@ -21,7 +21,7 @@ Health check with dependency status.
 ```json
 {
   "status": "healthy",
-  "version": "2.4.0"
+  "version": "3.0.0"
 }
 ```
 
@@ -311,6 +311,311 @@ Ingest specific Confluence pages.
 
 ### `POST /documents/webdav/sync`
 Sync documents from WebDAV.
+
+---
+
+## GraphRAG Endpoints
+
+GraphRAG provides entity-aware querying with knowledge graph integration.
+
+### `POST /graphrag/query`
+Query with entity-aware reasoning and knowledge graph traversal.
+
+**Request:**
+```json
+{
+  "query": "How is John related to Acme Corp?",
+  "include_entities": true,
+  "include_relationships": true,
+  "include_communities": false,
+  "max_hops": 3
+}
+```
+
+**Response:**
+```json
+{
+  "query": "How is John related to Acme Corp?",
+  "answer": "John works at Acme Corp...",
+  "entities": [{"name": "John", "type": "PERSON"}, {"name": "Acme Corp", "type": "ORGANIZATION"}],
+  "relationships": [{"node": {"name": "Acme Corp"}, "relationship": "WORKS_FOR"}],
+  "communities": [],
+  "confidence": 0.85,
+  "sources": [{"content": "...", "score": 0.9}],
+  "took_ms": 250
+}
+```
+
+### `GET /graphrag/entities`
+List all entities in the knowledge graph.
+
+**Query Parameters:**
+- `source_id` (optional) — Filter by source document
+- `entity_type` (optional) — Filter by entity type (PERSON, ORGANIZATION, etc.)
+- `limit` (default: 100) — Max results
+
+**Response:**
+```json
+{
+  "entities": [{"id": "...", "name": "John", "type": "PERSON"}],
+  "total": 1
+}
+```
+
+### `GET /graphrag/entities/{entity_id}`
+Get specific entity with its relationships.
+
+**Response:**
+```json
+{
+  "entity": {"id": "...", "name": "John", "type": "PERSON", "description": "..."},
+  "relationships": [{"node": {"name": "Acme Corp"}, "relationship": "WORKS_FOR"}]
+}
+```
+
+### `GET /graphrag/relationships`
+List all relationships in the knowledge graph.
+
+**Query Parameters:**
+- `source_id` (optional) — Filter by source
+- `relationship_type` (optional) — Filter by type
+- `limit` (default: 100) — Max results
+
+### `GET /graphrag/communities`
+List all communities (entity clusters).
+
+**Query Parameters:**
+- `source_id` (optional) — Filter by source
+- `min_size` (default: 1) — Minimum community size
+- `limit` (default: 50) — Max results
+
+**Response:**
+```json
+[
+  {
+    "id": "community-1",
+    "name": "AI Team",
+    "members": [{"name": "John", "type": "PERSON"}],
+    "size": 3
+  }
+]
+```
+
+### `GET /graphrag/communities/{community_id}`
+Get specific community details.
+
+### `GET /graphrag/stats`
+Get GraphRAG system statistics.
+
+**Response:**
+```json
+{
+  "total_entities": 150,
+  "total_relationships": 320,
+  "total_communities": 12,
+  "entity_types": {"PERSON": 50, "ORGANIZATION": 30, "TECHNOLOGY": 70},
+  "relationship_types": {"WORKS_FOR": 40, "DEPENDS_ON": 80},
+  "avg_entities_per_community": 12.5
+}
+```
+
+---
+
+## Tooling Search
+
+Search across Kubernetes manifests, Helm charts, Dockerfiles, GraphQL schemas, and Istio configurations.
+
+### `POST /search/kubernetes`
+Search Kubernetes manifests.
+
+**Request:**
+```json
+{
+  "query": "deployment replicas",
+  "limit": 10,
+  "entity_type": "Deployment"
+}
+```
+
+**Response:**
+```json
+{
+  "query": "deployment replicas",
+  "results": [{"content": "...", "metadata": {"kind": "Deployment", "namespace": "default"}}],
+  "tool": "kubernetes",
+  "count": 1
+}
+```
+
+Supported entity types: `Deployment`, `Service`, `ConfigMap`, `Pod`, `Ingress`, `Secret`, `StatefulSet`, `DaemonSet`
+
+### `POST /search/helm`
+Search Helm charts.
+
+**Request:**
+```json
+{
+  "query": "values image",
+  "limit": 10
+}
+```
+
+### `POST /search/dockerfile`
+Search Dockerfiles.
+
+**Request:**
+```json
+{
+  "query": "npm install",
+  "limit": 10
+}
+```
+
+### `POST /search/graphql`
+Search GraphQL schemas.
+
+**Request:**
+```json
+{
+  "query": "type Query",
+  "limit": 10
+}
+```
+
+### `POST /search/istio`
+Search Istio configurations.
+
+**Request:**
+```json
+{
+  "query": "VirtualService",
+  "limit": 10
+}
+```
+
+---
+
+## CodeGraph
+
+Code analysis via CodeGraphContext MCP - find code relationships, complexity, and visualize call graphs.
+
+### `POST /codegraph/find`
+Find code snippets matching a query.
+
+**Request:**
+```json
+{
+  "query": "get_user",
+  "fuzzy": false,
+  "edit_distance": 2,
+  "repo_path": "/path/to/repo",
+  "limit": 10
+}
+```
+
+**Response:**
+```json
+{
+  "query": "get_user",
+  "results": [{"name": "get_user", "path": "src/auth.py", "line": 42}],
+  "method": "find_code",
+  "count": 1
+}
+```
+
+### `POST /codegraph/relationships`
+Find code relationships (callers, callees, imports, etc.).
+
+**Request:**
+```json
+{
+  "query_type": "find_callers",
+  "target": "process_request",
+  "context": "src/handler.py",
+  "repo_path": "/path/to/repo"
+}
+```
+
+Supported query types: `find_callers`, `find_callees`, `find_all_callers`, `find_all_callees`, `find_importers`, `class_hierarchy`, `overrides`, `dead_code`, `complexity`, `call_chain`, `module_deps`
+
+### `GET /codegraph/complex`
+Find most complex functions.
+
+**Query Parameters:**
+- `limit` (default: 10)
+- `repo_path` (optional)
+
+### `GET /codegraph/dead-code`
+Find unused functions.
+
+**Query Parameters:**
+- `repo_path` (optional)
+- `exclude_decorated_with` (optional, e.g., `["@app.route"]`)
+
+### `POST /codegraph/visualize`
+Generate visualization URL for a Cypher query.
+
+**Request:**
+```json
+{
+  "cypher_query": "MATCH (f:Function)-[:CALLS]->(g:Function) RETURN f.name, g.name"
+}
+```
+
+**Response:**
+```json
+{
+  "url": "https://...",
+  "cypher_query": "MATCH ..."
+}
+```
+
+---
+
+## Multi-Modal Search
+
+Search using visual embeddings and UI sketch similarity.
+
+### `POST /search/colpal`
+Search using ColPali visual embeddings.
+
+**Request:**
+```json
+{
+  "query": "login form",
+  "limit": 10
+}
+```
+
+**Response:**
+```json
+{
+  "query": "login form",
+  "results": [{"sketch_id": "...", "title": "Login Screen"}],
+  "method": "colpal",
+  "count": 1
+}
+```
+
+### `POST /search/ui-sketch`
+Find similar UI sketches by structural elements.
+
+**Request:**
+```json
+{
+  "sketch_data": "Button",
+  "limit": 10
+}
+```
+
+**Response:**
+```json
+{
+  "results": [{"sketch_id": "...", "title": "Submit Form"}],
+  "method": "ui_sketch",
+  "count": 1
+}
+```
 
 ---
 

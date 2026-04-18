@@ -148,6 +148,76 @@ class VectorIndexer:
             metadata={"total_chunks": len(chunks), "source_tag": source_tag},
         )
 
+    async def index_with_entities(
+        self,
+        chunks: List[Dict[str, Any]],
+        entities: List[Dict[str, Any]],
+        source_tag: str = "default",
+    ) -> IndexerResult:
+        start = time.time()
+        errors = []
+
+        if not chunks:
+            return IndexerResult(
+                target="qdrant",
+                indexed_count=0,
+                took_ms=0,
+                errors=[],
+                metadata={},
+            )
+
+        points = []
+        for chunk, entity in zip(chunks, entities):
+            point = {
+                "id": chunk.get("id", str(uuid.uuid4())),
+                "vector": chunk.get("embedding", []),
+                "payload": {
+                    "content": chunk.get("content", ""),
+                    "source_id": chunk.get("source_id", ""),
+                    "source_type": chunk.get("source_type", "document"),
+                    "chunk_index": chunk.get("chunk_index", 0),
+                    "metadata": chunk.get("metadata", {}),
+                    "source_tag": source_tag,
+                    "entity_type": entity.get("entity_type", "unknown"),
+                    "entity_name": entity.get("name", ""),
+                    "language": entity.get("language", ""),
+                    "start_line": entity.get("start_line", 0),
+                    "end_line": entity.get("end_line", 0),
+                },
+            }
+            points.append(point)
+
+        client = await self._get_client()
+        batch_size = 100
+        indexed = 0
+        for i in range(0, len(points), batch_size):
+            batch = points[i : i + batch_size]
+            try:
+                resp = await client.put(
+                    f"{self.base_url}/collections/{self.collection}/points",
+                    json={"points": batch},
+                    timeout=60.0,
+                )
+                if resp.status_code in (200, 201):
+                    indexed += len(batch)
+                else:
+                    errors.append(f"Batch {i // batch_size} failed: HTTP {resp.status_code}")
+            except Exception as e:
+                errors.append(f"Batch {i // batch_size} error: {e}")
+
+        took = int((time.time() - start) * 1000)
+        return IndexerResult(
+            target="qdrant",
+            indexed_count=indexed,
+            took_ms=took,
+            errors=errors,
+            metadata={
+                "total_chunks": len(chunks),
+                "source_tag": source_tag,
+                "with_entities": True,
+            },
+        )
+
     async def delete_by_source(
         self,
         source_id: str,

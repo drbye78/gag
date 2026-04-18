@@ -464,3 +464,147 @@ def get_code_chunker() -> CodeChunker:
 
 def get_markdown_chunker() -> MarkdownChunker:
     return MarkdownChunker()
+
+
+CHUNKER_REGISTRY = {
+    ".md": "semantic",
+    ".markdown": "semantic",
+    ".py": "code",
+    ".js": "code",
+    ".ts": "code",
+    ".tsx": "code",
+    ".jsx": "code",
+    ".go": "code",
+    ".rs": "code",
+    ".java": "code",
+    ".kt": "code",
+    ".kts": "code",
+    ".c": "code",
+    ".cpp": "code",
+    ".h": "code",
+    ".hpp": "code",
+    ".json": "semantic",
+    ".xml": "semantic",
+    ".html": "semantic",
+    ".htm": "semantic",
+    ".txt": "sentence",
+    ".rst": "sentence",
+    ".mdx": "semantic",
+    ".yaml": "semantic",
+    ".yml": "semantic",
+    ".graphql": "semantic",
+    ".gql": "semantic",
+    "Dockerfile": "dockerfile",
+    "istio": "istio",
+    "virtualservice": "istio",
+    "destinationrule": "istio",
+    "gateway": "istio",
+    # Tooling-specific entries
+    "kubernetes": "kubernetes",
+    "helm": "helm",
+}
+
+
+def _get_chunker_factory() -> Dict[str, callable]:
+    """Factory map for instantiating chunkers by type name."""
+    return {
+        "code": lambda: CodeChunker(),
+        "dockerfile": lambda: _get_dockerfile_chunker(),
+        "istio": lambda: _get_istio_chunker(),
+        "kubernetes": lambda: _get_kubernetes_chunker(),
+        "helm": lambda: _get_helm_chunker(),
+        "graphql": lambda: _get_graphql_chunker(),
+        "semantic": lambda: DocumentChunker(),
+        "sentence": lambda: DocumentChunker(),
+    }
+
+
+def _get_dockerfile_chunker() -> "TextChunker":
+    from ingestion.dockerfile_chunker import get_dockerfile_chunker as _factory
+    return _factory()
+
+
+def _get_istio_chunker() -> "TextChunker":
+    from ingestion.istio_chunker import get_istio_chunker as _factory
+    return _factory()
+
+
+def _get_kubernetes_chunker() -> "TextChunker":
+    from ingestion.k8s_chunker import get_kubernetes_chunker as _factory
+    return _factory()
+
+
+def _get_helm_chunker() -> "TextChunker":
+    from ingestion.helm_chunker import get_helm_chunker as _factory
+    return _factory()
+
+
+def _get_graphql_chunker() -> "TextChunker":
+    from ingestion.graphql_chunker import get_graphql_chunker as _factory
+    return _factory()
+
+
+def get_chunker(type_name: str) -> TextChunker:
+    """Factory to instantiate chunker by name.
+    
+    Args:
+        type_name: Chunkers type name (code, dockerfile, istio, kubernetes, helm, graphql, semantic, sentence)
+    
+    Returns:
+        Instantiated chunker
+    
+    Raises:
+        ValueError: If chunker type not found
+    """
+    factory = _get_chunker_factory().get(type_name)
+    if not factory:
+        raise ValueError(f"Unknown chunker type: {type_name}")
+    return factory()
+
+
+def get_chunker_for_file(file_path: str) -> str:
+    """Get recommended chunker type for a file based on extension."""
+    ext = Path(file_path).suffix.lower()
+    chunker_type = CHUNKER_REGISTRY.get(ext, "semantic")
+    
+    if chunker_type == "semantic":
+        file_lower = file_path.lower()
+        if "virtualservice" in file_lower or "destinationrule" in file_lower or \
+           "gateway" in file_lower and "istio" in file_lower or \
+           "serviceentry" in file_lower or "envoyfilter" in file_lower or \
+           "authorizationpolicy" in file_lower or "sidecar" in file_lower:
+            return "istio"
+        if file_lower.endswith(".yaml") or file_lower.endswith(".yml"):
+            try:
+                with open(file_path, 'r') as f:
+                    content = f.read(2000)
+                    if "networking.istio.io" in content or "apiVersion: networking.istio.io" in content:
+                        return "istio"
+            except Exception:
+                pass
+    
+    return chunker_type
+
+
+def get_chunker_from_settings():
+    """Get chunker based on config settings - uses LlamaIndex semantic chunker by default."""
+    from core.config import get_settings
+    from documents.semantic_chunker import get_semantic_chunker_from_settings, get_sentence_chunker_from_settings
+
+    settings = get_settings()
+    chunk_type = settings.chunking_chunker_type
+
+    chunkers = {
+        "semantic": get_semantic_chunker_from_settings,
+        "sentence": get_sentence_chunker_from_settings,
+    }
+
+    if chunk_type not in chunkers:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            f"Unknown chunker type '{chunk_type}', defaulting to semantic"
+        )
+        chunk_type = "semantic"
+
+    return chunkers[chunk_type]()

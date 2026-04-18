@@ -81,6 +81,16 @@ except ImportError as e:
 
     logging.getLogger(__name__).warning("UI API not available: %s", e)
 
+# GraphRAG API
+try:
+    from api.graphrag import router as graphrag_router
+
+    app.include_router(graphrag_router)
+except ImportError as e:
+    import logging
+
+    logging.getLogger(__name__).warning("GraphRAG API not available: %s", e)
+
 # Configure middleware
 setup_middleware(app)
 
@@ -225,6 +235,11 @@ async def root():
             "/rerank",
             "/citations",
             "/hybrid/enhanced",
+            "/graphrag/query",
+            "/graphrag/entities",
+            "/graphrag/relationships",
+            "/graphrag/communities",
+            "/graphrag/stats",
             "/ingestion/ingest",
             "/ingestion/batch",
             "/ingestion/codebase",
@@ -343,12 +358,12 @@ async def rerank(request: RerankRequest):
 async def generate_citations(request: CitationRequest):
     from retrieval.citations import CitationBuilder, CitationStyle
 
-    builder = CitationBuilder()
     style = (
         CitationStyle(request.style) if request.style else CitationStyle.PARENTHETICAL
     )
+    builder = CitationBuilder(style=style)
 
-    annotated = builder.build(request.answer, request.sources, style=style)
+    annotated = builder.build(request.answer, request.sources)
 
     return CitationResponse(
         answer=annotated.answer,
@@ -429,6 +444,322 @@ async def entity_cache_invalidate(request: EntityCacheInvalidateRequest):
         message="Cache cleared"
         if not request.entity_name
         else f"Invalidated '{request.entity_name}'",
+    )
+
+
+# Tooling Search Request/Response models
+
+
+class ToolingSearchRequest(BaseModel):
+    query: str
+    limit: Optional[int] = 10
+    entity_type: Optional[str] = None
+
+    @field_validator("query")
+    @classmethod
+    def query_not_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("query must not be empty")
+        return v.strip()
+
+
+class ToolingSearchResponse(BaseModel):
+    query: str
+    results: Any
+    tool: str
+    count: int
+
+
+# ---------------------------------------------------------------------------
+# CodeGraph Request/Response models
+# ---------------------------------------------------------------------------
+
+
+class CodeGraphFindRequest(BaseModel):
+    query: str
+    fuzzy: Optional[bool] = False
+    edit_distance: Optional[int] = 2
+    repo_path: Optional[str] = None
+    limit: Optional[int] = 10
+
+
+class CodeGraphRelationshipRequest(BaseModel):
+    query_type: str
+    target: str
+    context: Optional[str] = None
+    repo_path: Optional[str] = None
+
+
+class CodeGraphComplexRequest(BaseModel):
+    limit: Optional[int] = 10
+    repo_path: Optional[str] = None
+
+
+class CodeGraphDeadCodeRequest(BaseModel):
+    exclude_decorated_with: Optional[List[str]] = []
+    repo_path: Optional[str] = None
+
+
+class CodeGraphVisualizeRequest(BaseModel):
+    cypher_query: str
+
+
+class CodeGraphResponse(BaseModel):
+    query: str
+    results: Any
+    method: str
+    count: int
+
+
+# ---------------------------------------------------------------------------
+# Multi-Modal Search Request/Response models
+# ---------------------------------------------------------------------------
+
+
+class ColPALSearchRequest(BaseModel):
+    query: str
+    limit: Optional[int] = 10
+
+
+class ColPALSearchResponse(BaseModel):
+    query: str
+    results: Any
+    method: str = "colpal"
+    count: int
+
+
+class UISketchSearchRequest(BaseModel):
+    sketch_data: str
+    limit: Optional[int] = 10
+
+
+class UISketchSearchResponse(BaseModel):
+    results: Any
+    method: str = "ui_sketch"
+    count: int
+
+
+# ---------------------------------------------------------------------------
+# Tooling Search Endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.post("/search/kubernetes", response_model=ToolingSearchResponse)
+async def search_kubernetes(request: ToolingSearchRequest):
+    from retrieval.tooling.kubernetes import KubernetesRetriever
+
+    retriever = KubernetesRetriever()
+    results = await retriever.search(request.query, limit=request.limit or 10)
+
+    if request.entity_type:
+        results = [r for r in results if r.get("entity_type") == request.entity_type]
+
+    return ToolingSearchResponse(
+        query=request.query,
+        results=results,
+        tool="kubernetes",
+        count=len(results),
+    )
+
+
+@app.post("/search/helm", response_model=ToolingSearchResponse)
+async def search_helm(request: ToolingSearchRequest):
+    from retrieval.tooling.helm import HelmRetriever
+
+    retriever = HelmRetriever()
+    results = await retriever.search(request.query, limit=request.limit or 10)
+
+    if request.entity_type:
+        results = [r for r in results if r.get("entity_type") == request.entity_type]
+
+    return ToolingSearchResponse(
+        query=request.query,
+        results=results,
+        tool="helm",
+        count=len(results),
+    )
+
+
+@app.post("/search/dockerfile", response_model=ToolingSearchResponse)
+async def search_dockerfile(request: ToolingSearchRequest):
+    from retrieval.tooling.dockerfile import DockerfileRetriever
+
+    retriever = DockerfileRetriever()
+    results = await retriever.search(request.query, limit=request.limit or 10)
+
+    if request.entity_type:
+        results = [r for r in results if r.get("entity_type") == request.entity_type]
+
+    return ToolingSearchResponse(
+        query=request.query,
+        results=results,
+        tool="dockerfile",
+        count=len(results),
+    )
+
+
+@app.post("/search/graphql", response_model=ToolingSearchResponse)
+async def search_graphql(request: ToolingSearchRequest):
+    from retrieval.tooling.graphql import GraphQLRetriever
+
+    retriever = GraphQLRetriever()
+    results = await retriever.search(request.query, limit=request.limit or 10)
+
+    if request.entity_type:
+        results = [r for r in results if r.get("entity_type") == request.entity_type]
+
+    return ToolingSearchResponse(
+        query=request.query,
+        results=results,
+        tool="graphql",
+        count=len(results),
+    )
+
+
+@app.post("/search/istio", response_model=ToolingSearchResponse)
+async def search_istio(request: ToolingSearchRequest):
+    from retrieval.tooling.istio import IstioRetriever
+
+    retriever = IstioRetriever()
+    results = await retriever.search(request.query, limit=request.limit or 10)
+
+    if request.entity_type:
+        results = [r for r in results if r.get("entity_type") == request.entity_type]
+
+    return ToolingSearchResponse(
+        query=request.query,
+        results=results,
+        tool="istio",
+        count=len(results),
+    )
+
+
+# ---------------------------------------------------------------------------
+# CodeGraph Endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.post("/codegraph/find", response_model=CodeGraphResponse)
+async def codegraph_find(request: CodeGraphFindRequest):
+    from retrieval.code_graph import CodeGraphRetriever
+
+    retriever = CodeGraphRetriever(repo_path=request.repo_path)
+    result = await retriever.search(
+        request.query,
+        limit=request.limit or 10,
+        method="find_code",
+    )
+
+    return CodeGraphResponse(
+        query=request.query,
+        results=result.get("results", []),
+        method="find_code",
+        count=result.get("total", 0),
+    )
+
+
+@app.post("/codegraph/relationships", response_model=CodeGraphResponse)
+async def codegraph_relationships(request: CodeGraphRelationshipRequest):
+    from retrieval.code_graph import CodeGraphRetriever
+
+    retriever = CodeGraphRetriever(repo_path=request.repo_path)
+    result = await retriever.search(
+        f"{request.query_type}:{request.target}",
+        limit=20,
+        method=request.query_type,
+    )
+
+    return CodeGraphResponse(
+        query=f"{request.query_type}:{request.target}",
+        results=result.get("results", []),
+        method="relationships",
+        count=result.get("total", 0),
+    )
+
+
+@app.get("/codegraph/complex", response_model=CodeGraphResponse)
+async def codegraph_complex(request: CodeGraphComplexRequest = CodeGraphComplexRequest()):
+    from retrieval.code_graph import CodeGraphRetriever
+
+    retriever = CodeGraphRetriever(repo_path=request.repo_path)
+    result = await retriever.search(
+        "most_complex_functions",
+        limit=request.limit or 10,
+        method="complexity",
+    )
+
+    return CodeGraphResponse(
+        query="most_complex_functions",
+        results=result.get("results", []),
+        method="complexity",
+        count=result.get("total", 0),
+    )
+
+
+@app.get("/codegraph/dead-code", response_model=CodeGraphResponse)
+async def codegraph_dead_code(request: CodeGraphDeadCodeRequest = CodeGraphDeadCodeRequest()):
+    from retrieval.code_graph import CodeGraphRetriever
+
+    retriever = CodeGraphRetriever(repo_path=request.repo_path)
+    result = await retriever.search(
+        "dead_code",
+        limit=50,
+        method="dead_code",
+    )
+
+    return CodeGraphResponse(
+        query="dead_code",
+        results=result.get("results", []),
+        method="dead_code",
+        count=result.get("total", 0),
+    )
+
+
+@app.post("/codegraph/visualize")
+async def codegraph_visualize(request: CodeGraphVisualizeRequest):
+    from retrieval.code_graph import CodeGraphRetriever
+
+    retriever = CodeGraphRetriever()
+    result = await retriever.visualize(request.cypher_query)
+
+    return {"url": result.get("url"), "cypher_query": request.cypher_query}
+
+
+# ---------------------------------------------------------------------------
+# Multi-Modal Search Endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.post("/search/colpal", response_model=ColPALSearchResponse)
+async def search_colpal(request: ColPALSearchRequest):
+    from ui.retriever import get_ui_retriever
+
+    retriever = get_ui_retriever()
+    results = await retriever.search_combined(
+        element_types=[request.query], limit=request.limit or 10
+    )
+
+    return ColPALSearchResponse(
+        query=request.query,
+        results=results,
+        method="colpal",
+        count=len(results),
+    )
+
+
+@app.post("/search/ui-sketch", response_model=UISketchSearchResponse)
+async def search_ui_sketch(request: UISketchSearchRequest):
+    from ui.retriever import get_ui_retriever
+
+    retriever = get_ui_retriever()
+    results = await retriever.search_combined(
+        element_types=[request.sketch_data], limit=request.limit or 10
+    )
+
+    return UISketchSearchResponse(
+        results=results,
+        method="ui_sketch",
+        count=len(results),
     )
 
 

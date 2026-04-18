@@ -254,6 +254,207 @@ def get_mcp_tools() -> List[MCPToolDefinition]:
                 "required": ["job_id"],
             },
         ),
+        MCPToolDefinition(
+            name="kubernetes_search",
+            description="Search Kubernetes manifests (Deployments, Services, ConfigMaps, etc.)",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "limit": {"type": "integer", "default": 10},
+                    "kind": {"type": "string"},
+                    "namespace": {"type": "string"},
+                    "entity_type": {"type": "string"},
+                },
+                "required": ["query"],
+            },
+        ),
+        MCPToolDefinition(
+            name="helm_search",
+            description="Search Helm charts",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "limit": {"type": "integer", "default": 10},
+                    "chart_name": {"type": "string"},
+                    "version": {"type": "string"},
+                },
+                "required": ["query"],
+            },
+        ),
+        MCPToolDefinition(
+            name="dockerfile_search",
+            description="Search Dockerfiles",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "limit": {"type": "integer", "default": 10},
+                    "instruction": {"type": "string"},
+                    "base_image": {"type": "string"},
+                },
+                "required": ["query"],
+            },
+        ),
+        MCPToolDefinition(
+            name="graphql_search",
+            description="Search GraphQL schemas",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "limit": {"type": "integer", "default": 10},
+                    "kind": {"type": "string"},
+                    "type_name": {"type": "string"},
+                },
+                "required": ["query"],
+            },
+        ),
+        MCPToolDefinition(
+            name="istio_search",
+            description="Search Istio networking resources (VirtualService, DestinationRule, etc.)",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "limit": {"type": "integer", "default": 10},
+                    "kind": {"type": "string"},
+                    "namespace": {"type": "string"},
+                    "host": {"type": "string"},
+                },
+                "required": ["query"],
+            },
+        ),
+        MCPToolDefinition(
+            name="find_callers",
+            description="Find functions that call a specific function",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "function_name": {"type": "string"},
+                    "limit": {"type": "integer", "default": 20},
+                },
+                "required": ["function_name"],
+            },
+        ),
+        MCPToolDefinition(
+            name="find_callees",
+            description="Find functions called by a specific function",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "function_name": {"type": "string"},
+                    "limit": {"type": "integer", "default": 20},
+                },
+                "required": ["function_name"],
+            },
+        ),
+        MCPToolDefinition(
+            name="find_dead_code",
+            description="Find unused/dead code in the codebase",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "default": 20},
+                },
+            },
+        ),
+        MCPToolDefinition(
+            name="get_complexity",
+            description="Get cyclomatic complexity of a function",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "function_name": {"type": "string"},
+                },
+                "required": ["function_name"],
+            },
+        ),
+        MCPToolDefinition(
+            name="class_hierarchy",
+            description="Get class inheritance hierarchy",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "class_name": {"type": "string"},
+                    "limit": {"type": "integer", "default": 10},
+                },
+                "required": ["class_name"],
+            },
+        ),
+        MCPToolDefinition(
+            name="get_module_deps",
+            description="Get module dependencies",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "module": {"type": "string"},
+                    "limit": {"type": "integer", "default": 10},
+                },
+            },
+        ),
+        MCPToolDefinition(
+            name="extract_from_image",
+            description="Extract text from images using VLM (OCR)",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "image_url": {"type": "string"},
+                    "prompt": {"type": "string", "default": "Extract all text from this image"},
+                },
+                "required": ["image_url"],
+            },
+        ),
+        MCPToolDefinition(
+            name="analyze_visual",
+            description="Analyze images/diagrams using Vision Language Model",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "image_url": {"type": "string"},
+                    "prompt": {"type": "string"},
+                },
+                "required": ["image_url", "prompt"],
+            },
+        ),
+        MCPToolDefinition(
+            name="parse_document_advanced",
+            description="Parse documents with OCR using Docling",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string"},
+                    "url": {"type": "string"},
+                    "use_ocr": {"type": "boolean", "default": True},
+                },
+            },
+        ),
+        MCPToolDefinition(
+            name="colpal_search",
+            description="Search images using visual embeddings (ColPali)",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "limit": {"type": "integer", "default": 10},
+                },
+                "required": ["query"],
+            },
+        ),
+        MCPToolDefinition(
+            name="ui_sketch_search",
+            description="Search UI sketches and mockups",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "limit": {"type": "integer", "default": 10},
+                    "element_type": {"type": "string"},
+                },
+                "required": ["query"],
+            },
+        ),
     ]
 
 
