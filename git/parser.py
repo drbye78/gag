@@ -54,10 +54,16 @@ class CodeParser:
             "python": self._parse_python,
             "javascript": self._parse_javascript,
             "typescript": self._parse_typescript,
+            "tsx": self._parse_typescript,
+            "jsx": self._parse_typescript,
             "go": self._parse_go,
             "rust": self._parse_rust,
             "java": self._parse_java,
             "csharp": self._parse_csharp,
+            "kotlin": self._parse_kotlin,
+            "maven": self._parse_maven,
+            "gradle": self._parse_gradle,
+            "istio": self._parse_istio,
         }
 
     def parse(self, content: str, file_path: str) -> ParsedFile:
@@ -77,13 +83,25 @@ class CodeParser:
             ".rs": "rust",
             ".java": "java",
             ".kt": "kotlin",
+            ".ktm": "kotlin",
+            ".kts": "kotlin",
             ".cs": "csharp",
             ".rb": "ruby",
             ".php": "php",
             ".swift": "swift",
             ".scala": "scala",
+            ".gradle": "gradle",
+            ".gradle.kts": "gradle",
         }
         import re
+
+        if "pom.xml" in file_path:
+            return "maven"
+        if "build.gradle" in file_path or "build.gradle.kts" in file_path:
+            return "gradle"
+        
+        if "istio" in file_path.lower() or "virtualservice" in file_path.lower() or "destinationrule" in file_path.lower():
+            return "istio"
 
         match = re.search(r"\.(\w+)$", file_path)
         if match:
@@ -268,7 +286,79 @@ class CodeParser:
                 )
             )
 
+        if file_path.endswith('.tsx') or 'react' in content.lower():
+            hooks = self._extract_react_hooks(content)
+            for hook in hooks:
+                result.entities.append(CodeEntity(
+                    entity_id=self._generate_id(file_path, hook["name"]),
+                    name=hook["name"],
+                    entity_type=EntityType.FUNCTION,
+                    file_path=file_path,
+                    start_line=hook["line"],
+                    end_line=hook["line"],
+                    content=hook["content"],
+                    language=language,
+                    metadata={"is_hook": True},
+                ))
+
+            components = self._extract_jsx_components(content)
+            for comp in components:
+                result.entities.append(CodeEntity(
+                    entity_id=self._generate_id(file_path, comp["name"]),
+                    name=comp["name"],
+                    entity_type=EntityType.CLASS,
+                    file_path=file_path,
+                    start_line=comp["line"],
+                    end_line=comp["line"],
+                    content=comp["content"],
+                    language=language,
+                    metadata={"is_jsx_component": True},
+                ))
+
         return result
+
+    def _extract_react_hooks(self, content: str) -> List[Dict[str, Any]]:
+        hooks = []
+        hook_names = ["useState", "useEffect", "useContext", "useReducer", "useRef",
+                       "useMemo", "useCallback", "useLayoutEffect", "useImperativeHandle"]
+
+        for name in hook_names:
+            pattern = rf"const\s+(\w+)\s*=\s*{name}"
+            for match in re.finditer(pattern, content):
+                line_num = content[:match.start()].count("\n")
+                hooks.append({
+                    "name": match.group(1),
+                    "hook_type": name,
+                    "line": line_num,
+                    "content": match.group(0),
+                })
+
+        return hooks
+
+    def _extract_jsx_components(self, content: str) -> List[Dict[str, Any]]:
+        components = []
+
+        pattern = r"const\s+([A-Z]\w*)\s*=\s*(?:\([^)]*\)|[^\s=])\s*=>"
+        for match in re.finditer(pattern, content):
+            line_num = content[:match.start()].count("\n")
+            components.append({
+                "name": match.group(1),
+                "type": "arrow",
+                "line": line_num,
+                "content": match.group(0),
+            })
+
+        pattern = r"function\s+([A-Z]\w*)\s*\("
+        for match in re.finditer(pattern, content):
+            line_num = content[:match.start()].count("\n")
+            components.append({
+                "name": match.group(1),
+                "type": "function",
+                "line": line_num,
+                "content": match.group(0),
+            })
+
+        return components
 
     def _parse_go(self, content: str, file_path: str, language: str) -> ParsedFile:
         lines = content.split("\n")
@@ -525,6 +615,65 @@ class CodeParser:
             total_lines=len(lines),
         )
 
+    def _parse_istio(self, content: str, file_path: str, language: str) -> ParsedFile:
+        lines = content.split("\n")
+        entities = []
+        imports = []
+        exports = []
+        
+        kind = None
+        name = None
+
+        for idx, line in enumerate(lines):
+            stripped = line.strip()
+
+            if stripped.startswith("kind:"):
+                kind_match = re.search(r"kind:\s*(\w+)", stripped)
+                if kind_match:
+                    kind = kind_match.group(1)
+                    entities.append(CodeEntity(
+                        entity_id=self._generate_id(file_path, kind),
+                        name=kind,
+                        entity_type=EntityType.CLASS,
+                        file_path=file_path,
+                        start_line=idx,
+                        end_line=idx,
+                        content=stripped,
+                        language=language,
+                        metadata={"istio_resource": True},
+                    ))
+
+            if stripped.startswith("name:"):
+                name_match = re.search(r"name:\s*(.+)", stripped)
+                if name_match:
+                    name = name_match.group(1).strip()
+
+            if stripped.startswith("hosts:"):
+                exports.append("hosts")
+            if "hosts:" in content:
+                hosts_match = re.findall(r"^\s*-\s*(.+?)(?:\s*#.*)?$", stripped)
+                for host in hosts_match:
+                    exports.append(host.strip().strip('"').strip("'"))
+
+            if stripped.startswith("gateways:"):
+                exports.append("gateways")
+            if "gateways:" in content:
+                gw_match = re.findall(r"^\s*-\s*(.+?)(?:\s*#.*)?$", stripped)
+                for gw in gw_match:
+                    exports.append(gw.strip().strip('"').strip("'"))
+
+        if kind:
+            exports.insert(0, kind)
+        
+        return ParsedFile(
+            file_path=file_path,
+            language=language,
+            entities=entities,
+            imports=imports,
+            exports=list(set(exports)),
+            total_lines=len(lines),
+        )
+
     def _parse_generic(self, content: str, file_path: str, language: str) -> ParsedFile:
         lines = content.split("\n")
         return ParsedFile(
@@ -532,6 +681,282 @@ class CodeParser:
             language=language,
             entities=[],
             imports=[],
+            exports=[],
+            total_lines=len(lines),
+        )
+
+    def _parse_kotlin(self, content: str, file_path: str, language: str) -> ParsedFile:
+        lines = content.split("\n")
+        entities = []
+        imports = []
+        exports = []
+
+        for idx, line in enumerate(lines):
+            stripped = line.strip()
+
+            if stripped.startswith("import "):
+                match = re.search(r"import\s+(.+)", stripped)
+                if match:
+                    imports.append(match.group(1))
+
+            data_match = re.match(r"^data\s+class\s+(\w+)", stripped)
+            sealed_match = re.match(r"^sealed\s+class\s+(\w+)", stripped)
+            object_match = re.match(r"^object\s+(\w+)", stripped)
+            interface_match = re.match(r"^interface\s+(\w+)", stripped)
+            enum_match = re.match(r"^enum\s+class\s+(\w+)", stripped)
+            class_match = re.match(r"^(?:abstract\s+)?class\s+(\w+)", stripped)
+            func_match = re.match(r"^(?:suspend\s+)?fun\s+(\w+)", stripped)
+
+            if data_match:
+                entities.append(CodeEntity(
+                    entity_id=self._generate_id(file_path, data_match.group(1)),
+                    name=data_match.group(1),
+                    entity_type=EntityType.CLASS,
+                    file_path=file_path,
+                    start_line=idx,
+                    end_line=idx,
+                    content=stripped,
+                    language=language,
+                    metadata={"data_class": True},
+                ))
+            elif sealed_match:
+                entities.append(CodeEntity(
+                    entity_id=self._generate_id(file_path, sealed_match.group(1)),
+                    name=sealed_match.group(1),
+                    entity_type=EntityType.CLASS,
+                    file_path=file_path,
+                    start_line=idx,
+                    end_line=idx,
+                    content=stripped,
+                    language=language,
+                    metadata={"sealed_class": True},
+                ))
+            elif object_match:
+                entities.append(CodeEntity(
+                    entity_id=self._generate_id(file_path, object_match.group(1)),
+                    name=object_match.group(1),
+                    entity_type=EntityType.CLASS,
+                    file_path=file_path,
+                    start_line=idx,
+                    end_line=idx,
+                    content=stripped,
+                    language=language,
+                    metadata={"singleton": True},
+                ))
+            elif interface_match:
+                entities.append(CodeEntity(
+                    entity_id=self._generate_id(file_path, interface_match.group(1)),
+                    name=interface_match.group(1),
+                    entity_type=EntityType.INTERFACE,
+                    file_path=file_path,
+                    start_line=idx,
+                    end_line=idx,
+                    content=stripped,
+                    language=language,
+                ))
+            elif enum_match:
+                entities.append(CodeEntity(
+                    entity_id=self._generate_id(file_path, enum_match.group(1)),
+                    name=enum_match.group(1),
+                    entity_type=EntityType.CLASS,
+                    file_path=file_path,
+                    start_line=idx,
+                    end_line=idx,
+                    content=stripped,
+                    language=language,
+                    metadata={"enum": True},
+                ))
+            elif class_match:
+                entities.append(CodeEntity(
+                    entity_id=self._generate_id(file_path, class_match.group(1)),
+                    name=class_match.group(1),
+                    entity_type=EntityType.CLASS,
+                    file_path=file_path,
+                    start_line=idx,
+                    end_line=idx,
+                    content=stripped,
+                    language=language,
+                ))
+            elif func_match:
+                is_suspend = "suspend" in stripped
+                entities.append(CodeEntity(
+                    entity_id=self._generate_id(file_path, func_match.group(1)),
+                    name=func_match.group(1),
+                    entity_type=EntityType.FUNCTION,
+                    file_path=file_path,
+                    start_line=idx,
+                    end_line=idx,
+                    content=stripped,
+                    language=language,
+                    metadata={"suspend": is_suspend},
+                ))
+
+        return ParsedFile(
+            file_path=file_path,
+            language=language,
+            entities=entities,
+            imports=imports,
+            exports=exports,
+            total_lines=len(lines),
+        )
+
+    def _parse_maven(self, content: str, file_path: str, language: str) -> ParsedFile:
+        import xml.etree.ElementTree as ET
+
+        entities = []
+        imports = []
+        exports = []
+
+        try:
+            root = ET.fromstring(content)
+            ns = {'m': 'http://maven.apache.org/POM/4.0.0'}
+
+            project = root.find(".//{*}artifactId")
+            if project is not None:
+                entities.append(CodeEntity(
+                    entity_id=self._generate_id(file_path, "project"),
+                    name=project.text or "unknown",
+                    entity_type=EntityType.MODULE,
+                    file_path=file_path,
+                    start_line=0,
+                    end_line=0,
+                    content=project.text or "",
+                    language=language,
+                ))
+
+            for dep in root.findall(".//{*}dependency"):
+                group_id = dep.find("{*}groupId")
+                artifact_id = dep.find("{*}artifactId")
+                version = dep.find("{*}version")
+                if group_id is not None and artifact_id is not None:
+                    dep_name = f"{group_id.text}:{artifact_id.text}"
+                    imports.append(dep_name)
+                    entities.append(CodeEntity(
+                        entity_id=self._generate_id(file_path, dep_name),
+                        name=dep_name,
+                        entity_type=EntityType.IMPORT,
+                        file_path=file_path,
+                        start_line=0,
+                        end_line=0,
+                        content=dep_name,
+                        language=language,
+                        metadata={"version": version.text if version is not None else None},
+                    ))
+
+            for plugin in root.findall(".//{*}plugin"):
+                artifact_id = plugin.find("{*}artifactId")
+                if artifact_id is not None:
+                    entities.append(CodeEntity(
+                        entity_id=self._generate_id(file_path, artifact_id.text),
+                        name=artifact_id.text,
+                        entity_type=EntityType.IMPORT,
+                        file_path=file_path,
+                        start_line=0,
+                        end_line=0,
+                        content=artifact_id.text,
+                        language=language,
+                        metadata={"plugin": True},
+                    ))
+        except ET.ParseError:
+            pass
+
+        return ParsedFile(
+            file_path=file_path,
+            language=language,
+            entities=entities,
+            imports=imports,
+            exports=exports,
+            total_lines=content.count("\n"),
+        )
+
+    def _parse_gradle(self, content: str, file_path: str, language: str) -> ParsedFile:
+        lines = content.split("\n")
+        entities = []
+        imports = []
+
+        in_plugins_block = False
+        in_dependencies_block = False
+
+        for idx, line in enumerate(lines):
+            stripped = line.strip()
+
+            if stripped.startswith("plugins {"):
+                in_plugins_block = True
+                continue
+            if stripped.startswith("dependencies {"):
+                in_dependencies_block = True
+                continue
+            if stripped == "}" and (in_plugins_block or in_dependencies_block):
+                in_plugins_block = False
+                in_dependencies_block = False
+                continue
+
+            if in_plugins_block:
+                match = re.search(r"id\s+['\"](.+?)['\"]", stripped)
+                if match:
+                    plugin_name = match.group(1)
+                    imports.append(f"plugin:{plugin_name}")
+                    entities.append(CodeEntity(
+                        entity_id=self._generate_id(file_path, plugin_name),
+                        name=plugin_name,
+                        entity_type=EntityType.IMPORT,
+                        file_path=file_path,
+                        start_line=idx,
+                        end_line=idx,
+                        content=stripped,
+                        language=language,
+                        metadata={"plugin": True},
+                    ))
+
+            if in_dependencies_block:
+                match = re.search(r"(?:implementation|api|compile)\s+['\"](.+?)['\"]", stripped)
+                if match:
+                    dep = match.group(1)
+                    imports.append(dep)
+                    entities.append(CodeEntity(
+                        entity_id=self._generate_id(file_path, dep),
+                        name=dep,
+                        entity_type=EntityType.IMPORT,
+                        file_path=file_path,
+                        start_line=idx,
+                        end_line=idx,
+                        content=stripped,
+                        language=language,
+                        metadata={"dependency": True},
+                    ))
+
+            task_match = re.match(r"task\s+(\w+)", stripped)
+            if task_match:
+                entities.append(CodeEntity(
+                    entity_id=self._generate_id(file_path, task_match.group(1)),
+                    name=task_match.group(1),
+                    entity_type=EntityType.FUNCTION,
+                    file_path=file_path,
+                    start_line=idx,
+                    end_line=idx,
+                    content=stripped,
+                    language=language,
+                    metadata={"task": True},
+                ))
+
+        for match in re.finditer(r"apply\s+from:\s+['\"](.+?)['\"]", content):
+            entities.append(CodeEntity(
+                entity_id=self._generate_id(file_path, match.group(1)),
+                name=match.group(1),
+                entity_type=EntityType.IMPORT,
+                file_path=file_path,
+                start_line=content[:match.start()].count("\n"),
+                end_line=0,
+                content=match.group(0),
+                language=language,
+                metadata={"apply": True},
+            ))
+
+        return ParsedFile(
+            file_path=file_path,
+            language=language,
+            entities=entities,
+            imports=imports,
             exports=[],
             total_lines=len(lines),
         )

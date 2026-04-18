@@ -154,6 +154,60 @@ class Settings:
             os.getenv("ITERATIVE_CONFIDENCE_THRESHOLD", "0.7")
         )
 
+        # --- GraphRAG ---
+        self.graphrag_enabled = os.getenv("GRAPH_RAG_ENABLED", "false").lower() == "true"
+        self.graphrag_use_llm_extraction = os.getenv("GRAPH_RAG_USE_LLM", "false").lower() == "true"
+        self.graphrag_structural_chunking = os.getenv("GRAPH_RAG_STRUCTURAL_CHUNKING", "true").lower() == "true"
+        self.graphrag_incremental = os.getenv("GRAPH_RAG_INCREMENTAL", "true").lower() == "true"
+        self.graphrag_community_detection = os.getenv("GRAPH_RAG_COMMUNITY_DETECTION", "true").lower() == "true"
+        self.graphrag_max_entities = int(os.getenv("GRAPH_RAG_MAX_ENTITIES", "100"))
+        self.graphrag_default_hops = int(os.getenv("GRAPH_RAG_DEFAULT_HOPS", "3"))
+        self.graphrag_entity_types = os.getenv(
+            "GRAPH_RAG_ENTITY_TYPES",
+            "PERSON,ORGANIZATION,CONCEPT,EVENT,LOCATION,PRODUCT,TECHNOLOGY,DOCUMENT,PROCESS"
+        ).split(",")
+        self.graphrag_relationship_types = os.getenv(
+            "GRAPH_RAG_RELATIONSHIP_TYPES",
+            "RELATED_TO,PART_OF,WORKS_FOR,LOCATED_AT,USES,DEPENDS_ON,CREATED_BY,DEFINED_IN,REFERENCES,CONTAINS,IMPLEMENTS,MANAGES"
+        ).split(",")
+
+        # --- Chunking ---
+        self.chunking_chunker_type = os.getenv("CHUNKING_CHUNKER_TYPE", "semantic")
+        self.chunking_semantic_threshold = float(os.getenv("CHUNKING_SEMANTIC_CHUNK_THRESHOLD", "0.5"))
+        self.chunking_semantic_embed_model = os.getenv(
+            "CHUNKING_SEMANTIC_EMBED_MODEL", "BAAI/bge-small-en-v1.5"
+        )
+        self.chunking_sentence_size = int(os.getenv("CHUNKING_SENTENCE_CHUNK_SIZE", "1024"))
+        self.chunking_sentence_overlap = int(os.getenv("CHUNKING_SENTENCE_CHUNK_OVERLAP", "20"))
+        self.chunking_code_max_lines = int(os.getenv("CHUNKING_CODE_CHUNK_MAX_LINES", "100"))
+        self.chunking_min_length = int(os.getenv("CHUNKING_CHUNK_MIN_LENGTH", "50"))
+        self.chunking_max_length = int(os.getenv("CHUNKING_CHUNK_MAX_LENGTH", "2048"))
+
+        # --- ColBERT ---
+        self.colbert_enabled = os.getenv("COLBERT_ENABLED", "false").lower() == "true"
+        self.colbert_model_name = os.getenv("COLBERT_MODEL_NAME", "colbert-ir/colbertv2.0")
+        self.colbert_max_length = int(os.getenv("COLBERT_MAX_LENGTH", "512"))
+        self.colbert_top_k = int(os.getenv("COLBERT_SIMILARITY_TOP_K", "10"))
+        self.colbert_rerank = os.getenv("COLBERT_RERANK_AFTER", "true").lower() == "true"
+
+        # --- Retrieval Strategy ---
+        self.retrieval_default_strategy = os.getenv("RETRIEVAL_DEFAULT_STRATEGY", "hybrid")
+        self.retrieval_fusion_method = os.getenv("RETRIEVAL_FUSION_METHOD", "rrf")
+        self.retrieval_parallel = os.getenv("RETRIEVAL_PARALLEL_RETRIEVAL", "true").lower() == "true"
+        self.retrieval_timeout = int(os.getenv("RETRIEVAL_TIMEOUT_SECONDS", "30"))
+        self.retrieval_fallback = os.getenv("RETRIEVAL_FALLBACK_ON_EMPTY", "true").lower() == "true"
+
+        # --- Diagram Indexing ---
+        self.diagram_index_enabled = os.getenv("DIAGRAM_INDEX_ENABLED", "false").lower() == "true"
+        self.diagram_collection = os.getenv("DIAGRAM_COLLECTION", "diagrams")
+        self.diagram_vector_size = int(os.getenv("DIAGRAM_VECTOR_SIZE", "384"))
+
+        # --- UI Sketch ---
+        self.ui_sketch_enabled = os.getenv("UI_SKETCH_ENABLED", "false").lower() == "true"
+
+        # --- ColPali ---
+        self.colpali_enabled = os.getenv("COLPALI_ENABLED", "false").lower() == "true"
+
     def validate(self) -> None:
         """Validate critical security settings at startup."""
         if self.jwt_secret == "change-me-in-production":

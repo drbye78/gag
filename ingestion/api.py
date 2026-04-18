@@ -19,6 +19,7 @@ class IngestRequest(BaseModel):
     source_type: str = "document"
     metadata: Optional[Dict[str, Any]] = None
     index: bool = True
+    use_graphrag: bool = False
 
     @field_validator("content", "source_id")
     @classmethod
@@ -66,13 +67,14 @@ router = APIRouter(prefix="/ingestion", tags=["ingestion"])
 
 @router.post("/ingest", response_model=IngestResponse)
 async def ingest_document(request: IngestRequest):
-    pipeline = get_ingestion_pipeline()
+    pipeline = get_ingestion_pipeline(use_graphrag=request.use_graphrag)
     job = await pipeline.ingest_document(
         content=request.content,
         source_id=request.source_id,
         source_type=request.source_type,
         metadata=request.metadata,
         index=request.index,
+        use_graphrag=request.use_graphrag,
     )
 
     return IngestResponse(

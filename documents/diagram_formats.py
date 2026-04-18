@@ -390,6 +390,191 @@ def parse_openapi(content: str) -> OpenAPIParseResult:
     return parser.parse(content)
 
 
+@dataclass
+class MermaidParseResult:
+    diagram_type: str
+    entities: List[Dict[str, Any]] = field(default_factory=list)
+    relationships: List[Dict[str, Any]] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+class MermaidParser:
+    DIAGRAM_TYPES = ["class", "sequence", "state", "flowchart", "er", "gantt", "pie", "journey"]
+
+    TYPE_PATTERNS = {
+        "class": r"^classDiagram",
+        "sequence": r"^sequenceDiagram",
+        "state": r"^stateDiagram-v2",
+        "flowchart": r"^flowchart\s+(TD|LR|RL|BT)",
+        "er": r"^erDiagram",
+        "gantt": r"^gantt",
+        "pie": r"^pie",
+        "journey": r"^journey",
+    }
+
+    def parse(self, text: str) -> MermaidParseResult:
+        text = text.strip()
+        diagram_type = self._detect_type(text)
+        result = MermaidParseResult(diagram_type=diagram_type)
+
+        lines = text.split("\n")
+
+        if diagram_type == "class":
+            result.entities, result.relationships = self._parse_class(lines)
+        elif diagram_type == "sequence":
+            result.entities, result.relationships = self._parse_sequence(lines)
+        elif diagram_type == "flowchart":
+            result.entities, result.relationships = self._parse_flowchart(lines)
+        elif diagram_type == "er":
+            result.entities, result.relationships = self._parse_er(lines)
+        elif diagram_type == "state":
+            result.entities, result.relationships = self._parse_state(lines)
+
+        return result
+
+    def _detect_type(self, text: str) -> str:
+        for dtype, pattern in self.TYPE_PATTERNS.items():
+            import re
+            if re.search(pattern, text, re.MULTILINE):
+                return dtype
+        return "flowchart"
+
+    def _parse_class(self, lines: List[str]) -> tuple:
+        entities = []
+        relationships = []
+        in_class = False
+        current_class = None
+
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith("%%"):
+                continue
+
+            if line.startswith("class "):
+                class_name = line.replace("class ", "").split("{")[0].strip()
+                entities.append({"name": class_name, "type": "class"})
+                current_class = class_name
+
+            elif " <|-- " in line or " *-- " in line or " -- " in line or " --> " in line:
+                parts = line.replace("<|--", "|").replace("*--", "*").replace("--", "|").replace("-->", "|").replace("|", " ").split()
+                if len(parts) >= 3:
+                    relationships.append({"from": parts[0], "to": parts[-1], "type": "association"})
+
+        return entities, relationships
+
+    def _parse_sequence(self, lines: List[str]) -> tuple:
+        entities = []
+        relationships = []
+        order = 0
+
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith("%%"):
+                continue
+
+            if "participant " in line:
+                name = line.replace("participant ", "").strip()
+                entities.append({"name": name, "type": "participant"})
+
+            elif "->" in line:
+                parts = line.split("->")
+                if len(parts) >= 2:
+                    order += 1
+                    relationships.append({
+                        "from": parts[0].strip(),
+                        "to": parts[1].split(":")[0].strip() if ":" in parts[1] else parts[1].strip(),
+                        "type": "message",
+                        "order": order,
+                    })
+
+        return entities, relationships
+
+    def _parse_flowchart(self, lines: List[str]) -> tuple:
+        entities = []
+        relationships = []
+
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith("%%"):
+                continue
+
+            if "-->" in line:
+                parts = line.split("-->")
+                if len(parts) >= 2:
+                    relationships.append({
+                        "from": parts[0].strip(),
+                        "to": parts[1].strip(),
+                        "type": "flow",
+                    })
+
+            import re
+            match = re.match(r"^\s*(\w+)\[([^\]]+)\]", line)
+            if match:
+                entities.append({"name": match.group(1), "label": match.group(2), "type": "node"})
+
+        return entities, relationships
+
+    def _parse_er(self, lines: List[str]) -> tuple:
+        entities = []
+        relationships = []
+
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith("%%"):
+                continue
+
+            if "}" in line:
+                continue
+
+            if "--" in line:
+                parts = line.split("--")
+                if len(parts) >= 2:
+                    rel_type = ""
+                    if "||" in line:
+                        rel_type = "1:1"
+                    elif "}o" in line or "o{" in line:
+                        rel_type = "0:1"
+                    relationships.append({
+                        "from": parts[0].strip(),
+                        "to": parts[1].split("{")[0].strip() if "{" in parts[1] else parts[1].strip(),
+                        "type": rel_type or "relation",
+                    })
+            elif "{" in line:
+                entity_name = line.split("{")[0].strip()
+                if entity_name:
+                    entities.append({"name": entity_name, "type": "entity"})
+
+        return entities, relationships
+
+    def _parse_state(self, lines: List[str]) -> tuple:
+        entities = []
+        relationships = []
+
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith("%%"):
+                continue
+
+            if "-->" in line:
+                parts = line.split("-->")
+                if len(parts) >= 2:
+                    relationships.append({
+                        "from": parts[0].strip(),
+                        "to": parts[1].strip(),
+                        "type": "transition",
+                    })
+            elif "*" not in line and line and not line.startswith(":"):
+                if line not in ["state", "end"]:
+                    entities.append({"name": line, "type": "state"})
+
+        return entities, relationships
+
+
+def parse_mermaid(text: str) -> MermaidParseResult:
+    parser = MermaidParser()
+    return parser.parse(text)
+
+
 def detect_format(content: str, filename: str = "") -> DiagramType:
     content = content.strip()
 
@@ -398,6 +583,9 @@ def detect_format(content: str, filename: str = "") -> DiagramType:
 
     if filename.endswith(".puml") or filename.endswith(".plantuml"):
         return DiagramType.PLANTUML
+
+    if filename.endswith(".mmd") or filename.endswith(".mermaid"):
+        return DiagramType.UNKNOWN  # Will be detected as mermaid by content
 
     if filename.endswith((".bpmn", ".xml")) and "bpmn" in content.lower():
         if _is_bpmn_content(content):
@@ -417,6 +605,9 @@ def detect_format(content: str, filename: str = "") -> DiagramType:
 
     if content.startswith("@startuml"):
         return DiagramType.PLANTUML
+
+    if "%%{ mermaid }%%" in content or content.startswith("graph") or content.startswith("flowchart") or content.startswith("sequenceDiagram") or content.startswith("classDiagram"):
+        return DiagramType.UNKNOWN  # Mermaid - detect specific type
 
     if "<mxfile" in content or 'xmlns="http://www.drawio.com' in content:
         return DiagramType.DRAW_IO

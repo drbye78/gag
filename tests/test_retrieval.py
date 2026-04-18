@@ -176,9 +176,9 @@ class TestReasoningEngine:
 
     @pytest.mark.asyncio
     async def test_reason_with_context(self):
-        from retrieval.reasoning import ReasoningEngine, ReasoningMode
+        from retrieval.reasoning import get_reasoning_engine, ReasoningMode
 
-        engine = ReasoningEngine(mode=ReasoningMode.CHAIN_OF_THOUGHTS)
+        engine = get_reasoning_engine(mode=ReasoningMode.CHAIN_OF_THOUGHTS)
         # Without LLM backend, this will fail - just test interface
         try:
             result = await engine.reason(

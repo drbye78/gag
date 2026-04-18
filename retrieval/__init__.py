@@ -32,7 +32,7 @@ from retrieval.citations import (
     CitationBuilder,
     CitationFormatter,
 )
-from retrieval.reasoning import ReasoningEngine, ReasoningMode, get_reasoning_engine
+from retrieval.reasoning import ReasoningMode, get_reasoning_engine
 from retrieval.reasoning.entity_aware import get_entity_aware_reasoning_engine
 from retrieval.reasoning.iterative import (
     IterativeRetrievalReasoner,
@@ -59,7 +59,11 @@ try:
         DiagramRetriever,
         DiagramSearchResult,
         DiagramRetrievalResult,
+        DiagramQdrantIndexer,
+        DiagramGraphIndexer,
         get_diagram_retriever,
+        get_diagram_qdrant_indexer,
+        get_diagram_graph_indexer,
     )
 except ImportError:
     pass
@@ -69,8 +73,14 @@ try:
         ColBERTIndexer,
         ColBERTIndexResult,
         ColBERTRetriever,
+        ColBERTQdrantIndexer,
+        ColBERTQdrantRetriever,
+        ColBERTSearchClient,
         get_colbert_indexer,
         get_colbert_retriever,
+        get_colbert_qdrant_indexer,
+        get_colbert_qdrant_retriever,
+        get_colbert_search_client,
     )
 except ImportError:
     pass

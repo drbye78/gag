@@ -368,6 +368,17 @@ def get_sentence_chunker(
     return LlamaIndexSentenceChunker(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
 
 
+def get_sentence_chunker_from_settings() -> LlamaIndexSentenceChunker:
+    """Get SentenceSplitter chunker from config settings."""
+    from core.config import get_settings
+
+    settings = get_settings()
+    return LlamaIndexSentenceChunker(
+        chunk_size=settings.chunking_sentence_size,
+        chunk_overlap=settings.chunking_sentence_overlap,
+    )
+
+
 def get_json_chunker(
     depth: int = 2,
     enablePagination: bool = True,
@@ -392,6 +403,40 @@ def get_semantic_chunker(
         embed_model=embed_model,
         breakpoint_percentile_threshold=breakpoint_percentile_threshold,
     )
+
+
+def get_semantic_chunker_from_settings() -> SemanticTextChunker:
+    """Get semantic chunker from config settings."""
+    from core.config import get_settings
+
+    settings = get_settings()
+    return SemanticTextChunker(
+        embed_model=settings.chunking_semantic_embed_model,
+        breakpoint_percentile_threshold=int(settings.chunking_semantic_threshold * 100),
+    )
+
+
+def get_chunker_from_settings():
+    """Get chunker based on config settings."""
+    from core.config import get_settings
+
+    settings = get_settings()
+    chunk_type = settings.chunking_chunker_type
+
+    chunkers = {
+        "semantic": get_semantic_chunker_from_settings,
+        "sentence": get_sentence_chunker_from_settings,
+    }
+
+    if chunk_type not in chunkers:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            f"Unknown chunker type '{chunk_type}', defaulting to semantic"
+        )
+        chunk_type = "semantic"
+
+    return chunkers[chunk_type]()
 
 
 def get_markdown_image_parser() -> MarkdownImageExtractor:

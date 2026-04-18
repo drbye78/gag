@@ -45,8 +45,23 @@ class UIRetriever:
         )
         return await self._execute_cypher(cypher)
 
-    async def search_combined(self, element_types: List[str], layout_type: Optional[str] = None, limit: int = 10) -> List[Dict[str, Any]]:
-        """Find sketches matching element types and optionally layout type."""
+    async def search_combined(
+        self,
+        element_types: List[str],
+        layout_type: Optional[str] = None,
+        limit: int = 10,
+    ) -> List[Dict[str, Any]]:
+        """Find sketches matching element types and optionally layout type.
+
+        If element_types is empty, returns all sketches (fallback to full search).
+        """
+        # Empty element_types - fallback to return all sketches
+        if not element_types:
+            cypher = "MATCH (s:UISketch) RETURN s.sketch_id, s.title, s.element_count ORDER BY s.element_count DESC LIMIT {limit}".format(
+                limit=limit
+            )
+            return await self._execute_cypher(cypher)
+
         type_filters = " OR ".join(f"e.element_type = '{t}'" for t in element_types)
         cypher = f"MATCH (s:UISketch)-[:CONTAINS_ELEMENT]->(e:UIElement) WHERE {type_filters}"
 

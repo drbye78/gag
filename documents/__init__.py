@@ -86,6 +86,9 @@ from documents.semantic_chunker import (
     get_sentence_chunker,
     get_json_chunker,
     get_html_chunker,
+    get_semantic_chunker_from_settings,
+    get_sentence_chunker_from_settings,
+    get_chunker_from_settings,
 )
 
 from documents.diagram_formats import (

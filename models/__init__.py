@@ -42,6 +42,22 @@ from models.mcp import (
     MCPToolCall,
     MCP_TOOLS,
 )
+from models.graphrag import (
+    EntityType,
+    RelationshipType,
+    EntityNode,
+    RelationshipEdge,
+    Community,
+    GraphRAGConfig,
+    GraphRAGQueryRequest,
+    GraphRAGQueryResponse,
+    EntitySearchRequest,
+    EntitySearchResponse,
+    RelationshipSearchRequest,
+    RelationshipSearchResponse,
+    CommunityResponse,
+    GraphRAGStatsResponse,
+)
 
 
 __all__ = [
@@ -75,4 +91,18 @@ __all__ = [
     "MCPToolDefinition",
     "MCPToolCall",
     "MCP_TOOLS",
+    "EntityType",
+    "RelationshipType",
+    "EntityNode",
+    "RelationshipEdge",
+    "Community",
+    "GraphRAGConfig",
+    "GraphRAGQueryRequest",
+    "GraphRAGQueryResponse",
+    "EntitySearchRequest",
+    "EntitySearchResponse",
+    "RelationshipSearchRequest",
+    "RelationshipSearchResponse",
+    "CommunityResponse",
+    "GraphRAGStatsResponse",
 ]

@@ -10,6 +10,7 @@ class CitationStyle(str, Enum):
     FOOTNOTE = "footnote"
     HIGHLIGHT = "highlight"
     STRUCTURED = "structured"
+    DIAGRAM = "diagram"
 
 
 @dataclass

@@ -20,6 +20,7 @@ from retrieval.telemetry import get_telemetry_retriever
 from retrieval.hybrid import get_hybrid_retriever
 from retrieval.classifier import get_query_classifier
 from retrieval.diagram import get_diagram_retriever
+from retrieval.colbert import get_colbert_search_client
 
 
 class RetrievalSource(str, Enum):
@@ -32,6 +33,7 @@ class RetrievalSource(str, Enum):
     DIAGRAM = "diagram"
     MULTIMODAL = "multimodal"
     UI_SKETCH = "ui_sketch"
+    COLBERT = "colbert"
 
 
 class RetrievalMode(str, Enum):
@@ -54,6 +56,7 @@ class RetrievalOrchestrator:
         self.classifier = get_query_classifier()
         from ui.retriever import get_ui_retriever
         self.ui_retriever = get_ui_retriever()
+        self.colbert_retriever = get_colbert_search_client()
 
     async def retrieve(
         self,
@@ -89,6 +92,8 @@ class RetrievalOrchestrator:
                 tasks.append(self._retrieve_diagram(query, limit, filters))
             elif source == RetrievalSource.UI_SKETCH:
                 tasks.append(self._retrieve_ui(query, limit, filters))
+            elif source == RetrievalSource.COLBERT:
+                tasks.append(self._retrieve_colbert(query, limit, filters))
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -177,6 +182,16 @@ class RetrievalOrchestrator:
             return {"source": "ui_sketch", "results": results, "total": len(results), "took_ms": 0}
         except Exception:
             return {"source": "ui_sketch", "results": [], "total": 0, "took_ms": 0}
+
+    async def _retrieve_colbert(self, query: str, limit: int, filters: Optional[Dict]) -> Dict:
+        try:
+            if self.colbert_retriever:
+                result = await self.colbert_retriever.search(query, limit=limit)
+                results = result.get("results", [])
+                return {"source": "colbert", "results": results, "total": len(results), "took_ms": result.get("took_ms", 0)}
+            return {"source": "colbert", "results": [], "total": 0, "took_ms": 0}
+        except Exception:
+            return {"source": "colbert", "results": [], "total": 0, "took_ms": 0}
 
     async def route_hybrid(
         self,

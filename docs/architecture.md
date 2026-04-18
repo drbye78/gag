@@ -126,6 +126,23 @@ flowchart TB
 | Graph Retriever | FalkorDB | Cypher queries |
 | Ticket Retriever | Ticket DB | Keyword + semantic |
 | Telemetry Retriever | Logs/Metrics | Filtering + semantic |
+| ColBERT Retriever | ColBERT Index | Late interaction (optional) |
+
+#### Retrieval Strategies
+
+| Strategy | Use Case | Config Variable |
+|----------|----------|-----------------|
+| `hybrid` | Best overall quality, combines all sources | `RETRIEVAL_DEFAULT_STRATEGY=hybrid` |
+| `vector` | Fast, semantic similarity | `RETRIEVAL_DEFAULT_STRATEGY=vector` |
+| `graph` | Relationship-heavy queries | `RETRIEVAL_DEFAULT_STRATEGY=graph` |
+| `colbert` | Phrase matching, term importance | `RETRIEVAL_DEFAULT_STRATEGY=colbert` |
+
+#### ColBERT vs ColPali
+
+- **ColBERT** (`retrieval/colbert.py`): Late interaction retriever for text. Uses token-level embeddings with late interaction scoring. Best for phrase matching and exact term importance.
+- **ColPali** (`documents/colpali.py`): Vision-language model for visual document understanding. Uses image-based embeddings for charts, diagrams, and visual content.
+
+Enable ColBERT: `COLBERT_ENABLED=true`
 
 ### 2.3.1 Entity Graph Cache
 - LRU cache (capacity: 500, TTL: 1 hour)

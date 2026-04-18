@@ -24,3 +24,7 @@ build/
 *.log
 .python-version
 .worktrees/
+uv.lock
+mcp.json
+.sisyphus/
+

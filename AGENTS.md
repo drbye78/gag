@@ -43,11 +43,11 @@ uv run uvicorn api.main:app --host 0.0.0.0 --port 8000
 
 ## Important Conventions
 
-1. **Testing**: Use `pytest-asyncio` with `asyncio_mode = auto` in pytest.ini
+1. **Testing**: Use `pytest-asyncio` with `asyncio_mode = auto` in pyproject.toml
 2. **Type Checking**: Run `mypy` with config in `pyproject.toml` (ignore_missing_imports=true)
 3. **Linting**: Use `ruff` with config in `pyproject.toml`
-4. **Dependencies**: Install with `uv pip install -r requirements.txt` or `uv sync`
-5. **Virtual Environment**: Use `.venv` directory, activate with `source .venv/bin/activate`
+4. **Dependencies**: Install with `uv sync` or `pip install -e ".[all]"` for all features
+5. **Python Version**: 3.12+ required
 
 ## LlamaIndex Version Note
 

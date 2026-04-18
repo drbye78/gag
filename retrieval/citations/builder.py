@@ -41,11 +41,13 @@ class CitationBuilder:
     ) -> List[CitationSource]:
         sources = []
         for i, r in enumerate(results[: self.max_citations]):
+            source_type = r.get("source", "unknown")
+            content = self._extract_content_for_source(r, source_type)
             sources.append(
                 CitationSource(
                     source_id=str(i + 1),
-                    content=r.get("content", ""),
-                    source_type=r.get("source", "unknown"),
+                    content=content,
+                    source_type=source_type,
                     source_name=r.get("source_name", r.get("source", "source")),
                     url=r.get("url"),
                     line_start=r.get("line_start"),
@@ -57,6 +59,21 @@ class CitationBuilder:
                 )
             )
         return sources
+
+    def _extract_content_for_source(
+        self,
+        result: Dict[str, Any],
+        source_type: str,
+    ) -> str:
+        if source_type == "diagram":
+            diagram_type = result.get("diagram_type", "")
+            entities = result.get("entities", [])
+            entity_names = ", ".join([e.get("name", "") for e in entities[:5]]) if entities else ""
+            content = result.get("content", "")
+            if entity_names:
+                return f"[{diagram_type}] {content[:300]}... Entities: {entity_names}"
+            return f"[{diagram_type}] {content[:400]}"
+        return result.get("content", "")
 
     def _create_citations(
         self,
@@ -90,5 +107,10 @@ class CitationBuilder:
             return answer
         elif self.style == CitationStyle.HIGHLIGHT:
             return answer
-
+        elif self.style == CitationStyle.DIAGRAM:
+            if sources:
+                diagram_sources = [s for s in sources if s.source_type == "diagram"]
+                if diagram_sources:
+                    diag_parts = [f"[{s.source_name}:{s.content[:100]}...]" for s in diagram_sources[:3]]
+                    return f"{answer}\n\nDiagrams: {' '.join(diag_parts)}"
         return answer

@@ -62,3 +62,6 @@ torchvision>=0.15.0
 
 # Language detection — required for multilingual documents
 langdetect>=1.0.9
+
+# ColBERT — late interaction embeddings (optional, enables COLBERT_ENABLED=true)
+fastembed>=0.3.0

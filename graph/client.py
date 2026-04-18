@@ -1,49 +1,52 @@
-"""FalkorDB graph database client with parameterized queries."""
+"""FalkorDB client with connection pooling, parameterized queries, and structured errors."""
 
 import re
+import logging
 from typing import Any, Dict, List, Optional
 
 import httpx
 
 from core.config import get_settings
+from core.pool import get_http_pool
+from core.errors import StorageError, ServiceUnavailableError
 
-# Allowlisted node/edge types to prevent Cypher injection
+logger = logging.getLogger(__name__)
+
 ALLOWED_NODE_TYPES = frozenset({
     "Component", "Service", "API", "Endpoint", "Database",
     "Function", "Class", "Module", "File", "Entity",
-    "Incident", "Requirement", "Architecture",
+    "Incident", "Requirement", "Architecture", "Community",
 })
 
 ALLOWED_EDGE_TYPES = frozenset({
     "CALLS", "DEFINES", "IMPORTS", "RETURNS", "CONTAINS",
     "INHERITS", "IMPLEMENTS", "DEPENDS_ON", "RELATED_TO",
-    "DOCUMENTED_BY", "TRIGGERS", "AFFECTS",
+    "DOCUMENTED_BY", "TRIGGERS", "AFFECTS", "IN_COMMUNITY",
 })
 
-_MAX_DEPTH = 10
-_MAX_LIMIT = 10000
+MAX_DEPTH = 10
+MAX_LIMIT = 10000
 
 
 def _safe_identifier(value: str, allowed: frozenset, default: str = "Entity") -> str:
-    """Validate that a value is a safe Cypher identifier."""
     if value in allowed:
         return value
-    # Allow alphanumeric + underscore only
     if re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", value):
         return value
     return default
 
 
 def _safe_int(value: Any, default: int) -> int:
-    """Safely convert to int with bounds checking."""
     try:
         v = int(value)
-        return max(1, min(v, _MAX_LIMIT))
+        return max(1, min(v, MAX_LIMIT))
     except (TypeError, ValueError):
         return default
 
 
 class FalkorDBClient:
+    """Production FalkorDB client with pooling, validation, and structured errors."""
+
     def __init__(
         self,
         host: Optional[str] = None,
@@ -57,11 +60,13 @@ class FalkorDBClient:
         self.username = username or settings.falkordb_user
         self.password = password or settings.falkordb_pass
         self.base_url = f"http://{self.host}:{self.port}"
+        self._pool = get_http_pool()
 
     def _get_headers(self) -> Dict[str, str]:
         headers = {"Content-Type": "application/json"}
         if self.username and self.password:
             import base64
+
             auth = base64.b64encode(f"{self.username}:{self.password}".encode()).decode()
             headers["Authorization"] = f"Basic {auth}"
         return headers
@@ -73,95 +78,136 @@ class FalkorDBClient:
         if params:
             payload["params"] = params
 
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.base_url}/query", headers=self._get_headers(), json=payload
+        try:
+            response = await self._pool.post(
+                f"{self.base_url}/query",
+                headers=self._get_headers(),
+                json=payload,
             )
             response.raise_for_status()
             return response.json()
+        except httpx.ConnectError as e:
+            logger.error("FalkorDB connection failed: %s:%d", self.host, self.port)
+            raise ServiceUnavailableError(
+                "FalkorDB unavailable",
+                details={"host": self.host, "port": self.port},
+                cause=e,
+            )
+        except httpx.HTTPStatusError as e:
+            logger.error("FalkorDB query failed: %s", e.response.text)
+            raise StorageError(
+                f"FalkorDB query failed: {e.response.status_code}",
+                details={"query": query[:200]},
+                cause=e,
+            )
+        except Exception as e:
+            logger.exception("FalkorDB unexpected error")
+            raise StorageError(
+                "FalkorDB operation failed",
+                details={"query": query[:200]},
+                cause=e,
+            )
 
-    async def add_node(
-        self, node_type: str, name: str, properties: Optional[Dict[str, Any]] = None
-    ) -> str:
-        safe_type = _safe_identifier(node_type, ALLOWED_NODE_TYPES)
-        props = properties or {}
-        props["name"] = name
-        props["type"] = safe_type
+    async def health_check(self) -> bool:
+        """Check FalkorDB connectivity."""
+        try:
+            resp = await self._pool.get(f"{self.base_url}")
+            return resp.status_code in (200, 404)
+        except Exception:
+            return False
 
-        query = "CREATE (n:$node_type $props) RETURN id(n)"
-        result = await self.execute(
-            query, {"node_type": safe_type, "props": props}
-        )
+    async def query(
+        self, query: str, params: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Alias for execute() - execute a Cypher query."""
+        return await self.execute(query, params)
 
-        if result.get("results"):
-            return result["results"][0][0]
-        raise RuntimeError("Failed to create node")
-
-    async def add_edge(
+    async def query_nodes(
         self,
-        source_id: str,
-        target_id: str,
-        edge_type: str,
+        node_type: Optional[str] = None,
         properties: Optional[Dict[str, Any]] = None,
-    ) -> str:
-        safe_type = _safe_identifier(edge_type, ALLOWED_EDGE_TYPES, "RELATED_TO")
-        props = properties or {}
-        props["type"] = safe_type
-
-        query = f"""
-        MATCH (a), (b)
-        WHERE id(a) = $source AND id(b) = $target
-        CREATE (a)-[r:{safe_type} $props]->(b)
-        RETURN id(r)
-        """
-        result = await self.execute(
-            query, {"source": int(source_id), "target": int(target_id), "props": props}
-        )
-
-        if result.get("results"):
-            return result["results"][0][0]
-        raise RuntimeError("Failed to create edge")
-
-    async def query_subgraph(
-        self, node_type: str, limit: int = 100, depth: int = 2
-    ) -> Dict[str, Any]:
-        safe_type = _safe_identifier(node_type, ALLOWED_NODE_TYPES)
-        safe_depth = _safe_int(depth, 2)
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """Query nodes with type and property filtering."""
+        safe_type = _safe_identifier(node_type or "Entity", ALLOWED_NODE_TYPES)
         safe_limit = _safe_int(limit, 100)
 
-        query = f"""
-        MATCH (a:`{safe_type}`)-[r*1..{safe_depth}]->(b)
-        RETURN a, r, b
-        LIMIT {safe_limit}
+        where_parts = ["true"]
+        params: Dict[str, Any] = {"limit": safe_limit}
+
+        if properties:
+            for i, (k, v) in enumerate(properties.items()):
+                key = f"k{i}"
+                where_parts.append(f"n.{k} = ${key}")
+                params[key] = v
+
+        where_clause = " AND ".join(where_parts)
+        cypher = f"""
+        MATCH (n:{safe_type})
+        WHERE {where_clause}
+        RETURN n
+        LIMIT $limit
         """
-        return await self.execute(query)
+        result = await self.execute(cypher, params)
+        return [r.get("n", {}) for r in result.get("results", [])]
 
-    async def find_related(
-        self, node_id: str, edge_types: Optional[List[str]] = None, limit: int = 100
-    ) -> Dict[str, Any]:
-        edge_filter = ""
-        if edge_types:
-            safe_types = [_safe_identifier(e, ALLOWED_EDGE_TYPES, "RELATED_TO") for e in edge_types]
-            edge_str = "|".join(f"`{e}`" for e in safe_types)
-            edge_filter = f":{edge_str}"
-
+    async def query_relationships(
+        self,
+        rel_type: Optional[str] = None,
+        source_id: Optional[str] = None,
+        target_id: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """Query relationships with filtering."""
         safe_limit = _safe_int(limit, 100)
-        safe_node_id = int(node_id)
+        params: Dict[str, Any] = {"limit": safe_limit}
 
-        query = f"""
-        MATCH (a)-[r{edge_filter}]->(b)
-        WHERE id(a) = $node_id
-        RETURN b, r
-        LIMIT {safe_limit}
+        where_parts = ["true"]
+        if rel_type:
+            safe_type = _safe_identifier(rel_type, ALLOWED_EDGE_TYPES, "RELATED_TO")
+            where_parts.append(f"type(r) = $rel_type")
+            params["rel_type"] = safe_type
+        if source_id:
+            where_parts.append("startNode(r).id = $source_id")
+            params["source_id"] = source_id
+        if target_id:
+            where_parts.append("endNode(r).id = $target_id")
+            params["target_id"] = target_id
+
+        where_clause = " AND ".join(where_parts)
+        cypher = f"""
+        MATCH ()-[r]->()
+        WHERE {where_clause}
+        RETURN r
+        LIMIT $limit
         """
-        return await self.execute(query, {"node_id": safe_node_id})
+        result = await self.execute(cypher, params)
+        return [r.get("r", {}) for r in result.get("results", [])]
+
+    async def get_connected(
+        self, node_id: str, rel_types: Optional[List[str]] = None, depth: int = 2
+    ) -> Dict[str, Any]:
+        """Get nodes connected to a given node within depth."""
+        safe_depth = min(max(1, depth), MAX_DEPTH)
+        rel_filter = ""
+        if rel_types:
+            safe_types = [_safe_identifier(t, ALLOWED_EDGE_TYPES, "RELATED_TO") for t in rel_types]
+            rel_filter = f", {safe_types}" if safe_types else ""
+
+        cypher = f"""
+        MATCH path = (n {{id: $id}})-[*1..{safe_depth}]{rel_filter}-(connected)
+        RETURN nodes(path) as nodes, relationships(path) as rels
+        LIMIT $limit
+        """
+        result = await self.execute(cypher, {"id": node_id, "limit": MAX_LIMIT})
+        return result.get("results", [{}])[0]
 
 
-_default_client: Optional[FalkorDBClient] = None
+_falkordb_client: Optional[FalkorDBClient] = None
 
 
 def get_falkordb_client() -> FalkorDBClient:
-    global _default_client
-    if _default_client is None:
-        _default_client = FalkorDBClient()
-    return _default_client
+    global _falkordb_client
+    if _falkordb_client is None:
+        _falkordb_client = FalkorDBClient()
+    return _falkordb_client
