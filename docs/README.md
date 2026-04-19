@@ -6,9 +6,10 @@ Central documentation for the Engineering Intelligence System.
 
 | Document | Description |
 |---|---|
-| [README.md](README.md) | Project overview and getting started |
-| [API Reference](api.md) | All 40+ REST API endpoints with request/response examples |
+| [README.md](../README.md) | Project overview and getting started |
+| [API Reference](api.md) | All 50+ REST API endpoints with request/response examples |
 | [Architecture](architecture.md) | System design, layers, and component relationships |
+| [Platform Adapter Architecture](platform-adapter-architecture.md) | Universal platform support via pluggable adapters |
 | [Deployment](deployment.md) | Docker, Docker Compose, Kubernetes, and production setup |
 | [Configuration](configuration.md) | Complete environment variable reference (70+ variables) |
 | [Entity Cache](entity-cache.md) | Entity graph cache architecture, API, and monitoring |
@@ -16,4 +17,4 @@ Central documentation for the Engineering Intelligence System.
 
 ## Version
 
-Current version: **3.0.0**
+Current version: **3.1.0**

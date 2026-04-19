@@ -18,28 +18,59 @@ This system answers complex engineering questions by reasoning over your codebas
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    Interface Layer                       │
-│  REST API  │  MCP (JSON-RPC 2.0)  │  Multimodal (VLM)  │
-├─────────────────────────────────────────────────────────┤
-│                   Orchestration Layer                     │
-│  Plan → Retrieve → Reason → Execute  │  Retry & Metrics │
-├─────────────────────────────────────────────────────────┤
-│                    Cognitive Layer                       │
-│  Planner │ Retrieval Agent │ Reasoning Agent │ Validator│
-├─────────────────────────────────────────────────────────┤
-│                    Knowledge Layer                       │
-│  Hybrid Retriever │ Entity Graph Cache │ Fusion │ Rerank│
-├─────────────────────────────────────────────────────────┤
-│                   Data Processing Layer                  │
-│  Ingestion │ Chunking │ Embedding │ Vector │ Graph │ IR │
-└─────────────────────────────────────────────────────────┘
-        │ Qdrant │  │ FalkorDB │  │ Redis │  │ LLM Router │
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         REQUEST LAYER                                 │
+│           REST API  │  MCP (JSON-RPC 2.0)  │  Multimodal        │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      ORCHESTRATION LAYER                            │
+│    OrchestrationEngine (Plan → Retrieve → Reason → Execute)         │
+│    - ExecutionState with trace_id                                   │
+│    - Retry with exponential backoff                               │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                   KNOWLEDGE PROCESSING LAYER                        │
+│                                                                      │
+│   IR (Input) ──► Pattern Matcher ──► Constraint Engine ──► Explainer│
+│      │                   │                    │                       │
+│      │                   ▼                    ▼                       │
+│      │            ┌─────────────────────────────────────┐             │
+│      │            │     KNOWLEDGE SUBSTRATE           │             │
+│      │            │  (Platform-agnostic patterns)      │             │
+│      │            └─────────────────────────────────────┘             │
+│      │                          │                                   │
+│      └──────────────────────────┼───────────────────────────┐       │
+│                                 ▼                               │       │
+│   ┌─────────────────────────────────────────────────────────────┐  │
+│   │              PLATFORM ADAPTERS (Pluggable)                │  │
+│   │  ┌─────────┐ ┌──────────┐ ┌────────┐ ┌────────┐      │  │
+│   │  │   SAP   │ │  VMware  │ │  Power │ │  AWS   │ ...  │  │
+│   │  │   BTP   │ │  Tanzu   │ │Platform│ │ /Azure │      │  │
+│   │  └─────────┘ └──────────┘ └────────┘ └────────┘      │  │
+│   └─────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      OUTPUT LAYER                                   │
+│   Validated IR → Platform-specific output → Trace + Metrics        │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## Key Features
+
+### 🧩 Platform Adapter Architecture
+- **Universal Intelligence Platform** — Supports any technology stack through pluggable adapters
+- **Platform Adapters**: SAP BTP, VMware Tanzu, Microsoft Power Platform (extensible)
+- **Pattern Library**: 12+ architectural patterns (microservices, serverless, event-driven, CQRS, etc.)
+- **Constraint Engine**: Hard/soft constraints per platform with automatic fix suggestions
+- **IR Features**: Platform-agnostic feature extraction for pattern matching
 
 ### 🔍 Hybrid Retrieval
 - **5 strategies**: Vector-only, Graph-only, Multi-hop, Cascade, Iterative
@@ -86,7 +117,15 @@ This system answers complex engineering questions by reasoning over your codebas
 - **Tooling chunkers**: Kubernetes manifests, Helm charts, Dockerfiles, GraphQL schemas
 
 ### 🔧 Tool System (MCP)
-- **13 tools** exposed via Model Context Protocol: architecture evaluation, security validation, cost estimation, search, hybrid search, reranking, chain/entity/iterative reasoning, graph queries, entity search, ingestion, job status
+- **30+ tools** exposed via Model Context Protocol
+- **Tool Categories**: Search, Reasoning, Graph, Code Analysis, Infrastructure, Multi-modal
+- **Tooling Search**: Kubernetes, Helm, Docker, GraphQL, Istio
+- **CodeGraph**: Find callers, callees, dead code, complexity, class hierarchy
+
+### 📊 Observability
+- **Trace Logging**: JSONL format with trace_id per request
+- **Metrics Collection**: Latency (p50/p95/p99), errors, counters
+- **Execution State**: Step-by-step tracking with reasoning traces
 
 ---
 

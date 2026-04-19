@@ -176,6 +176,27 @@ Only the retrievers needed for the classified strategy are instantiated, reducin
 | Request Router | Routes MCP requests to appropriate handlers |
 | Contract Validators | Request/response schema validation |
 
+### 2.7 Platform Adapter Architecture
+
+The Platform Adapter system enables universal platform support through pluggable adapters.
+
+| Component | Function |
+|-----------|----------|
+| Pattern Library | 12+ architectural patterns (CQRS, microservices, serverless, etc.) |
+| Pattern Matcher | Matches IR features against patterns |
+| Constraint Engine | Validates architectures per platform |
+| Adapter Registry | Manages platform adapters |
+| SAP BTP Adapter | Generates xsuaa.json, mta.yaml configs |
+| VMware Tanzu Adapter | Generates K8s manifests, pom.xml |
+| Power Platform Adapter | Generates Dataverse tables, Flows |
+
+**Supported Platforms:**
+- SAP BTP (Cloud Foundry, Kyma, CAP)
+- VMware Tanzu (Spring Boot, Knative)
+- Microsoft Power Platform (Power Apps, Power Automate)
+
+See [Platform Adapter Architecture](platform-adapter-architecture.md) for details.
+
 ## 3. Data Flow
 
 ```mermaid

@@ -15,6 +15,61 @@ from enum import Enum
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field, ConfigDict
+from typing import List, Dict, Any, Optional
+
+
+class PlatformContext(BaseModel):
+    """Platform-agnostic platform context for any technology stack."""
+    platform: str = Field(..., description="Platform: sap, salesforce, powerplatform, tanzu, aws, azure, gcp")
+    region: Optional[str] = Field(None, description="Region: eu10, us10, etc.")
+    environment: Optional[str] = Field(None, description="Environment: dev, staging, prod")
+    multi_tenant: bool = Field(default=False, description="Multi-tenant deployment")
+    provider: Optional[str] = Field(None, description="Cloud provider: aws, azure, gcp, on-prem")
+    version: Optional[str] = Field(None, description="Platform version")
+
+
+class IRFeature(BaseModel):
+    """Extracted features from IR for pattern matching and constraints."""
+    # Core capabilities
+    has_async: bool = Field(default=False, description="Uses async/event-driven patterns")
+    has_auth: bool = Field(default=False, description="Requires authentication")
+    has_database: bool = Field(default=False, description="Uses persistent storage")
+    has_api: bool = Field(default=False, description="Exposes REST/GraphQL API")
+    has_ui: bool = Field(default=False, description="Has user interface")
+    has_batch: bool = Field(default=False, description="Has batch processing")
+    
+    # Architecture patterns
+    has_microservices: bool = Field(default=False, description="Microservices architecture")
+    has_event_driven: bool = Field(default=False, description="Event-driven architecture")
+    has_serverless: bool = Field(default=False, description="Serverless/function as a service")
+    has_container: bool = Field(default=False, description="Container-based")
+    
+    # Data & compliance
+    data_classification: str = Field(default="internal", description="internal, pii, sensitive, public")
+    compliance_requirements: List[str] = Field(default_factory=list, description="PCI, HIPAA, etc.")
+    encryption_required: bool = Field(default=False, description="Data encryption required")
+    
+    # Integration
+    integration_points: List[str] = Field(default_factory=list, description="External service integrations")
+    uses_external_services: List[str] = Field(default_factory=list, description="Cloud service dependencies")
+    
+    # Operations
+    scalability_required: bool = Field(default=False, description="Requires horizontal scaling")
+    high_availability_required: bool = Field(default=False, description="Needs 99.9%+ SLA")
+    multi_region_required: bool = Field(default=False, description="Multi-region deployment")
+    
+    # Cost sensitivity
+    cost_sensitive: bool = Field(default=False, description="Cost optimization important")
+    startup_cost_limit: Optional[float] = Field(None, description="Max initial cost in USD")
+
+
+class EnrichedIR(BaseModel):
+    """IR enriched with extracted features for knowledge processing."""
+    input_ir: IRNode = Field(..., description="Original IR node")
+    platform_context: PlatformContext = Field(..., description="Platform context")
+    features: IRFeature = Field(..., description="Extracted features")
+    confidence_score: float = Field(default=0.0, description="Confidence in feature extraction")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
 
 
 class ArtifactType(str, Enum):
