@@ -22,71 +22,80 @@ uv run uvicorn api.main:app --host 0.0.0.0 --port 8000
 
 ```
 /home/roger/src/gag/
-├── api/           # FastAPI endpoints
-├── agents/        # Planner, Retriever, Reasoner, Validator agents
-├── core/          # Config, Auth, Memory, Cache, Health
-├── retrieval/     # Hybrid retriever (vector + graph + runtime)
-├── documents/     # Document parsing, chunking, multimodal
-├── ingestion/     # Ingestion pipelines (Git, Docs, Tickets, etc.)
-├── models/        # Pydantic models (IR, MCP, Graph, Retrieval)
-├── multimodal/    # VLM processor, IR builder
-├── tests/         # 311 tests, run with pytest-asyncio
-└── docs/          # API, Architecture, Configuration docs
+├── api/              # FastAPI endpoints, MCP handler
+├── agents/           # Planner, Retriever, Reasoner, Validator
+├── core/            # Config, Auth, Cache, Health, Knowledge
+│   ├── adapters/    # Platform adapters (SAP, AWS, Azure, GCP, Tanzu, PowerPlatform)
+│   └── knowledge/   # Graph, ontology, taxonomy, constraints, usecases, ADRs
+├── retrieval/        # Hybrid retriever (11 sources)
+├── documents/       # Document parsing, chunking
+├── ingestion/       # Ingestion pipelines
+├── models/          # Pydantic models
+├── multimodal/     # VLM processor
+├── tests/          # 356 tests
+└── docs/           # API, Architecture, Configuration
 ```
 
 ## Key Entry Points
 
 - **API**: `api/main.py` - FastAPI app with routes
 - **Orchestration**: `agents/orchestration.py` - Plan → Retrieve → Reason → Execute
-- **Config**: `core/config.py` - Settings from environment variables
-- **Auth**: `core/auth.py` - RBAC, JWT tokens, password hashing
+- **Platform Adapters**: `core/adapters/` - SAP, AWS, Azure, GCP, Tanzu, PowerPlatform
+- **Knowledge**: `core/knowledge/` - Graph, patterns, constraints
+
+## Platform-Adapters Architecture
+
+Six pluggable adapters in `core/adapters/`:
+- **SAP BTP**: XSUAA, HANA, Kyma
+- **AWS**: Lambda, S3, DynamoDB, EKS
+- **Azure**: Functions, Cosmos DB, AKS
+- **GCP**: Cloud Functions, Firestore, GKE
+- **VMware Tanzu**: Kubernetes, Spring
+- **Power Platform**: PowerApps, Dataverse
+
+Knowledge layer with:
+- Use cases (7 pre-built)
+- ADRs (5 architecture decisions)
+- Reference architectures (8 patterns)
 
 ## Important Conventions
 
-1. **Testing**: Use `pytest-asyncio` with `asyncio_mode = auto` in pyproject.toml
-2. **Type Checking**: Run `mypy` with config in `pyproject.toml` (ignore_missing_imports=true)
-3. **Linting**: Use `ruff` with config in `pyproject.toml`
-4. **Dependencies**: Install with `uv sync` or `pip install -e ".[all]"` for all features
-5. **Python Version**: 3.12+ required
+1. **Testing**: `pytest-asyncio` with `asyncio_mode = auto` in pyproject.toml
+2. **Type Checking**: `mypy` with config in pyproject.toml
+3. **Linting**: `ruff` with config in pyproject.toml
+4. **Dependencies**: `uv sync` or `pip install -e ".[all]"`
+5. **Python**: 3.12+ required
+6. **LlamaIndex**: Use `llama_index.core.*` paths (v0.14+)
 
-## LlamaIndex Version Note
-
-This project uses **llama-index v0.14+**. Import paths changed:
-- `llama_index.readers.file` → `llama_index.core.SimpleDirectoryReader`
-- `llama_index.core.node_parser.SemanticChunker` → `llama_index.core.node_parser.SemanticSplitterNodeParser`
-- `llama_index.core.TextNode` → `llama_index.core.schema.TextNode`
-
-## Required Environment Variables
+## Required Env Variables
 
 ```bash
-# For local development
+# Development
 LLM_PROVIDER=openrouter
 LLM_MODEL=qwen-max
 LLM_API_KEY=your-key
 
-# Required for production
+# Production (required)
 JWT_SECRET=<strong-random-key>
 CREDENTIAL_ENCRYPT_KEY=<32-char-key>
 ```
 
-## Docker Services
+## Docker
 
 ```bash
-# Start full stack (API + Qdrant + FalkorDB + Redis)
-docker-compose up -d
-
-# Access API at http://localhost:8000
+docker-compose up -d  # Start full stack (API + Qdrant + FalkorDB + Redis)
+# API: http://localhost:8000
 ```
 
 ## Common Issues
 
-1. **Import errors with llama_index**: Use `llama_index.core.*` paths, not old `llama_index.readers.*`
-2. **Async test failures**: Ensure pytest-asyncio is installed and `asyncio_mode = auto` in pytest.ini
-3. **Missing dependencies**: Run `uv pip sync` or `pip install -r requirements.txt`
+1. **llama_index import errors**: Use `llama_index.core.*` paths
+2. **Async test failures**: Ensure `asyncio_mode = auto` in pytest.ini
+3. **Missing deps**: Run `uv pip sync`
 
 ## Documentation
 
-- [README.md](README.md) - Project overview
+- [README.md](README.md) - Overview
 - [docs/api.md](docs/api.md) - API endpoints
-- [docs/configuration.md](docs/configuration.md) - 70+ config variables
+- [docs/configuration.md](docs/configuration.md) - 70+ config vars
 - [docs/architecture.md](docs/architecture.md) - System design
