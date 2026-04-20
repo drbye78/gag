@@ -17,4 +17,4 @@ Central documentation for the Engineering Intelligence System.
 
 ## Version
 
-Current version: **3.1.0**
+Current version: **3.2.0**

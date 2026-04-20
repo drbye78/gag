@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "engineering-intelligence-system"
-version = "3.0.0"
+version = "3.2.0"
 description = "Production-grade cognitive architecture for domain-specific reasoning within enterprise AI PDLC pipelines"
 readme = "README.md"
 license = { text = "Proprietary" }

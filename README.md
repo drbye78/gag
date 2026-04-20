@@ -2,7 +2,7 @@
 
 A production-grade **Cognitive Architecture** for domain-specific reasoning within enterprise AI PDLC pipelines. Goes beyond traditional RAG by combining multimodal understanding, hybrid retrieval (vector + graph + runtime), structured reasoning, tool-augmented decision making, and stateful orchestration.
 
-![Version](https://img.shields.io/badge/version-3.1.0-blue)
+![Version](https://img.shields.io/badge/version-3.2.0-blue)
 ![Python](https://img.shields.io/badge/python-3.12+-green)
 ![Tests](https://img.shields.io/badge/tests-356%20passing-brightgreen)
 ![License](https://img.shields.io/badge/license-Proprietary-red)
@@ -310,6 +310,7 @@ python -m pytest tests/ -v
 
 | Version | Highlights |
 |---|---|
+| **v3.2** | Full PDLC coverage (9 phases, 71 MCP tools), PDLC-aware prompts, platform-agnostic architecture, new tool modules (ideation, requirements, testing, deployment, observability, feedback, day2), MarketAnalysis, MutationTester |
 | **v3.1** | Multi-platform adapters (AWS, Azure, GCP), platform-aware retrieval, knowledge graph integration (use cases, ADRs, reference architectures), 356 tests |
 | **v3.0** | Python 3.12+, pyproject.toml, Diagram Qdrant/FalkorDB indexing, UI sketch retrieval, Mermaid parser, ColPali integration, ColBERT support, Diagram citations |
 | **v2.4** | Entity graph cache, lazy retriever init, config consolidation, input validation, Cypher injection prevention, logging, CORS config, embedding cache |

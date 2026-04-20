@@ -1,7 +1,20 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
+from enum import Enum
 
 from pydantic import BaseModel
+
+
+class PDLCPhase(str, Enum):
+    IDEATION = "ideation"
+    BUSINESS_REQUIREMENTS = "business_requirements"
+    ARCHITECTURE_DESIGN = "architecture_design"
+    CODING = "coding"
+    TESTING = "testing"
+    DEPLOYMENT = "deployment"
+    PRODUCTION_OBSERVABILITY = "production_observability"
+    FEEDBACK_LOOP = "feedback_loop"
+    DAY2_OPERATIONS = "day2_operations"
 
 
 class MCPErrorCode:
@@ -26,6 +39,7 @@ class ToolOutput(BaseModel):
 class BaseTool(ABC):
     name: str
     description: str
+    phase: PDLCPhase = PDLCPhase.CODING
 
     @abstractmethod
     async def execute(self, input: ToolInput) -> ToolOutput:
@@ -736,6 +750,27 @@ class ToolRegistry:
         self.register(UISketchSearchTool())
         from ui.suggestion_tool import UISuggestionTool
         self.register(UISuggestionTool())
+        self._register_pdlc_tools()
+
+    def _register_pdlc_tools(self):
+        try:
+            from tools.ideation import register_ideation_tools
+            from tools.requirements import register_requirements_tools
+            from tools.testing import register_testing_tools
+            from tools.deployment import register_deployment_tools
+            from tools.observability import register_observability_tools
+            from tools.feedback import register_feedback_tools
+            from tools.day2 import register_day2_tools
+
+            register_ideation_tools(self)
+            register_requirements_tools(self)
+            register_testing_tools(self)
+            register_deployment_tools(self)
+            register_observability_tools(self)
+            register_feedback_tools(self)
+            register_day2_tools(self)
+        except ImportError:
+            pass
 
     def register(self, tool: BaseTool):
         self._tools[tool.name] = tool
