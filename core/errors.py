@@ -102,6 +102,46 @@ class ValidationError(EISError):
     is_retryable = False
 
 
+class OrchestrationError(EISError):
+    """Orchestration pipeline failed."""
+
+    code = "ORCHESTRATION_ERROR"
+    status_code = 500
+    is_retryable = True
+
+
+class PlanningError(OrchestrationError):
+    """Planning step failed."""
+
+    code = "PLANNING_ERROR"
+    status_code = 500
+    is_retryable = False
+
+
+class ReasoningError(OrchestrationError):
+    """Reasoning step failed."""
+
+    code = "REASONING_ERROR"
+    status_code = 500
+    is_retryable = True
+
+
+class ToolExecutionError(OrchestrationError):
+    """Tool execution failed."""
+
+    code = "TOOL_EXECUTION_ERROR"
+    status_code = 500
+    is_retryable = True
+
+
+class IRBuilderError(EISError):
+    """IR building failed."""
+
+    code = "IR_BUILD_ERROR"
+    status_code = 500
+    is_retryable = False
+
+
 # Re-export for convenience
 EISErrors = {
     "configuration": ConfigurationError,
@@ -112,6 +152,11 @@ EISErrors = {
     "auth": AuthenticationError,
     "rate_limit": RateLimitError,
     "validation": ValidationError,
+    "orchestration": OrchestrationError,
+    "planning": PlanningError,
+    "reasoning": ReasoningError,
+    "tool_execution": ToolExecutionError,
+    "ir_builder": IRBuilderError,
 }
 
 
