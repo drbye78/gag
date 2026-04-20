@@ -8,6 +8,8 @@ from core.patterns import (
 )
 from core.constraints import get_constraint_engine
 from core.adapters import AdapterInput, AdapterOutput, get_adapter_registry
+from core.knowledge.resolver import get_resolver, ResolutionResult
+from core.knowledge.graph import get_knowledge_graph
 
 
 class KnowledgeProcessingPipeline:
@@ -157,3 +159,62 @@ def get_explanation_engine() -> ExplanationEngine:
     if _explainer is None:
         _explainer = ExplanationEngine()
     return _explainer
+
+
+class UnifiedPipeline:
+    """Knowledge-first unified pipeline."""
+    
+    def __init__(self):
+        self.legacy = KnowledgeProcessingPipeline()
+        self.resolver = get_resolver()
+    
+    async def process(self, query: str, platform_context: PlatformContext) -> AdapterOutput:
+        resolution = await self.resolver.resolve(query)
+        
+        if resolution.can_proceed:
+            return await self._transform_to_legacy(resolution, platform_context)
+        
+        return AdapterOutput(
+            recommendations=[{"name": "Fix Required", "reason": resolution.reasoning}],
+            can_deploy=False,
+            confidence=resolution.intent.confidence if resolution.intent else 0.0,
+        )
+    
+    async def _transform_to_legacy(
+        self,
+        resolution: ResolutionResult,
+        platform_context: PlatformContext
+    ) -> AdapterOutput:
+        recommendations = []
+        for pattern in resolution.patterns_matched[:5]:
+            recommendations.append({
+                "name": pattern.pattern_name,
+                "reason": pattern.reasoning,
+                "score": pattern.score,
+            })
+        
+        for violation in resolution.constraint_violations:
+            recommendations.append({
+                "name": "Constraint Violation",
+                "reason": violation.message,
+                "fix": violation.fix,
+                "severity": violation.severity,
+            })
+        
+        return AdapterOutput(
+            recommendations=recommendations,
+            platform=resolution.platform,
+            confidence=resolution.intent.confidence if resolution.intent else 0.0,
+            can_deploy=resolution.can_proceed,
+            explanation=resolution.reasoning,
+        )
+
+
+_unified_pipeline: Optional[UnifiedPipeline] = None
+
+
+def get_unified_pipeline() -> UnifiedPipeline:
+    global _unified_pipeline
+    if _unified_pipeline is None:
+        _unified_pipeline = UnifiedPipeline()
+    return _unified_pipeline

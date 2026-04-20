@@ -85,6 +85,13 @@ try:
 except ImportError:
     pass
 
+try:
+    from retrieval.knowledge import (
+        KnowledgeRetriever,
+        get_knowledge_retriever,
+    )
+except ImportError:
+    pass
 
 __all__ = [
     "DocsRetriever",
@@ -93,6 +100,7 @@ __all__ = [
     "CodeGraphRetriever",
     "TicketRetriever",
     "TelemetryRetriever",
+    "KnowledgeRetriever",
     "RetrievalOrchestrator",
     "RetrievalRouter",
     "RetrievalSource",

@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 from models.ir import IRFeature, PlatformContext
+from core.knowledge.graph import get_knowledge_graph, NodeType, EdgeType
 
 
 class AdapterInput(BaseModel):
@@ -20,6 +21,7 @@ class AdapterOutput(BaseModel):
     explanation: str = ""
     confidence: float = 0.0
     can_deploy: bool = True
+    platform: Optional[str] = None
 
 
 class PlatformAdapter(ABC):
@@ -54,6 +56,19 @@ class PlatformAdapter(ABC):
     @abstractmethod
     def generate_code(self, features: IRFeature) -> Dict[str, str]:
         pass
+    
+    def get_knowledge_node(self) -> Optional[Any]:
+        graph = get_knowledge_graph()
+        return graph.get_node(self.platform_id)
+    
+    def get_related_services(self) -> List[str]:
+        graph = get_knowledge_graph()
+        related = graph.find_related(
+            self.platform_id,
+            edge_types=[EdgeType.PROVIDES],
+            depth=1
+        )
+        return [n.id for n in related]
 
 
 class AdapterRegistry:
@@ -63,6 +78,29 @@ class AdapterRegistry:
     
     def register(self, adapter: PlatformAdapter) -> None:
         self._adapters[adapter.platform_id] = adapter
+        
+        graph = get_knowledge_graph()
+        from core.knowledge.graph import KnowledgeNode
+        graph.add_node(KnowledgeNode(
+            id=adapter.platform_id,
+            name=adapter.platform_id.upper(),
+            type=NodeType.PLATFORM,
+            properties={"services": adapter.supported_services},
+        ))
+        
+        for svc in adapter.supported_services:
+            from core.knowledge.graph import KnowledgeNode, KnowledgeEdge
+            graph.add_node(KnowledgeNode(
+                id=svc,
+                name=svc,
+                type=NodeType.SERVICE,
+                properties={"platform": adapter.platform_id},
+            ))
+            graph.add_edge(KnowledgeEdge(
+                source_id=adapter.platform_id,
+                target_id=svc,
+                type=EdgeType.PROVIDES,
+            ))
     
     def get(self, platform_id: str) -> Optional[PlatformAdapter]:
         return self._adapters.get(platform_id)

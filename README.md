@@ -2,9 +2,9 @@
 
 A production-grade **Cognitive Architecture** for domain-specific reasoning within enterprise AI PDLC pipelines. Goes beyond traditional RAG by combining multimodal understanding, hybrid retrieval (vector + graph + runtime), structured reasoning, tool-augmented decision making, and stateful orchestration.
 
-![Version](https://img.shields.io/badge/version-3.0.0-blue)
+![Version](https://img.shields.io/badge/version-3.1.0-blue)
 ![Python](https://img.shields.io/badge/python-3.12+-green)
-![Tests](https://img.shields.io/badge/tests-311%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-356%20passing-brightgreen)
 ![License](https://img.shields.io/badge/license-Proprietary-red)
 
 ---
@@ -67,13 +67,19 @@ This system answers complex engineering questions by reasoning over your codebas
 
 ### 🧩 Platform Adapter Architecture
 - **Universal Intelligence Platform** — Supports any technology stack through pluggable adapters
-- **Platform Adapters**: SAP BTP, VMware Tanzu, Microsoft Power Platform (extensible)
+- **Platform Adapters**: SAP BTP, VMware Tanzu, Power Platform, AWS, Azure, GCP (extensible)
 - **Pattern Library**: 12+ architectural patterns (microservices, serverless, event-driven, CQRS, etc.)
 - **Constraint Engine**: Hard/soft constraints per platform with automatic fix suggestions
 - **IR Features**: Platform-agnostic feature extraction for pattern matching
+- **Use Cases**: 7 pre-built use cases per platform (integration, automation, analytics, security)
+- **ADRs**: 5 architecture decision records for cross-platform patterns
+- **Reference Architectures**: 8 reference architectures (serverless, microservices, event-driven, API)
 
 ### 🔍 Hybrid Retrieval
+- **11 sources**: Docs, Code, Graph, Code Graph, Tickets, Telemetry, Diagram, UI Sketch, ColBERT, Knowledge Graph, Multimodal
 - **5 strategies**: Vector-only, Graph-only, Multi-hop, Cascade, Iterative
+- **Platform-aware retrieval**: Auto-detects AWS/Azure/GCP/SAP/Tanzu/PowerPlatform from queries
+- **Knowledge graph integration**: Queries use cases, ADRs, reference architectures, and platform services
 - **Entity graph cache**: LRU eviction (500 entries, 1h TTL) with REST API for monitoring
 - **4 fusion methods**: RRF, Score-normalized, Weighted, Combined
 - **5 rerank providers**: Cohere, BGE, SentenceTransformers, Jina, LlamaIndex
@@ -232,6 +238,8 @@ export LLM_API_KEY=your-api-key
 ├── agents/             # Planner, Retriever, Reasoning, Executor, Validator
 ├── api/                # FastAPI REST endpoints and MCP handler
 ├── core/               # Config, auth/RBAC, caching, memory, health, metrics
+│   ├── adapters/       # Platform adapters (SAP, AWS, Azure, GCP, Tanzu, PowerPlatform)
+│   └── knowledge/      # Knowledge graph, ontology, taxonomy, constraints, ADRs
 ├── documents/          # Document ingestion with versioning, Confluence, WebDAV
 ├── evaluation/         # Evaluation test cases and scoring
 ├── git/                # Git repository ingestion pipeline
@@ -244,7 +252,7 @@ export LLM_API_KEY=your-api-key
 ├── ui/                 # UI sketch retrieval, ColPali, SAP knowledge
 ├── tools/              # Tool registry (13 tools via MCP)
 ├── docs/               # Architecture, API, deployment, configuration docs
-└── tests/              # 311 unit and integration tests
+└── tests/              # 356 unit and integration tests
 ```
 
 ---
@@ -283,7 +291,7 @@ python -m pytest tests/ -v
 ./eis test --keyword Health             # Tests matching keyword
 ```
 
-**311 tests, all passing.**
+**356 tests, all passing.**
 
 ---
 
@@ -302,6 +310,7 @@ python -m pytest tests/ -v
 
 | Version | Highlights |
 |---|---|
+| **v3.1** | Multi-platform adapters (AWS, Azure, GCP), platform-aware retrieval, knowledge graph integration (use cases, ADRs, reference architectures), 356 tests |
 | **v3.0** | Python 3.12+, pyproject.toml, Diagram Qdrant/FalkorDB indexing, UI sketch retrieval, Mermaid parser, ColPali integration, ColBERT support, Diagram citations |
 | **v2.4** | Entity graph cache, lazy retriever init, config consolidation, input validation, Cypher injection prevention, logging, CORS config, embedding cache |
 | **v2.3** | Unit tests, new API endpoints, configuration settings, pipeline integration |

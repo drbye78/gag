@@ -1,4 +1,4 @@
-# SAP BTP Engineering Intelligence System - Architecture Design
+# Engineering Intelligence System - Architecture Design
 
 ## 1. High-Level Architecture Diagram
 

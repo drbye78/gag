@@ -91,6 +91,24 @@ except ImportError as e:
 
     logging.getLogger(__name__).warning("GraphRAG API not available: %s", e)
 
+try:
+    from api.adapters import router as adapter_router
+
+    app.include_router(adapter_router)
+except ImportError as e:
+    import logging
+
+    logging.getLogger(__name__).warning("Adapter API not available: %s", e)
+
+try:
+    from api.knowledge import router as knowledge_router
+
+    app.include_router(knowledge_router)
+except ImportError as e:
+    import logging
+
+    logging.getLogger(__name__).warning("Knowledge API not available: %s", e)
+
 # Configure middleware
 setup_middleware(app)
 

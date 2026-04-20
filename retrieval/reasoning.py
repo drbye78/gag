@@ -32,6 +32,11 @@ class ReasoningStep:
 
 class ReasoningEngine:
     def __init__(self, mode: ReasoningMode = ReasoningMode.CHAIN_OF_THOUGHTS):
+        if isinstance(mode, str):
+            try:
+                mode = ReasoningMode(mode)
+            except ValueError:
+                mode = ReasoningMode.CHAIN_OF_THOUGHTS
         self.mode = mode
         self.max_steps = 10
         self.max_branches = 3
@@ -293,6 +298,14 @@ def get_reasoning_engine(
     mode: ReasoningMode = ReasoningMode.CHAIN_OF_THOUGHTS,
 ) -> ReasoningEngine:
     global _reasoning_engine
-    if _reasoning_engine is None or _reasoning_engine.mode != mode:
+    if isinstance(mode, str):
+        mode = ReasoningMode(mode)
+    needs_new = (
+        _reasoning_engine is None
+        or isinstance(_reasoning_engine.mode, str)
+    )
+    if not isinstance(mode, ReasoningMode):
+        mode = ReasoningMode.CHAIN_OF_THOUGHTS
+    if needs_new or _reasoning_engine.mode != mode:
         _reasoning_engine = ReasoningEngine(mode=mode)
     return _reasoning_engine

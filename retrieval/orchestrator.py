@@ -21,6 +21,8 @@ from retrieval.hybrid import get_hybrid_retriever
 from retrieval.classifier import get_query_classifier
 from retrieval.diagram import get_diagram_retriever
 from retrieval.colbert import get_colbert_search_client
+from retrieval.knowledge import get_knowledge_retriever
+from core.adapters import get_adapter_registry
 
 
 class RetrievalSource(str, Enum):
@@ -34,6 +36,7 @@ class RetrievalSource(str, Enum):
     MULTIMODAL = "multimodal"
     UI_SKETCH = "ui_sketch"
     COLBERT = "colbert"
+    KNOWLEDGE = "knowledge"
 
 
 class RetrievalMode(str, Enum):
@@ -57,6 +60,8 @@ class RetrievalOrchestrator:
         from ui.retriever import get_ui_retriever
         self.ui_retriever = get_ui_retriever()
         self.colbert_retriever = get_colbert_search_client()
+        self.knowledge_retriever = get_knowledge_retriever()
+        self.adapter_registry = get_adapter_registry()
 
     async def retrieve(
         self,
@@ -94,6 +99,8 @@ class RetrievalOrchestrator:
                 tasks.append(self._retrieve_ui(query, limit, filters))
             elif source == RetrievalSource.COLBERT:
                 tasks.append(self._retrieve_colbert(query, limit, filters))
+            elif source == RetrievalSource.KNOWLEDGE:
+                tasks.append(self._retrieve_knowledge(query, limit, filters))
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -193,6 +200,17 @@ class RetrievalOrchestrator:
         except Exception:
             return {"source": "colbert", "results": [], "total": 0, "took_ms": 0}
 
+    async def _retrieve_knowledge(self, query: str, limit: int, filters: Optional[Dict]) -> Dict:
+        try:
+            result = await self.knowledge_retriever.search(query, limit=limit, filters=filters)
+            return result
+        except Exception:
+            return {"source": "knowledge", "results": [], "total": 0, "took_ms": 0}
+
+    def detect_platform_from_query(self, query: str) -> List[str]:
+        query_lower = query.lower()
+        return self.knowledge_retriever._detect_platforms(query_lower)
+
     async def route_hybrid(
         self,
         query: str,
@@ -240,7 +258,25 @@ class RetrievalRouter:
             RetrievalSource.TELEMETRY,
             RetrievalSource.DIAGRAM,
             RetrievalSource.UI_SKETCH,
+            RetrievalSource.KNOWLEDGE,
         ]
+
+    def get_platform_recommendation(self, query: str) -> List[str]:
+        detected = self.orchestrator.detect_platform_from_query(query)
+        if not detected:
+            detected = self._infer_from_adapters(query)
+        return detected
+
+    def _infer_from_adapters(self, query: str) -> List[str]:
+        query_lower = query.lower()
+        recommendations = []
+        adapters = self.orchestrator.adapter_registry.list_adapters()
+        for adapter in adapters:
+            for service in adapter.supported_services:
+                if service.lower() in query_lower:
+                    recommendations.append(adapter.platform_id)
+                    break
+        return list(set(recommendations))
 
     async def route(
         self,
