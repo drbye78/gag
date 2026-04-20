@@ -95,7 +95,13 @@ docker-compose up -d  # Start full stack (API + Qdrant + FalkorDB + Redis)
 
 ## Documentation
 
-- [README.md](README.md) - Overview
+- [README.md](README.md) - Project overview
+- [docs/architecture/README.md](docs/architecture/README.md) - Architecture documentation index
+- [docs/architecture/01-ingestion-pipeline.md](docs/architecture/01-ingestion-pipeline.md) - Ingestion pipeline
+- [docs/architecture/02-retrieval-pipeline.md](docs/architecture/02-retrieval-pipeline.md) - Retrieval pipeline
+- [docs/architecture/03-orchestration-agents.md](docs/architecture/03-orchestration-agents.md) - Orchestration & agents
+- [docs/architecture/04-code-understanding.md](docs/architecture/04-code-understanding.md) - Code understanding
+- [docs/architecture/05-multimodal-diagrams.md](docs/architecture/05-multimodal-diagrams.md) - Multimodal & diagrams
+- [docs/architecture/06-platform-adapters.md](docs/architecture/06-platform-adapters.md) - Platform adapters
 - [docs/api.md](docs/api.md) - API endpoints
 - [docs/configuration.md](docs/configuration.md) - 70+ config vars
-- [docs/architecture.md](docs/architecture.md) - System design
