@@ -226,7 +226,12 @@ class GapAnalyzerTool(BaseTool):
 class RequirementsImporterTool(BaseTool):
     name = "requirements_import"
     description = "Import requirements from external sources"
-
+    
+    def __init__(self):
+        super().__init__()
+        from core.config import get_settings
+        self._settings = get_settings()
+    
     async def execute(self, input: ToolInput) -> ToolOutput:
         source = input.args.get("source", "jira")
         query = input.args.get("query", "")
@@ -260,11 +265,171 @@ class RequirementsImporterTool(BaseTool):
 
     async def _import_jira(self, query: str) -> List[Dict[str, Any]]:
         logger.info(f"Importing from Jira with query: {query}")
-        raise NotImplementedError("Jira integration requires jira-client library")
-
+        JIRA_AVAILABLE = False
+        try:
+            from jira import JIRA
+            JIRA_AVAILABLE = True
+        except ImportError:
+            pass
+        
+        if not JIRA_AVAILABLE:
+            return await self._import_jira_fallback(query)
+        
+        jira_url = self._settings.get("JIRA_URL")
+        jira_email = self._settings.get("JIRA_EMAIL")
+        jira_token = self._settings.get("JIRA_API_TOKEN")
+        
+        if not all([jira_url, jira_email, jira_token]):
+            return await self._import_jira_fallback(query)
+        
+        try:
+            jira = JIRA(jira_url, basic_auth=(jira_email, jira_token))
+            issues = jira.search_issues(query, maxResults=50)
+            results = []
+            for issue in issues:
+                results.append({
+                    "id": issue.key,
+                    "summary": issue.fields.summary,
+                    "description": getattr(issue.fields, "description", ""),
+                    "type": issue.fields.issuetype.name if hasattr(issue.fields, "issuetype") else "Story",
+                    "status": getattr(issue.fields, "status", {}).name if hasattr(issue.fields, "status") else None,
+                    "url": f"{jira_url}/browse/{issue.key}",
+                })
+            return results
+        except Exception as e:
+            logger.warning(f"Jira import failed: {e}")
+            return await self._import_jira_fallback(query)
+    
+    async def _import_jira_fallback(self, query: str) -> List[Dict[str, Any]]:
+        import httpx
+        import os
+        
+        jira_url = os.getenv("JIRA_URL")
+        jira_email = os.getenv("JIRA_EMAIL")
+        jira_token = os.getenv("JIRA_API_TOKEN")
+        
+        if not all([jira_url, jira_email, jira_token]):
+            return [{
+                "query": query,
+                "status": "unconfigured",
+                "note": "Set JIRA_URL, JIRA_EMAIL, JIRA_API_TOKEN environment variables",
+                "results": [],
+            }]
+        
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                headers = {
+                    "Authorization": f"Bearer {jira_token}",
+                    "Accept": "application/json",
+                }
+                jql_query = query.replace(" ", "+")
+                url = f"{jira_url}/rest/api/2/search?jql={jql_query}&maxResults=50"
+                response = await client.get(url, headers=headers)
+                response.raise_for_status()
+                data = response.json()
+                results = []
+                for issue in data.get("issues", []):
+                    field = issue.get("fields", {})
+                    results.append({
+                        "id": issue.get("key"),
+                        "summary": field.get("summary"),
+                        "description": field.get("description", ""),
+                        "type": field.get("issuetype", {}).get("name", "Story") if isinstance(field.get("issuetype"), dict) else "Story",
+                        "status": field.get("status", {}).get("name") if isinstance(field.get("status"), dict) else None,
+                        "url": f"{jira_url}/browse/{issue.get('key')}",
+                    })
+                return results
+        except Exception as e:
+            return [{
+                "query": query,
+                "status": "error",
+                "error": str(e),
+                "results": [],
+            }]
+    
     async def _import_confluence(self, query: str) -> List[Dict[str, Any]]:
         logger.info(f"Importing from Confluence with query: {query}")
-        raise NotImplementedError("Confluence integration requires confluence-client library")
+        CONFLUENCE_AVAILABLE = False
+        try:
+            from atlassian import Confluence
+            CONFLUENCE_AVAILABLE = True
+        except ImportError:
+            pass
+        
+        if not CONFLUENCE_AVAILABLE:
+            return await self._import_confluence_fallback(query)
+        
+        confluence_url = self._settings.get("CONFLUENCE_URL")
+        confluence_email = self._settings.get("CONFLUENCE_EMAIL")
+        confluence_token = self._settings.get("CONFLUENCE_API_TOKEN")
+        
+        if not all([confluence_url, confluence_email, confluence_token]):
+            return await self._import_confluence_fallback(query)
+        
+        try:
+            confluence = Confluence(
+                url=confluence_url,
+                username=confluence_email,
+                password=confluence_token,
+            )
+            pages = confluence.cql(query, expand="body.storage", limit=50)
+            results = []
+            for page in pages.get("results", []):
+                results.append({
+                    "id": page.get("id"),
+                    "title": page.get("title"),
+                    "url": f"{confluence_url}/pages/{page.get('id')}",
+                    "space": page.get("space", {}).get("key") if isinstance(page.get("space"), dict) else None,
+                })
+            return results
+        except Exception as e:
+            logger.warning(f"Confluence import failed: {e}")
+            return await self._import_confluence_fallback(query)
+    
+    async def _import_confluence_fallback(self, query: str) -> List[Dict[str, Any]]:
+        import httpx
+        import os
+        
+        confluence_url = os.getenv("CONFLUENCE_URL")
+        confluence_email = os.getenv("CONFLUENCE_EMAIL")
+        confluence_token = os.getenv("CONFLUENCE_API_TOKEN")
+        
+        if not all([confluence_url, confluence_email, confluence_token]):
+            return [{
+                "query": query,
+                "status": "unconfigured",
+                "note": "Set CONFLUENCE_URL, CONFLUENCE_EMAIL, CONFLUENCE_API_TOKEN",
+                "results": [],
+            }]
+        
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                headers = {
+                    "Authorization": f"Bearer {confluence_token}",
+                    "Content-Type": "application/json",
+                }
+                cql_query = query.replace(" ", "+")
+                url = f"{confluence_url}/rest/api/content/search?cql={cql_query}&limit=50&expand=body.storage"
+                response = await client.get(url, headers=headers)
+                response.raise_for_status()
+                data = response.json()
+                results = []
+                for page in data.get("results", []):
+                    body = page.get("body", {}).get("storage", {}).get("value", "")[:500]
+                    results.append({
+                        "id": page.get("id"),
+                        "title": page.get("title"),
+                        "url": f"{confluence_url}/pages/{page.get('id')}",
+                        "body_preview": body,
+                    })
+                return results
+        except Exception as e:
+            return [{
+                "query": query,
+                "status": "error",
+                "error": str(e),
+                "results": [],
+            }]
 
     def validate_input(self, input: Dict[str, Any]) -> bool:
         return "source" in input

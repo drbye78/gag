@@ -182,7 +182,51 @@ class ElasticSearchBackend(TelemetryBackend):
         service: Optional[str] = None,
         limit: int = 10,
     ) -> List[Dict[str, Any]]:
-        return []
+        must = []
+        if metric_name:
+            must.append({"match": {"metric_name": metric_name}})
+        if service:
+            must.append({"match": {"service": service}})
+        body = {
+            "size": 0,
+            "query": {"bool": {"must": must}} if must else {"match_all": {}},
+            "aggs": {
+                "metrics": {
+                    "terms": {"field": "metric_name.keyword", "size": limit},
+                    "aggs": {
+                        "avg_value": {"avg": {"field": "value"}},
+                        "max_value": {"max": {"field": "value"}},
+                        "min_value": {"min": {"field": "value"}},
+                    },
+                }
+            },
+        }
+        try:
+            client = self._get_client()
+            resp = await client.post(f"{self.url}/{self.index}/_search", json=body)
+            resp.raise_for_status()
+            data = resp.json()
+            buckets = data.get("aggregations", {}).get("metrics", {}).get("buckets", [])
+            return [
+                {
+                    "metric_name": bucket["key"],
+                    "avg": bucket.get("avg_value", {}).get("value"),
+                    "max": bucket.get("max_value", {}).get("value"),
+                    "min": bucket.get("min_value", {}).get("value"),
+                    "doc_count": bucket["doc_count"],
+                }
+                for bucket in buckets
+            ]
+        except httpx.HTTPError as e:
+            logging.getLogger(__name__).warning(
+                "HTTP error querying Elasticsearch metrics: %s", e
+            )
+            return []
+        except Exception as e:
+            logging.getLogger(__name__).warning(
+                "Error querying Elasticsearch metrics: %s", e
+            )
+            return []
 
 
 class InMemoryTelemetryBackend(TelemetryBackend):

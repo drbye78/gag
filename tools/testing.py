@@ -336,31 +336,109 @@ def test_{endpoint.replace('/', '_')}_{method.lower()}_auth_required():
 class MutationTesterTool(BaseTool):
     name = "mutation_test"
     description = "Run mutation testing to verify test quality"
-
+    
     async def execute(self, input: ToolInput) -> ToolOutput:
         source_path = input.args.get("source_path", ".")
         test_path = input.args.get("test_path", "tests/")
-
+        config_path = input.args.get("config_path")
+        
         logger.info(f"Running mutation tests on {source_path}")
-
-        results = await self._run_mutation_test(source_path, test_path)
-
+        
+        try:
+            results = await self._run_mutation_test(source_path, test_path, config_path)
+        except Exception as e:
+            logger.warning(f"Mutation testing failed: {e}")
+            results = {
+                "source_path": source_path,
+                "test_path": test_path,
+                "status": "error",
+                "error": str(e),
+                "note": "Ensure mutmut is installed: pip install mutmut",
+            }
+        
         return ToolOutput(
             result=results,
             metadata={"executed": True}
         )
-
-    async def _run_mutation_test(self, source_path: str, test_path: str) -> Dict[str, Any]:
-        logger.warning("Mutation testing requires mutmut library - returning placeholder")
-
-        return {
-            "source_path": source_path,
-            "test_path": test_path,
-            "note": "Mutation testing requires mutmut package",
-            "install": "pip install mutmut",
-            "status": "not_implemented"
-        }
-
+    
+    async def _run_mutation_test(
+        self, source_path: str, test_path: str, config_path: str = None
+    ) -> Dict[str, Any]:
+        MUTMUT_AVAILABLE = False
+        try:
+            import mutmut
+            MUTMUT_AVAILABLE = True
+        except ImportError:
+            pass
+        
+        if not MUTMUT_AVAILABLE:
+            return {
+                "source_path": source_path,
+                "test_path": test_path,
+                "status": "unavailable",
+                "note": "Install mutmut: pip install mutmut",
+                "survived": 0,
+                "kills": 0,
+                "total": 0,
+            }
+        
+        import subprocess
+        import tempfile
+        import os
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mutation_dir = os.path.join(tmpdir, "mutmut")
+            os.makedirs(mutation_dir, exist_ok=True)
+            
+            try:
+                result_config = subprocess.run(
+                    ["mutmut", "run", "--no-awk", "-s", source_path, "-t", test_path],
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                )
+                
+                result_html = subprocess.run(
+                    ["mutmut", "html"],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                
+                result_summary = subprocess.run(
+                    ["mutmut", "summary"],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                
+                survived = result_summary.stdout.count("Survived")
+                killed = result_summary.stdout.count("Killed")
+                
+                return {
+                    "source_path": source_path,
+                    "test_path": test_path,
+                    "status": "completed",
+                    "stdout": result_summary.stdout[:2000],
+                    "survived": survived,
+                    "killed": killed,
+                    "config_output": result_config.stdout[:500],
+                }
+            except subprocess.TimeoutExpired:
+                return {
+                    "source_path": source_path,
+                    "test_path": test_path,
+                    "status": "timeout",
+                    "note": "Mutation testing timed out after 5 minutes",
+                }
+            except Exception as e:
+                return {
+                    "source_path": source_path,
+                    "test_path": test_path,
+                    "status": "error",
+                    "error": str(e),
+                }
+    
     def validate_input(self, input: Dict[str, Any]) -> bool:
         return "source_path" in input
 
