@@ -1,7 +1,7 @@
 """Structured error hierarchy for the Engineering Intelligence System."""
 
 import logging
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 

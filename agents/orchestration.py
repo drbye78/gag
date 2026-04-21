@@ -302,6 +302,7 @@ class OrchestrationEngine:
                 state.status = StepStatus.COMPLETED
                 break  # Success — exit retry loop
             except Exception as e:
+                from core.errors import OrchestrationError
                 if attempt < self.max_retries:
                     state.retry_count += 1
                     self.metrics["total_retries"] += 1
@@ -315,6 +316,13 @@ class OrchestrationEngine:
                     await asyncio.sleep(0.5 * (attempt + 1))  # Backoff
                 else:
                     state.status = StepStatus.FAILED
+                    state.error = f"{type(e).__name__}: {str(e)}"
+                    logger.error(
+                        "Step %s failed permanently after %d attempts: %s",
+                        step_type,
+                        self.max_retries,
+                        e,
+                    )
                     state.error = str(e)
                     logger.error(
                         "Step %s failed after %d retries: %s",
@@ -457,19 +465,16 @@ class OrchestrationEngine:
         self._update_metrics(True, len(all_states), execution_time)
 
         memory = get_memory_system()
-        try:
-            memory.remember(
-                key=f"execution:{int(start_time)}",
-                value={
-                    "query": query,
-                    "intent": plan.intent,
-                    "iterations": len(all_states),
-                    "tool_results": context.get("tool_results", []),
-                },
-                tier=MemoryTier.PROJECT,
-            )
-        except Exception:
-            pass
+        memory.remember(
+            key=f"execution:{int(start_time)}",
+            value={
+                "query": query,
+                "intent": plan.intent,
+                "iterations": len(all_states),
+                "tool_results": context.get("tool_results", []),
+            },
+            tier=MemoryTier.PROJECT,
+        )
 
         return {
             "query": query,
