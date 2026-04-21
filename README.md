@@ -4,7 +4,7 @@ A production-grade **Cognitive Architecture** for domain-specific reasoning with
 
 ![Version](https://img.shields.io/badge/version-3.2.0-blue)
 ![Python](https://img.shields.io/badge/python-3.12+-green)
-![Tests](https://img.shields.io/badge/tests-356%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-382%20passing-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ---
@@ -291,7 +291,7 @@ python -m pytest tests/ -v
 ./eis test --keyword Health             # Tests matching keyword
 ```
 
-**356 tests, all passing.**
+**382 tests, all passing.**
 
 ---
 
@@ -311,7 +311,7 @@ python -m pytest tests/ -v
 | Version | Highlights |
 |---|---|
 | **v3.2** | Full PDLC coverage (9 phases, 71 MCP tools), PDLC-aware prompts, platform-agnostic architecture, new tool modules (ideation, requirements, testing, deployment, observability, feedback, day2), MarketAnalysis, MutationTester |
-| **v3.1** | Multi-platform adapters (AWS, Azure, GCP), platform-aware retrieval, knowledge graph integration (use cases, ADRs, reference architectures), 356 tests |
+| **v3.1** | Multi-platform adapters (AWS, Azure, GCP), platform-aware retrieval, knowledge graph integration (use cases, ADRs, reference architectures), 382 tests |
 | **v3.0** | Python 3.12+, pyproject.toml, Diagram Qdrant/FalkorDB indexing, UI sketch retrieval, Mermaid parser, ColPali integration, ColBERT support, Diagram citations |
 | **v2.4** | Entity graph cache, lazy retriever init, config consolidation, input validation, Cypher injection prevention, logging, CORS config, embedding cache |
 | **v2.3** | Unit tests, new API endpoints, configuration settings, pipeline integration |

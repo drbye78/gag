@@ -225,9 +225,9 @@ Sources: Jira Requirements, Confluence, Local files
 
 | Env Variable | Default | Purpose |
 |--------------|---------|---------|
-| `EMBEDDER_PROVIDER` | openai | Embedding provider |
+| `EMBEDDING_PROVIDER` | openai | Embedding provider |
 | `EMBEDDER_MODEL` | text-embedding-3-small | Model name |
-| `USE_GRAPHREG` | false | Enable GraphRAG |
+| `GRAPH_RAG_ENABLED` | false | Enable GraphRAG |
 | `USE_LLM_EXTRACTION` | false | Use LLM for entity extraction |
 | `CHUNK_SIZE` | 1024 | Default chunk size |
 | `CHUNK_OVERLAP` | 128 | Chunk overlap |

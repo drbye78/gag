@@ -348,7 +348,7 @@ services:
 
 | Requirement | Implementation |
 |-------------|----------------|
-| Multi-RAG | 5 retrieval sources (docs, code, graph, tickets, telemetry) |
+| Multi-RAG | 11 retrieval sources (docs, code, graph, code_graph, tickets, telemetry, diagram, ui_sketch, colbert, knowledge, multimodal) |
 | Multimodal Input | VLM pipeline + image processing |
 | MCP Integration | MCP server + tool definitions + JSON-RPC 2.0 |
 
@@ -399,6 +399,6 @@ engineering_intelligence/
 
 ---
 
-**Document Version**: 2.4  
+**Document Version**: 3.2  
 **Status**: Architecture Design Complete  
 **Next Phase**: Core Data Models (PHASE 3)

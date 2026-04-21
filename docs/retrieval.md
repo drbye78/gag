@@ -109,7 +109,7 @@ The system auto-selects chunker based on file extension:
 ### Basic Retrieval
 
 ```bash
-curl -X POST http://localhost:8000/hybrid/search \
+curl -X POST http://localhost:8000/hybrid/enhanced \
   -H "Content-Type: application/json" \
   -d '{"query": "how does auth work?", "limit": 10}'
 ```
@@ -117,7 +117,7 @@ curl -X POST http://localhost:8000/hybrid/search \
 ### Specify Strategy
 
 ```bash
-curl -X POST http://localhost:8000/hybrid/search \
+curl -X POST http://localhost:8000/hybrid/enhanced \
   -H "Content-Type: application/json" \
   -d '{"query": "find related functions", "strategy": "iterative", "limit": 10}'
 ```

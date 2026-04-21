@@ -23,16 +23,24 @@ uv run uvicorn api.main:app --host 0.0.0.0 --port 8000
 ```
 /home/roger/src/gag/
 ├── api/              # FastAPI endpoints, MCP handler
-├── agents/           # Planner, Retriever, Reasoner, Validator
+├── agents/           # Planner, Retriever, Reasoner, Executor, Validator
 ├── core/            # Config, Auth, Cache, Health, Knowledge
 │   ├── adapters/    # Platform adapters (SAP, AWS, Azure, GCP, Tanzu, PowerPlatform)
-│   └── knowledge/   # Graph, ontology, taxonomy, constraints, usecases, ADRs
-├── retrieval/        # Hybrid retriever (11 sources)
+│   ├── knowledge/   # Graph, ontology, taxonomy, constraints, usecases, ADRs
+│   ├── patterns/    # Platform patterns (12+)
+│   └── constraints/  # Platform constraints
+├── retrieval/        # Hybrid retriever (11 sources), reranking, citations
 ├── documents/       # Document parsing, chunking
 ├── ingestion/       # Ingestion pipelines
 ├── models/          # Pydantic models
 ├── multimodal/     # VLM processor
-├── tests/          # 356 tests
+├── tools/           # Tool system (10+ modules: ideation, day2, requirements, testing, etc.)
+├── graph/           # FalkorDB client
+├── llm/            # Multi-provider LLM router
+├── ui/              # UI sketch retrieval
+├── evaluation/      # Evaluation framework
+├── git/             # Git repository ingestion
+├── tests/          # 382 tests
 └── docs/           # API, Architecture, Configuration
 ```
 

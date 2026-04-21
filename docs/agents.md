@@ -1,6 +1,6 @@
 # Agent System Documentation
 
-The SAP BTP Engineering Intelligence System uses a multi-agent architecture with specialized agents working together to process queries, retrieve information, and generate responses.
+The Engineering Intelligence System uses a multi-agent architecture with specialized agents working together to process queries, retrieve information, and generate responses.
 
 ## Agent Architecture Overview
 

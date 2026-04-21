@@ -77,8 +77,8 @@ class MCPHandler:
                     "batch_tools": True,
                 },
                 "server_info": {
-                    "name": "SAP BTP Engineering Intelligence",
-                    "version": "2.0.0",
+                    "name": "Engineering Intelligence System",
+                    "version": "3.2.0",
                 },
                 "tool_count": len(tools),
                 "resource_count": len(resources),

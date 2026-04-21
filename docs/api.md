@@ -9,8 +9,8 @@ Returns service information and available endpoints.
 
 ```json
 {
-  "service": "SAP BTP Engineering Intelligence",
-  "version": "3.0.0",
+  "service": "Engineering Intelligence System",
+  "version": "3.2.0",
   "endpoints": ["/health", "/query", "/mcp", "/search/*", "/codegraph/*", ...]
 }
 ```
@@ -21,7 +21,7 @@ Health check with dependency status.
 ```json
 {
   "status": "healthy",
-  "version": "3.0.0"
+  "version": "3.2.0"
 }
 ```
 
@@ -614,6 +614,138 @@ Find similar UI sketches by structural elements.
   "results": [{"sketch_id": "...", "title": "Submit Form"}],
   "method": "ui_sketch",
   "count": 1
+}
+```
+
+---
+
+## Platform Adapters
+
+### `POST /adapter/query`
+Query the platform adapter to get platform-specific recommendations.
+
+**Request:**
+```json
+{
+  "query": "How to deploy to AWS?",
+  "platform": "aws"
+}
+```
+
+**Response:**
+```json
+{
+  "query": "How to deploy to AWS?",
+  "platform": "aws",
+  "patterns_matched": [{"id": "serverless", "name": "Serverless", "score": 0.9}],
+  "constraint_violations": [],
+  "recommendations": ["Use AWS Lambda with SAM", "Consider ECS Fargate for containers"]
+}
+```
+
+### `GET /adapter/platforms`
+List available platforms.
+
+**Response:**
+```json
+{
+  "platforms": ["sap", "aws", "azure", "gcp", "tanzu", "powerplatform"]
+}
+```
+
+### `GET /adapter/patterns`
+List all platform patterns.
+
+**Response:**
+```json
+{
+  "patterns": [
+    {"id": "serverless", "name": "Serverless", "domain": "architecture"},
+    {"id": "microservices", "name": "Microservices", "domain": "architecture"}
+  ]
+}
+```
+
+### `GET /adapter/constraints/{platform}`
+Get constraints for a platform.
+
+**Response:**
+```json
+{
+  "platform": "aws",
+  "violations": [
+    {"id": "s3-public", "name": "S3 Public Access", "severity": "hard"}
+  ]
+}
+```
+
+---
+
+## Knowledge Graph
+
+### `POST /knowledge/query`
+Query the knowledge graph with reasoning.
+
+**Request:**
+```json
+{
+  "query": "authentication best practices"
+}
+```
+
+**Response:**
+```json
+{
+  "query": "authentication best practices",
+  "platform": "aws",
+  "intent": "explain",
+  "entities": [{"id": "jwt", "name": "JWT", "type": "CONCEPT"}],
+  "patterns_matched": [{"id": "oauth", "name": "OAuth 2.0", "score": 0.85}],
+  "constraint_violations": [],
+  "reasoning": "JWT is commonly used for...",
+  "can_proceed": true
+}
+```
+
+### `GET /knowledge/graph`
+Get the knowledge graph structure.
+
+**Response:**
+```json
+{
+  "nodes": [
+    {"id": "n1", "name": "AWS", "type": "PLATFORM"},
+    {"id": "n2", "name": "Lambda", "type": "SERVICE"}
+  ],
+  "edges": [
+    {"source": "n1", "target": "n2", "type": "CONTAINS"}
+  ]
+}
+```
+
+### `GET /knowledge/patterns`
+List all architectural patterns in the knowledge base.
+
+**Response:**
+```json
+{
+  "patterns": [
+    {"id": "serverless", "name": "Serverless", "domain": "architecture"},
+    {"id": "cqrs", "name": "CQRS", "domain": "architecture"}
+  ]
+}
+```
+
+### `GET /knowledge/constraints/{platform}`
+Get constraints for a platform.
+
+**Response:**
+```json
+{
+  "platform": "aws",
+  "violations": [
+    {"id": "s3-public", "name": "S3 Public Access", "message": "S3 buckets should not be public", "severity": "hard"}
+  ]
 }
 ```
 

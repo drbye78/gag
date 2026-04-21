@@ -16,9 +16,9 @@ import models.mcp
 from core.middleware import setup_middleware
 
 app = FastAPI(
-    title="SAP BTP Engineering Intelligence API",
+    title="Engineering Intelligence System API",
     description="Production-grade engineering intelligence system with multi-RAG, multimodal diagrams, and multilingual support",
-    version="3.0.0",
+    version="3.2.0",
 )
 
 # Configure CORS from Settings (not hardcoded wildcard)
@@ -234,15 +234,15 @@ async def health():
 
     return HealthResponse(
         status=status_info["status"],
-        version="2.4.0",
+        version="3.2.0",
     )
 
 
 @app.get("/")
 async def root():
     return {
-        "service": "SAP BTP Engineering Intelligence",
-        "version": "3.0.0",
+        "service": "Engineering Intelligence System",
+        "version": "3.2.0",
         "endpoints": [
             "/health",
             "/query",
