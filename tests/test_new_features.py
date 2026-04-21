@@ -248,7 +248,7 @@ class TestConfigExtended:
         assert hasattr(s, "forum_base_url")
         assert hasattr(s, "forum_api_key")
         assert hasattr(s, "requirements_path")
-        assert hasattr(s, "elasticsearch_url")
+        assert hasattr(s, "elastic_api_key")
 
     def test_reset_settings(self):
         from core.config import get_settings, reset_settings
@@ -260,29 +260,30 @@ class TestConfigExtended:
 
     def test_settings_validate_warning(self):
         from core.config import Settings
-        import warnings
-
-        s = Settings()
-        # jwt_secret defaults to "change-me-in-production" → should warn
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            s.validate()
-            assert len(w) >= 1
-            assert "JWT_SECRET" in str(w[0].message)
-
-    def test_settings_validate_no_warning_with_custom_secret(self):
-        from core.config import Settings
-        import warnings
+        import warnings as w
         import os
 
+        os.environ.pop("JWT_SECRET", None)
+        os.environ.pop("CREDENTIAL_ENCRYPT_KEY", None)
+        with w.catch_warnings(record=True) as caught:
+            w.simplefilter("always")
+            Settings()
+            jwt_warnings = [x for x in caught if "JWT_SECRET" in str(x.message)]
+            assert len(jwt_warnings) >= 1
+
+    def test_settings_validate_no_warning_with_custom_secret(self):
+        from core.config import Settings, reset_settings
+        import warnings as w
+        import os
+
+        reset_settings()
         os.environ["JWT_SECRET"] = "super-secret-key-12345"
         os.environ["CREDENTIAL_ENCRYPT_KEY"] = "test-encrypt-key-32-chars!!"
         try:
-            s = Settings()
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                s.validate()
-                jwt_warnings = [x for x in w if "JWT_SECRET" in str(x.message)]
+            with w.catch_warnings(record=True) as caught:
+                w.simplefilter("always")
+                Settings()
+                jwt_warnings = [x for x in caught if "JWT_SECRET" in str(x.message)]
                 assert len(jwt_warnings) == 0
         finally:
             os.environ.pop("JWT_SECRET", None)

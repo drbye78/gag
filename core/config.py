@@ -2,36 +2,196 @@
 Configuration management for the Engineering Intelligence System.
 
 Provides centralized settings loaded from environment variables with sensible defaults.
-Supports configuration for API, databases, LLM providers, authentication, and rate limiting.
+Uses Pydantic Settings for validation and type safety.
 """
 
 import os
 import logging
+import warnings
 from functools import lru_cache
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
+
+from pydantic import Field, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class Settings:
-    """Central configuration class managing all system settings from environment variables."""
+class Settings(BaseSettings):
+    """Pydantic Settings with validation and type safety."""
 
-    def __init__(self):
-        # --- General ---
-        self.debug = os.getenv("DEBUG", "false").lower() == "true"
-        self.log_level = os.getenv("LOG_LEVEL", "INFO")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
 
-        # --- API ---
-        self.api_host = os.getenv("API_HOST", "0.0.0.0")
-        self.api_port = int(os.getenv("API_PORT", "8000"))
+    debug: bool = False
+    log_level: str = "INFO"
 
-        # --- Vector DB (Qdrant) ---
-        self.qdrant_host = os.getenv("QDRANT_HOST", "localhost")
-        self.qdrant_port = int(os.getenv("QDRANT_PORT", "6333"))
+    api_host: str = "0.0.0.0"
+    api_port: int = 8000
 
-        # --- Graph DB (FalkorDB) ---
-        self.falkordb_host = os.getenv("FALKORDB_HOST", "localhost")
-        self.falkordb_port = int(os.getenv("FALKORDB_PORT", "7379"))
-        self.falkordb_user = os.getenv("FALKORDB_USER", "")
-        self.falkordb_pass = os.getenv("FALKORDB_PASS", "")
+    qdrant_host: str = "localhost"
+    qdrant_port: int = 6333
+
+    falkordb_host: str = "localhost"
+    falkordb_port: int = 7379
+    falkordb_user: str = ""
+    falkordb_pass: str = ""
+
+    redis_url: str = "redis://localhost:6379"
+
+    llm_provider: str = "openrouter"
+    llm_model: str = "qwen-max"
+    llm_api_key: str = ""
+
+    embedding_provider: str = "openai"
+    openai_api_key: str = ""
+    dashscope_api_key: str = ""
+    ollama_host: str = "http://localhost:11434"
+    qwen_api_key: str = ""
+    anthropic_api_key: str = ""
+    vlm_provider: str = ""
+
+    rerank_provider: str = "cohere"
+    rerank_strategy: str = "single"
+    rerank_top_k: int = 10
+    rerank_min_score: float = 0.3
+    cohere_api_key: str = ""
+    jina_api_key: str = ""
+
+    citation_style: str = "parenthetical"
+    citation_include_scores: bool = True
+
+    jwt_secret: str = "change-me-in-production"
+    jwt_algorithm: str = "HS256"
+    jwt_expiry_minutes: int = 60
+
+    rate_limit_requests: int = 100
+    rate_limit_window: int = 60
+    cors_origins: str = "*"
+
+    ticket_backend: str = ""
+    telemetry_backend: str = ""
+    docs_backend: str = ""
+
+    jira_url: str = ""
+    jira_email: str = ""
+    jira_api_token: str = ""
+
+    github_owner: str = ""
+    github_repo: str = ""
+    github_token: str = ""
+    gitlab_token: str = ""
+
+    azure_devops_username: str = ""
+    azure_devops_token: str = ""
+
+    credential_encrypt_key: str = ""
+
+    confluence_url: str = ""
+    confluence_email: str = ""
+    confluence_api_token: str = ""
+
+    webdav_url: str = ""
+    webdav_user: str = ""
+    webdav_pass: str = ""
+
+    default_language: str = "auto"
+    enable_language_detection: bool = True
+    russian_model: str = "text-embedding-v3"
+
+    prometheus_url: str = "http://localhost:9090"
+    prometheus_user: str = ""
+    prometheus_password: str = ""
+
+    elastic_url: str = "http://localhost:9200"
+    elastic_user: str = ""
+    elastic_pass: str = ""
+    elastic_api_key: str = ""
+
+    loki_url: str = "http://localhost:3100"
+    loki_token: str = ""
+
+    stackoverflow_api_key: str = ""
+    reddit_client_id: str = ""
+    reddit_client_secret: str = ""
+    forum_base_url: str = ""
+    forum_api_key: str = ""
+
+    requirements_path: str = "requirements"
+
+    max_workers: int = 4
+    request_timeout: int = 60
+
+    enable_metrics: bool = True
+    enable_tracing: bool = False
+
+    otel_service_name: str = "eis"
+    otel_exporter_otlp_endpoint: str = ""
+    otel_exporter_otlp_insecure: bool = True
+    otel_exporter_console: bool = False
+    otel_trace_sampler: str = "parent"
+
+    entity_aware_max_hops: int = 3
+    iterative_max_iterations: int = 3
+    iterative_confidence_threshold: float = 0.7
+
+    graphrag_enabled: bool = Field(default=False, validation_alias="GRAPH_RAG_ENABLED")
+    graphrag_use_llm_extraction: bool = Field(default=False, validation_alias="GRAPH_RAG_USE_LLM")
+    graphrag_structural_chunking: bool = Field(default=True, validation_alias="GRAPH_RAG_STRUCTURAL_CHUNKING")
+    graphrag_incremental: bool = Field(default=True, validation_alias="GRAPH_RAG_INCREMENTAL")
+    graphrag_community_detection: bool = Field(default=True, validation_alias="GRAPH_RAG_COMMUNITY_DETECTION")
+    graphrag_max_entities: int = Field(default=100, validation_alias="GRAPH_RAG_MAX_ENTITIES")
+    graphrag_default_hops: int = Field(default=3, validation_alias="GRAPH_RAG_DEFAULT_HOPS")
+    graphrag_entity_types: str = Field(default="PERSON,ORGANIZATION,CONCEPT,EVENT,LOCATION,PRODUCT,TECHNOLOGY,DOCUMENT,PROCESS", validation_alias="GRAPH_RAG_ENTITY_TYPES")
+    graphrag_relationship_types: str = Field(default="RELATED_TO,PART_OF,WORKS_FOR,LOCATED_AT,USES,DEPENDS_ON,CREATED_BY,DEFINED_IN,REFERENCES,CONTAINS,IMPLEMENTS,MANAGES", validation_alias="GRAPH_RAG_RELATIONSHIP_TYPES")
+
+    chunking_chunker_type: str = "semantic"
+    chunking_semantic_threshold: float = 0.5
+    chunking_semantic_embed_model: str = "BAAI/bge-small-en-v1.5"
+    chunking_sentence_size: int = 1024
+    chunking_sentence_overlap: int = 20
+    chunking_code_max_lines: int = 100
+    chunking_min_length: int = 50
+    chunking_max_length: int = 2048
+
+    colbert_enabled: bool = False
+    colbert_model_name: str = "colbert-ir/colbertv2.0"
+    colbert_max_length: int = 512
+    colbert_top_k: int = 10
+    colbert_rerank: bool = True
+
+    retrieval_default_strategy: str = "hybrid"
+    retrieval_fusion_method: str = "rrf"
+    retrieval_parallel: bool = True
+    retrieval_timeout: int = 30
+    retrieval_fallback: bool = True
+
+    diagram_index_enabled: bool = False
+    diagram_collection: str = "diagrams"
+    diagram_vector_size: int = 384
+
+    ui_sketch_enabled: bool = False
+    colpali_enabled: bool = False
+
+    @model_validator(mode="after")
+    def _post_validate(self):
+        if self.jwt_secret == "change-me-in-production":
+            warnings.warn(
+                "SECURITY WARNING: JWT_SECRET is using the default placeholder value. "
+                "Set JWT_SECRET to a strong random value before deploying to production.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+        if not self.credential_encrypt_key:
+            warnings.warn(
+                "SECURITY WARNING: CREDENTIAL_ENCRYPT_KEY is not set. "
+                "Git credential encryption will be disabled.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+        return self
 
         # --- Redis ---
         self.redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
@@ -60,174 +220,7 @@ class Settings:
 
         # --- Citations ---
         self.citation_style = os.getenv("CITATION_STYLE", "parenthetical")
-        self.citation_include_scores = (
-            os.getenv("CITATION_INCLUDE_SCORES", "true").lower() == "true"
-        )
-
-        # --- Auth / RBAC ---
-        self.jwt_secret = os.getenv("JWT_SECRET", "change-me-in-production")
-        self.jwt_algorithm = os.getenv("JWT_ALGORITHM", "HS256")
-        self.jwt_expiry_minutes = int(os.getenv("JWT_EXPIRY_MINUTES", "60"))
-
-        self.rate_limit_requests = int(os.getenv("RATE_LIMIT_REQUESTS", "100"))
-        self.rate_limit_window = int(os.getenv("RATE_LIMIT_WINDOW", "60"))
-        self.cors_origins = os.getenv("CORS_ORIGINS", "*").split(",")
-
-        # --- Backend selectors ---
-        self.ticket_backend = os.getenv("TICKET_BACKEND", "")
-        self.telemetry_backend = os.getenv("TELEMETRY_BACKEND", "")
-        self.docs_backend = os.getenv("DOCS_BACKEND", "")
-
-        # --- Jira ---
-        self.jira_url = os.getenv("JIRA_URL", "")
-        self.jira_email = os.getenv("JIRA_EMAIL", "")
-        self.jira_api_token = os.getenv("JIRA_API_TOKEN", "")
-
-        # --- GitHub ---
-        self.github_owner = os.getenv("GITHUB_OWNER", "")
-        self.github_repo = os.getenv("GITHUB_REPO", "")
-        self.github_token = os.getenv("GITHUB_TOKEN", "")
-        self.gitlab_token = os.getenv("GITLAB_TOKEN", "")
-
-        # --- Azure DevOps ---
-        self.azure_devops_username = os.getenv("AZURE_DEVOPS_USERNAME", "")
-        self.azure_devops_token = os.getenv("AZURE_DEVOPS_TOKEN", "")
-
-        # --- Git credentials ---
-        self.credential_encrypt_key = os.getenv("CREDENTIAL_ENCRYPT_KEY", "")
-
-        # --- Confluence ---
-        self.confluence_url = os.getenv("CONFLUENCE_URL", "")
-        self.confluence_email = os.getenv("CONFLUENCE_EMAIL", "")
-        self.confluence_api_token = os.getenv("CONFLUENCE_API_TOKEN", "")
-
-        # --- WebDAV ---
-        self.webdav_url = os.getenv("WEBDAV_URL", "")
-        self.webdav_user = os.getenv("WEBDAV_USER", "")
-        self.webdav_pass = os.getenv("WEBDAV_PASS", "")
-
-        # --- Multilingual ---
-        self.default_language = os.getenv("DEFAULT_LANGUAGE", "auto")
-        self.enable_language_detection = (
-            os.getenv("ENABLE_LANGUAGE_DETECTION", "true").lower() == "true"
-        )
-        self.russian_model = os.getenv("RUSSIAN_EMBEDDING_MODEL", "text-embedding-v3")
-
-        # --- Prometheus ---
-        self.prometheus_url = os.getenv("PROMETHEUS_URL", "http://localhost:9090")
-        self.prometheus_user = os.getenv("PROMETHEUS_USER", "")
-        self.prometheus_password = os.getenv("PROMETHEUS_PASSWORD", "")
-
-        # --- Elasticsearch ---
-        self.elastic_url = os.getenv("ELASTIC_URL", "http://localhost:9200")
-        self.elastic_user = os.getenv("ELASTIC_USER", "")
-        self.elastic_pass = os.getenv("ELASTIC_PASS", "")
-        self.elasticsearch_url = os.getenv("ELASTICSEARCH_URL", "http://localhost:9200")
-        self.elastic_api_key = os.getenv("ELASTIC_API_KEY", "")
-
-        # --- Loki ---
-        self.loki_url = os.getenv("LOKI_URL", "http://localhost:3100")
-        self.loki_token = os.getenv("LOKI_TOKEN", "")
-
-        # --- Knowledge Base ---
-        self.stackoverflow_api_key = os.getenv("STACKOVERFLOW_API_KEY", "")
-        self.reddit_client_id = os.getenv("REDDIT_CLIENT_ID", "")
-        self.reddit_client_secret = os.getenv("REDDIT_CLIENT_SECRET", "")
-        self.forum_base_url = os.getenv("FORUM_BASE_URL", "")
-        self.forum_api_key = os.getenv("FORUM_API_KEY", "")
-
-        # --- Requirements ---
-        self.requirements_path = os.getenv("REQUIREMENTS_PATH", "requirements")
-
-        # --- Performance ---
-        self.max_workers = int(os.getenv("MAX_WORKERS", "4"))
-        self.request_timeout = int(os.getenv("REQUEST_TIMEOUT", "60"))
-
-        # --- Observability ---
-        self.enable_metrics = os.getenv("ENABLE_METRICS", "true").lower() == "true"
-        self.enable_tracing = os.getenv("ENABLE_TRACING", "false").lower() == "true"
-
-        # --- Entity-aware reasoning ---
-        self.entity_aware_max_hops = int(os.getenv("ENTITY_AWARE_MAX_HOPS", "3"))
-        self.iterative_max_iterations = int(os.getenv("ITERATIVE_MAX_ITERATIONS", "3"))
-        self.iterative_confidence_threshold = float(
-            os.getenv("ITERATIVE_CONFIDENCE_THRESHOLD", "0.7")
-        )
-
-        # --- GraphRAG ---
-        self.graphrag_enabled = os.getenv("GRAPH_RAG_ENABLED", "false").lower() == "true"
-        self.graphrag_use_llm_extraction = os.getenv("GRAPH_RAG_USE_LLM", "false").lower() == "true"
-        self.graphrag_structural_chunking = os.getenv("GRAPH_RAG_STRUCTURAL_CHUNKING", "true").lower() == "true"
-        self.graphrag_incremental = os.getenv("GRAPH_RAG_INCREMENTAL", "true").lower() == "true"
-        self.graphrag_community_detection = os.getenv("GRAPH_RAG_COMMUNITY_DETECTION", "true").lower() == "true"
-        self.graphrag_max_entities = int(os.getenv("GRAPH_RAG_MAX_ENTITIES", "100"))
-        self.graphrag_default_hops = int(os.getenv("GRAPH_RAG_DEFAULT_HOPS", "3"))
-        self.graphrag_entity_types = os.getenv(
-            "GRAPH_RAG_ENTITY_TYPES",
-            "PERSON,ORGANIZATION,CONCEPT,EVENT,LOCATION,PRODUCT,TECHNOLOGY,DOCUMENT,PROCESS"
-        ).split(",")
-        self.graphrag_relationship_types = os.getenv(
-            "GRAPH_RAG_RELATIONSHIP_TYPES",
-            "RELATED_TO,PART_OF,WORKS_FOR,LOCATED_AT,USES,DEPENDS_ON,CREATED_BY,DEFINED_IN,REFERENCES,CONTAINS,IMPLEMENTS,MANAGES"
-        ).split(",")
-
-        # --- Chunking ---
-        self.chunking_chunker_type = os.getenv("CHUNKING_CHUNKER_TYPE", "semantic")
-        self.chunking_semantic_threshold = float(os.getenv("CHUNKING_SEMANTIC_CHUNK_THRESHOLD", "0.5"))
-        self.chunking_semantic_embed_model = os.getenv(
-            "CHUNKING_SEMANTIC_EMBED_MODEL", "BAAI/bge-small-en-v1.5"
-        )
-        self.chunking_sentence_size = int(os.getenv("CHUNKING_SENTENCE_CHUNK_SIZE", "1024"))
-        self.chunking_sentence_overlap = int(os.getenv("CHUNKING_SENTENCE_CHUNK_OVERLAP", "20"))
-        self.chunking_code_max_lines = int(os.getenv("CHUNKING_CODE_CHUNK_MAX_LINES", "100"))
-        self.chunking_min_length = int(os.getenv("CHUNKING_CHUNK_MIN_LENGTH", "50"))
-        self.chunking_max_length = int(os.getenv("CHUNKING_CHUNK_MAX_LENGTH", "2048"))
-
-        # --- ColBERT ---
-        self.colbert_enabled = os.getenv("COLBERT_ENABLED", "false").lower() == "true"
-        self.colbert_model_name = os.getenv("COLBERT_MODEL_NAME", "colbert-ir/colbertv2.0")
-        self.colbert_max_length = int(os.getenv("COLBERT_MAX_LENGTH", "512"))
-        self.colbert_top_k = int(os.getenv("COLBERT_SIMILARITY_TOP_K", "10"))
-        self.colbert_rerank = os.getenv("COLBERT_RERANK_AFTER", "true").lower() == "true"
-
-        # --- Retrieval Strategy ---
-        self.retrieval_default_strategy = os.getenv("RETRIEVAL_DEFAULT_STRATEGY", "hybrid")
-        self.retrieval_fusion_method = os.getenv("RETRIEVAL_FUSION_METHOD", "rrf")
-        self.retrieval_parallel = os.getenv("RETRIEVAL_PARALLEL_RETRIEVAL", "true").lower() == "true"
-        self.retrieval_timeout = int(os.getenv("RETRIEVAL_TIMEOUT_SECONDS", "30"))
-        self.retrieval_fallback = os.getenv("RETRIEVAL_FALLBACK_ON_EMPTY", "true").lower() == "true"
-
-        # --- Diagram Indexing ---
-        self.diagram_index_enabled = os.getenv("DIAGRAM_INDEX_ENABLED", "false").lower() == "true"
-        self.diagram_collection = os.getenv("DIAGRAM_COLLECTION", "diagrams")
-        self.diagram_vector_size = int(os.getenv("DIAGRAM_VECTOR_SIZE", "384"))
-
-        # --- UI Sketch ---
-        self.ui_sketch_enabled = os.getenv("UI_SKETCH_ENABLED", "false").lower() == "true"
-
-        # --- ColPali ---
-        self.colpali_enabled = os.getenv("COLPALI_ENABLED", "false").lower() == "true"
-
-    def validate(self) -> None:
-        """Validate critical security settings at startup."""
-        if self.jwt_secret == "change-me-in-production":
-            import warnings
-
-            warnings.warn(
-                "SECURITY WARNING: JWT_SECRET is using the default placeholder value. "
-                "Set JWT_SECRET to a strong random value before deploying to production.",
-                RuntimeWarning,
-                stacklevel=2,
-            )
-        if not self.credential_encrypt_key:
-            import warnings
-
-            warnings.warn(
-                "SECURITY WARNING: CREDENTIAL_ENCRYPT_KEY is not set. "
-                "Git credential encryption will be disabled.",
-                RuntimeWarning,
-                stacklevel=2,
-            )
+        
 
 
 _settings: Optional["Settings"] = None

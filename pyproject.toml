@@ -57,6 +57,11 @@ cache = ["redis>=5.0.0"]
 vision = ["torch>=2.0.0", "torchvision>=0.15.0"]
 multilingual = ["langdetect>=1.0.9"]
 colbert = ["fastembed>=0.3.0"]
+otel = [
+    "opentelemetry-api>=1.20.0",
+    "opentelemetry-sdk>=1.20.0",
+    "opentelemetry-exporter-otlp>=1.20.0",
+]
 all = [
     "qdrant-client>=1.7.0",
     "python-docx>=1.1.0",

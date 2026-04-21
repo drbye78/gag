@@ -138,9 +138,95 @@ def get_trace_logger() -> TraceLogger:
         _trace_logger = TraceLogger()
     return _trace_logger
 
-
 def get_metrics_collector() -> MetricsCollector:
     global _metrics_collector
     if _metrics_collector is None:
         _metrics_collector = MetricsCollector()
     return _metrics_collector
+
+
+OTEL_AVAILABLE = False
+try:
+    from opentelemetry import trace
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
+    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+    from opentelemetry.sdk.resources import Resource, SERVICE_NAME
+    from opentelemetry.trace import Status, StatusCode
+    OTEL_AVAILABLE = True
+except ImportError:
+    pass
+
+_tracer_provider: Optional["TracerProvider"] = None
+_active_span: Optional[Any] = None
+
+def setup_otel_tracing(settings) -> Optional["TracerProvider"]:
+    global _tracer_provider
+    if not OTEL_AVAILABLE or not settings.enable_tracing:
+        return None
+    resource = Resource.create({SERVICE_NAME: settings.otel_service_name})
+    provider = TracerProvider(resource=resource)
+    if settings.otel_exporter_console:
+        provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
+    if settings.otel_exporter_otlp_endpoint:
+        exporter = OTLPSpanExporter(
+            endpoint=settings.otel_exporter_otlp_endpoint,
+            insecure=settings.otel_exporter_otlp_insecure,
+        )
+        provider.add_span_processor(BatchSpanExporter(exporter))
+    trace.set_tracer_provider(provider)
+    _tracer_provider = provider
+    return provider
+
+def get_tracer(name: str = "eis"):
+    if not OTEL_AVAILABLE:
+        return None
+    return trace.get_tracer(name)
+
+def start_span(name: str, attributes: Optional[Dict[str, Any]] = None):
+    global _active_span
+    tracer = get_tracer()
+    if tracer is None:
+        return None
+    span = tracer.start_span(name, attributes=attributes or {})
+    _active_span = span
+    return span
+
+def end_span(span, error: Optional[Exception] = None):
+    if span is None:
+        return
+    if error:
+        span.set_status(Status(StatusCode.ERROR, str(error)))
+        span.record_exception(error)
+    span.end()
+
+def with_trace(name: str, attributes: Optional[Dict[str, Any]] = None):
+    tracer = get_tracer()
+    if tracer is None:
+        return lambda f: f
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            with tracer.start_as_current_span(name, attributes=attributes or {}) as span:
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    span.set_status(Status(StatusCode.ERROR, str(e)))
+                    span.record_exception(e)
+                    raise
+        return wrapper
+    return decorator
+
+__all__ = [
+    "TraceContext",
+    "TraceStep", 
+    "TraceLogger",
+    "MetricsCollector",
+    "get_trace_logger",
+    "get_metrics_collector",
+    "setup_otel_tracing",
+    "get_tracer",
+    "start_span",
+    "end_span",
+    "with_trace",
+    "OTEL_AVAILABLE",
+]
