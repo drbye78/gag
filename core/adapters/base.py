@@ -1,8 +1,20 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
-from models.ir import IRFeature, PlatformContext
+
+# Use protocols for dependency inversion - core layer defines interfaces
+from core.protocols import IRFeatureProtocol, PlatformContextProtocol
 from core.knowledge.graph import get_knowledge_graph, NodeType, EdgeType
+
+
+# For backwards compatibility, create type aliases
+# Actual implementations come from models.ir
+from models.ir import IRFeature, PlatformContext
+
+
+def get_adapter_registry() -> "AdapterRegistry":
+    from core.adapters import get_adapter_registry as _get_registry
+    return _get_registry()
 
 
 class AdapterInput(BaseModel):
@@ -133,13 +145,3 @@ class AdapterRegistry:
                     return adapter
         
         return self.get_default()
-
-
-_adapter_registry: Optional[AdapterRegistry] = None
-
-
-def get_adapter_registry() -> AdapterRegistry:
-    global _adapter_registry
-    if _adapter_registry is None:
-        _adapter_registry = AdapterRegistry()
-    return _adapter_registry

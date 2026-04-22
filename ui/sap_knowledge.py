@@ -4,7 +4,7 @@ Provides a seeded catalog of SAPUI5/Fiori controls and BTP services
 with lookup by element type, name, and service type.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
 from ui.models import SAPComponent, SAPService
@@ -16,7 +16,7 @@ class SAPComponentCatalog:
     def __init__(self):
         self._components: Dict[str, SAPComponent] = {}
         self._services: Dict[str, SAPService] = {}
-        self._last_updated = datetime.utcnow()
+        self._last_updated = datetime.now(timezone.utc)
         self._seed_data()
 
     def _seed_data(self):
@@ -228,7 +228,7 @@ class SAPComponentCatalog:
         return self._last_updated
 
     def is_stale(self, max_age_days: int = 30) -> bool:
-        return datetime.utcnow() - self._last_updated > timedelta(days=max_age_days)
+        return datetime.now(timezone.utc) - self._last_updated > timedelta(days=max_age_days)
 
 
 _catalog: Optional[SAPComponentCatalog] = None

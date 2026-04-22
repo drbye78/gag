@@ -22,8 +22,8 @@ class TestIngestionPipeline:
             )
             assert result is not None
             assert result.job_id is not None
-        except Exception:
-            pass  # Expected when no backend services are running
+        except Exception as e:
+            pytest.skip(f"Backend services not available: {e}")
 
     @pytest.mark.asyncio
     async def test_ingest_batch(self):
@@ -37,8 +37,8 @@ class TestIngestionPipeline:
             ]
             results = await pipe.ingest_batch(documents, parallel=False)
             assert isinstance(results, list)
-        except Exception:
-            pass  # Expected when no backend services are running
+        except Exception as e:
+            pytest.skip(f"Backend services not available: {e}")
 
 
 class TestDocumentChunker:
@@ -130,8 +130,8 @@ class TestEmbeddingPipeline:
         try:
             result = await pipe.embed("test text")
             assert isinstance(result, list)
-        except Exception:
-            pass  # Expected when no backend is running
+        except Exception as e:
+            pytest.skip(f"Backend not available: {e}")
 
     @pytest.mark.asyncio
     async def test_embed_batch(self):
@@ -192,8 +192,8 @@ class TestGraphIndexer:
         try:
             result = await indexer._execute_cypher("MATCH (n) RETURN n LIMIT 1", {})
             assert isinstance(result, bool)
-        except Exception:
-            pass  # Expected when no FalkorDB is running
+        except Exception as e:
+            pytest.skip(f"FalkorDB not available: {e}")
 
 
 class TestIndexerResult:

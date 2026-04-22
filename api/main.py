@@ -21,20 +21,33 @@ app = FastAPI(
     version="3.2.0",
 )
 
-# Configure CORS from Settings (not hardcoded wildcard)
 from core.config import get_settings
 
 _cors_settings = get_settings()
-_cors_origins = (
-    _cors_settings.cors_origins if _cors_settings.cors_origins != ["*"] else ["*"]
-)
+
+_cors_origins = _cors_settings.cors_origins
+
+_allow_credentials = False
+if "*" in _cors_origins:
+    import logging
+    logging.getLogger(__name__).critical(
+        "Wildcard CORS origin is forbidden when credentials are enabled. "
+        "Restricting to localhost only."
+    )
+    _cors_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    _allow_credentials = False
+elif _cors_settings.debug:
+    _allow_credentials = False
+else:
+    _allow_credentials = True
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
-    allow_credentials=True,
+    allow_credentials=_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Trace-Id"],
 )
 
 # ---------------------------------------------------------------------------
@@ -111,6 +124,12 @@ except ImportError as e:
 
 # Configure middleware
 setup_middleware(app)
+
+# ---------------------------------------------------------------------------
+# Authentication - DEFAULT DENY POLICY
+# ---------------------------------------------------------------------------
+from fastapi import Depends
+from core.auth import require_authenticated, PublicEndpoint
 
 
 # ---------------------------------------------------------------------------
@@ -225,7 +244,7 @@ class CitationResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-@app.get("/health", response_model=HealthResponse)
+@app.get("/health", response_model=HealthResponse, tags=["public"])
 async def health():
     from core.health import get_health_checker
 
@@ -238,7 +257,7 @@ async def health():
     )
 
 
-@app.get("/")
+@app.get("/", tags=["public"])
 async def root():
     return {
         "service": "Engineering Intelligence System",
@@ -266,7 +285,7 @@ async def root():
     }
 
 
-@app.post("/query", response_model=QueryResponse)
+@app.post("/query", response_model=QueryResponse, dependencies=[Depends(require_authenticated)])
 async def query(request: QueryRequest):
     from agents.orchestration import get_orchestration_engine
 
@@ -281,7 +300,7 @@ async def query(request: QueryRequest):
     )
 
 
-@app.post("/mcp")
+@app.post("/mcp", dependencies=[Depends(require_authenticated)])
 async def mcp(request: models.mcp.MCPRequest):
     from api.mcp import get_mcp_handler
 
@@ -294,7 +313,7 @@ async def mcp(request: models.mcp.MCPRequest):
     return result
 
 
-@app.get("/mcp")
+@app.get("/mcp", dependencies=[Depends(require_authenticated)])
 async def mcp_list():
     from api.mcp import MCP_JSON_SCHEMA
     from tools.base import get_tool_registry
@@ -305,7 +324,7 @@ async def mcp_list():
     return {"tools": tools, "schema": MCP_JSON_SCHEMA}
 
 
-@app.post("/multimodal/extract", response_model=ImageExtractionResponse)
+@app.post("/multimodal/extract", response_model=ImageExtractionResponse, dependencies=[Depends(require_authenticated)])
 async def extract_from_image(request: ImageExtractionRequest):
     from multimodal.vlm import get_vlm_processor
 
@@ -318,7 +337,7 @@ async def extract_from_image(request: ImageExtractionRequest):
     )
 
 
-@app.post("/reasoning/chain", response_model=ReasoningResponse)
+@app.post("/reasoning/chain", response_model=ReasoningResponse, dependencies=[Depends(require_authenticated)])
 async def chain_reasoning(request: ReasoningRequest):
     from retrieval.reasoning import ReasoningMode, get_reasoning_engine
 
@@ -337,7 +356,7 @@ async def chain_reasoning(request: ReasoningRequest):
     )
 
 
-@app.post("/reasoning/entity", response_model=ReasoningResponse)
+@app.post("/reasoning/entity", response_model=ReasoningResponse, dependencies=[Depends(require_authenticated)])
 async def entity_reasoning(request: ReasoningRequest):
     from retrieval.reasoning.entity_aware import get_entity_aware_reasoning_engine
 
@@ -356,7 +375,7 @@ async def entity_reasoning(request: ReasoningRequest):
     )
 
 
-@app.post("/rerank", response_model=RerankResponse)
+@app.post("/rerank", response_model=RerankResponse, dependencies=[Depends(require_authenticated)])
 async def rerank(request: RerankRequest):
     from retrieval.rerank import get_rerank_pipeline
 
@@ -372,7 +391,7 @@ async def rerank(request: RerankRequest):
     )
 
 
-@app.post("/citations", response_model=CitationResponse)
+@app.post("/citations", response_model=CitationResponse, dependencies=[Depends(require_authenticated)])
 async def generate_citations(request: CitationRequest):
     from retrieval.citations import CitationBuilder, CitationStyle
 
@@ -395,7 +414,7 @@ async def generate_citations(request: CitationRequest):
     )
 
 
-@app.post("/hybrid/enhanced")
+@app.post("/hybrid/enhanced", dependencies=[Depends(require_authenticated)])
 async def enhanced_search(request: QueryRequest):
     from retrieval.hybrid import get_enhanced_hybrid_retriever
 
@@ -423,7 +442,7 @@ class EntityCacheStatsResponse(BaseModel):
     oldest_entry: Optional[Dict[str, Any]]
 
 
-@app.get("/entity/cache/stats", response_model=EntityCacheStatsResponse)
+@app.get("/entity/cache/stats", response_model=EntityCacheStatsResponse, dependencies=[Depends(require_authenticated)])
 async def entity_cache_stats():
     from retrieval.hybrid import get_enhanced_hybrid_retriever
 
@@ -450,7 +469,7 @@ class EntityCacheInvalidateResponse(BaseModel):
     message: str
 
 
-@app.post("/entity/cache/invalidate", response_model=EntityCacheInvalidateResponse)
+@app.post("/entity/cache/invalidate", response_model=EntityCacheInvalidateResponse, dependencies=[Depends(require_authenticated)])
 async def entity_cache_invalidate(request: EntityCacheInvalidateRequest):
     from retrieval.hybrid import get_enhanced_hybrid_retriever
 
@@ -562,7 +581,7 @@ class UISketchSearchResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-@app.post("/search/kubernetes", response_model=ToolingSearchResponse)
+@app.post("/search/kubernetes", response_model=ToolingSearchResponse, dependencies=[Depends(require_authenticated)])
 async def search_kubernetes(request: ToolingSearchRequest):
     from retrieval.tooling.kubernetes import KubernetesRetriever
 
@@ -580,7 +599,7 @@ async def search_kubernetes(request: ToolingSearchRequest):
     )
 
 
-@app.post("/search/helm", response_model=ToolingSearchResponse)
+@app.post("/search/helm", response_model=ToolingSearchResponse, dependencies=[Depends(require_authenticated)])
 async def search_helm(request: ToolingSearchRequest):
     from retrieval.tooling.helm import HelmRetriever
 
@@ -598,7 +617,7 @@ async def search_helm(request: ToolingSearchRequest):
     )
 
 
-@app.post("/search/dockerfile", response_model=ToolingSearchResponse)
+@app.post("/search/dockerfile", response_model=ToolingSearchResponse, dependencies=[Depends(require_authenticated)])
 async def search_dockerfile(request: ToolingSearchRequest):
     from retrieval.tooling.dockerfile import DockerfileRetriever
 
@@ -616,7 +635,7 @@ async def search_dockerfile(request: ToolingSearchRequest):
     )
 
 
-@app.post("/search/graphql", response_model=ToolingSearchResponse)
+@app.post("/search/graphql", response_model=ToolingSearchResponse, dependencies=[Depends(require_authenticated)])
 async def search_graphql(request: ToolingSearchRequest):
     from retrieval.tooling.graphql import GraphQLRetriever
 
@@ -634,7 +653,7 @@ async def search_graphql(request: ToolingSearchRequest):
     )
 
 
-@app.post("/search/istio", response_model=ToolingSearchResponse)
+@app.post("/search/istio", response_model=ToolingSearchResponse, dependencies=[Depends(require_authenticated)])
 async def search_istio(request: ToolingSearchRequest):
     from retrieval.tooling.istio import IstioRetriever
 
@@ -657,7 +676,7 @@ async def search_istio(request: ToolingSearchRequest):
 # ---------------------------------------------------------------------------
 
 
-@app.post("/codegraph/find", response_model=CodeGraphResponse)
+@app.post("/codegraph/find", response_model=CodeGraphResponse, dependencies=[Depends(require_authenticated)])
 async def codegraph_find(request: CodeGraphFindRequest):
     from retrieval.code_graph import CodeGraphRetriever
 
@@ -676,7 +695,7 @@ async def codegraph_find(request: CodeGraphFindRequest):
     )
 
 
-@app.post("/codegraph/relationships", response_model=CodeGraphResponse)
+@app.post("/codegraph/relationships", response_model=CodeGraphResponse, dependencies=[Depends(require_authenticated)])
 async def codegraph_relationships(request: CodeGraphRelationshipRequest):
     from retrieval.code_graph import CodeGraphRetriever
 
@@ -695,7 +714,7 @@ async def codegraph_relationships(request: CodeGraphRelationshipRequest):
     )
 
 
-@app.get("/codegraph/complex", response_model=CodeGraphResponse)
+@app.get("/codegraph/complex", response_model=CodeGraphResponse, dependencies=[Depends(require_authenticated)])
 async def codegraph_complex(request: CodeGraphComplexRequest = CodeGraphComplexRequest()):
     from retrieval.code_graph import CodeGraphRetriever
 
@@ -714,7 +733,7 @@ async def codegraph_complex(request: CodeGraphComplexRequest = CodeGraphComplexR
     )
 
 
-@app.get("/codegraph/dead-code", response_model=CodeGraphResponse)
+@app.get("/codegraph/dead-code", response_model=CodeGraphResponse, dependencies=[Depends(require_authenticated)])
 async def codegraph_dead_code(request: CodeGraphDeadCodeRequest = CodeGraphDeadCodeRequest()):
     from retrieval.code_graph import CodeGraphRetriever
 
@@ -733,7 +752,7 @@ async def codegraph_dead_code(request: CodeGraphDeadCodeRequest = CodeGraphDeadC
     )
 
 
-@app.post("/codegraph/visualize")
+@app.post("/codegraph/visualize", dependencies=[Depends(require_authenticated)])
 async def codegraph_visualize(request: CodeGraphVisualizeRequest):
     from retrieval.code_graph import CodeGraphRetriever
 
@@ -748,7 +767,7 @@ async def codegraph_visualize(request: CodeGraphVisualizeRequest):
 # ---------------------------------------------------------------------------
 
 
-@app.post("/search/colpal", response_model=ColPALSearchResponse)
+@app.post("/search/colpal", response_model=ColPALSearchResponse, dependencies=[Depends(require_authenticated)])
 async def search_colpal(request: ColPALSearchRequest):
     from ui.retriever import get_ui_retriever
 
@@ -765,7 +784,7 @@ async def search_colpal(request: ColPALSearchRequest):
     )
 
 
-@app.post("/search/ui-sketch", response_model=UISketchSearchResponse)
+@app.post("/search/ui-sketch", response_model=UISketchSearchResponse, dependencies=[Depends(require_authenticated)])
 async def search_ui_sketch(request: UISketchSearchRequest):
     from ui.retriever import get_ui_retriever
 

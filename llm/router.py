@@ -111,6 +111,18 @@ class LLMRouter:
 
         raise RuntimeError("Max retries exceeded")
 
+    async def embed(self, text: str) -> List[float]:
+        """Generate embedding for a single text using configured embedding provider."""
+        from ingestion.embedder import EmbeddingPipeline
+        pipeline = EmbeddingPipeline()
+        return await pipeline.embed(text)
+
+    async def embed_batch(self, texts: List[str]) -> List[List[float]]:
+        """Generate embeddings for multiple texts using configured embedding provider."""
+        from ingestion.embedder import EmbeddingPipeline
+        pipeline = EmbeddingPipeline()
+        return await pipeline.embed_batch(texts)
+
     async def chat_stream(
         self,
         prompt: str,
@@ -141,11 +153,9 @@ class LLMRouter:
                                 yield delta["content"]
 
 
-_default_router: Optional[LLMRouter] = None
+from functools import lru_cache
 
 
+@lru_cache(maxsize=1)
 def get_router() -> LLMRouter:
-    global _default_router
-    if _default_router is None:
-        _default_router = LLMRouter()
-    return _default_router
+    return LLMRouter()

@@ -1,5 +1,33 @@
+import re
 from typing import List, Dict, Any, Optional
 import httpx
+
+# Allowlists for parameter validation to prevent Cypher injection
+ALLOWED_ENTITY_TYPES = {"Person", "Company", "Document", "UIElement", "UISketch"}
+ALLOWED_RELATIONSHIP_TYPES = {
+    "CONTAINS", "DEPENDS_ON", "IMPLEMENTS", "EXTENDS", "CALLED_BY",
+    "CALLS", "REFERENCES", "HAS_PROPERTY", "LINKED_TO", "RELATED_TO"
+}
+
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _safe_identifier(name: str) -> str:
+    """Validate identifier for Cypher label/type — prevents injection."""
+    if not name or not _IDENTIFIER_RE.match(name):
+        raise ValueError(f"Invalid identifier '{name}': must match ^[A-Za-z_][A-Za-z0-9_]*$")
+    return name
+
+
+# Validate and sanitize integer parameters
+def _validate_int(value: Any, name: str, min_val: int = 1, max_val: int = 100) -> int:
+    try:
+        int_val = int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"Invalid {name}: must be an integer")
+    if int_val < min_val or int_val > max_val:
+        raise ValueError(f"Invalid {name}: must be between {min_val} and {max_val}")
+    return int_val
 
 
 class EntityCentricRetriever:
@@ -16,35 +44,42 @@ class EntityCentricRetriever:
         limit: int = 20,
     ) -> Dict[str, Any]:
         if entity_type:
-            cypher = f"""
-            MATCH (e:`{entity_type}` {{name: $name}})
-            CALL {{
+            _safe_identifier(entity_type)
+        depth_val = _validate_int(depth, "depth", 1, 10)
+        limit_val = _validate_int(limit, "limit", 1, 100)
+
+        if entity_type:
+            cypher = """
+            MATCH (e:`{lbl}` {name: $name})
+            CALL {
                 WITH e
-                MATCH path = (e)-[r*1..{depth}]-(other)
+                MATCH path = (e)-[r*1..$depth]-(other)
                 RETURN path, length(path) as dist
                 ORDER BY dist
-                LIMIT {limit}
-            }}
+                LIMIT $limit
+            }
             RETURN path, dist
-            """
+            """.replace("{lbl}", _safe_identifier(entity_type))
+            params = {"name": entity_name, "depth": depth_val, "limit": limit_val}
         else:
-            cypher = f"""
-            MATCH (e {{name: $name}})
-            CALL {{
+            cypher = """
+            MATCH (e {name: $name})
+            CALL {
                 WITH e
-                MATCH path = (e)-[r*1..{depth}]-(other)
+                MATCH path = (e)-[r*1..$depth]-(other)
                 RETURN path, length(path) as dist
                 ORDER BY dist
-                LIMIT {limit}
-            }}
+                LIMIT $limit
+            }
             RETURN path, dist
             """
+            params = {"name": entity_name, "depth": depth_val, "limit": limit_val}
 
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.post(
                     f"{self.base_url}/query",
-                    json={"query": cypher, "params": {"name": entity_name}},
+                    json={"query": cypher, "params": params},
                     timeout=30.0,
                 )
                 data = resp.json()
@@ -89,27 +124,30 @@ class EntityCentricRetriever:
         target_entity: Optional[str] = None,
         limit: int = 20,
     ) -> Dict[str, Any]:
+        _safe_identifier(relationship_type)
+        limit_val = _validate_int(limit, "limit", 1, 100)
+
         if source_entity and target_entity:
-            cypher = f"""
-            MATCH (a {{name: $source}})-[r:`{relationship_type}`]->(b {{name: $target}})
+            cypher = """
+            MATCH (a {name: $source})-[r:`{rt}`]->(b {name: $target})
             RETURN a, r, b
-            LIMIT {limit}
-            """
-            params = {"source": source_entity, "target": target_entity}
+            LIMIT $limit
+            """.replace("{rt}", _safe_identifier(relationship_type))
+            params = {"source": source_entity, "target": target_entity, "limit": limit_val}
         elif source_entity:
-            cypher = f"""
-            MATCH (a {{name: $source}})-[r:`{relationship_type}`]->(b)
+            cypher = """
+            MATCH (a {name: $source})-[r:`{rt}`]->(b)
             RETURN a, r, b
-            LIMIT {limit}
-            """
-            params = {"source": source_entity}
+            LIMIT $limit
+            """.replace("{rt}", _safe_identifier(relationship_type))
+            params = {"source": source_entity, "limit": limit_val}
         else:
-            cypher = f"""
-            MATCH (a)-[r:`{relationship_type}`]->(b)
+            cypher = """
+            MATCH (a)-[r:`{rt}`]->(b)
             RETURN a, r, b
-            LIMIT {limit}
-            """
-            params = {}
+            LIMIT $limit
+            """.replace("{rt}", _safe_identifier(relationship_type))
+            params = {"limit": limit_val}
 
         try:
             async with httpx.AsyncClient() as client:
@@ -143,22 +181,23 @@ class EntityCentricRetriever:
         entity_name: str,
         max_distance: int = 2,
     ) -> Dict[str, Any]:
-        cypher = f"""
-        MATCH (e {{name: $name}})
-        CALL {{
+        distance_val = _validate_int(max_distance, "max_distance", 1, 10)
+        cypher = """
+        MATCH (e {name: $name})
+        CALL {
             WITH e
-            MATCH path = (e)-[r*1..{max_distance}]-(neighbor)
+            MATCH path = (e)-[r*1..$max_dist]-(neighbor)
             RETURN neighbor, length(path) as dist
             ORDER BY dist
-        }}
-        RETURN collect({{node: neighbor, distance: dist}}) as neighborhood
+        }
+        RETURN collect({node: neighbor, distance: dist}) as neighborhood
         """
 
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.post(
                     f"{self.base_url}/query",
-                    json={"query": cypher, "params": {"name": entity_name}},
+                    json={"query": cypher, "params": {"name": entity_name, "max_dist": distance_val}},
                     timeout=30.0,
                 )
                 data = resp.json()

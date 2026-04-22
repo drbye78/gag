@@ -130,14 +130,14 @@ When schema changes:
 
 Recommended indexes:
 
-```sql
+```cypher
 # Node indexes
-CREATE INDEX IF NOT EXISTS FOR (n:Platform) ON (n.name)
-CREATE INDEX IF NOT EXISTS FOR (n:Service) ON (n.name) 
-CREATE INDEX IF NOT EXISTS FOR (n:Pattern) ON (n.name)
-CREATE INDEX IF NOT EXISTS FOR (n:Pattern) ON (n.domain)
+CREATE INDEX platform_name_index IF NOT EXISTS FOR (n:Platform) ON (n.name)
+CREATE INDEX service_name_index IF NOT EXISTS FOR (n:Service) ON (n.name)
+CREATE INDEX pattern_name_index IF NOT EXISTS FOR (n:Pattern) ON (n.name)
+CREATE INDEX pattern_domain_index IF NOT EXISTS FOR (n:Pattern) ON (n.domain)
 
-# Edge indexes  
-CREATE INDEX IF NOT EXISTS FOR ()-[r:IMPLEMENTS]->() ON (r.weight)
-CREATE INDEX IF NOT EXISTS FOR ()-[r:DEPENDS_ON]->() ON (r.weight)
+# Edge indexes
+CREATE INDEX implements_weight_index IF NOT EXISTS FOR ()-[r:IMPLEMENTS]->() ON (r.weight)
+CREATE INDEX depends_on_weight_index IF NOT EXISTS FOR ()-[r:DEPENDS_ON]->() ON (r.weight)
 ```

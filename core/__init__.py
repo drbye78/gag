@@ -7,7 +7,6 @@ from core.middleware import (
     get_rate_limiter,
     sanitize_input,
     sanitize_html,
-    sanitize_sql,
     get_error_handler,
 )
 from core.metrics import get_metrics, observe_request, observe_retrieval, observe_llm

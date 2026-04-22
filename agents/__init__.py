@@ -10,6 +10,10 @@ from agents.retrieval import RetrievalAgent, RetrievalStrategy, RetrievalResult
 from agents.reasoning import ReasoningAgent, ReasonMode
 from agents.executor import ToolExecutor, ToolStatus, ToolResult
 from agents.orchestration import OrchestrationEngine, ExecutionState
+from agents.registry import get_agent, list_agents, register_agent, AgentRegistry
+from agents.types import AgentType, AgentConfig, AgentMeta
+
+import agents._register  # noqa: F401 - registers all built-in agents
 
 
 __all__ = [
@@ -26,4 +30,11 @@ __all__ = [
     "ToolResult",
     "OrchestrationEngine",
     "ExecutionState",
+    "get_agent",
+    "list_agents",
+    "register_agent",
+    "AgentRegistry",
+    "AgentType",
+    "AgentConfig",
+    "AgentMeta",
 ]

@@ -5,6 +5,7 @@ Provides JWT token management, role-based access control,
 and convenience functions for API-level auth checks.
 """
 
+import os
 import hashlib
 import hmac
 import secrets
@@ -12,7 +13,10 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import wraps
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from fastapi import Request
 
 import jwt
 
@@ -279,21 +283,28 @@ def get_token_manager() -> TokenManager:
 
 
 async def create_token(user_id: str, roles: Optional[List[str]] = None) -> str:
-    """Create a JWT token for a given user_id and roles.
+    """Create a JWT token for a user.
 
-    Looks up or auto-creates a User in the RBAC manager.
+    In production this requires user to exist.
+    In test mode user will be auto created.
     """
     rbac = get_rbac_manager()
     user = rbac.get_user(user_id)
     if user is None:
-        user = rbac.create_user(
-            user_id=user_id,
-            email=f"{user_id}@example.com",
-            password=secrets.token_hex(16),
-            roles=roles or [Role.GUEST.value],
-        )
-    if roles:
+        if os.getenv("DEBUG", "").lower() in ["true", "1", "yes"]:
+            # Auto create only in test/debug mode
+            user = rbac.create_user(
+                user_id=user_id,
+                email=f"{user_id}@example.com",
+                password=secrets.token_hex(16),
+                roles=roles or [Role.GUEST.value],
+            )
+        else:
+            raise ValueError(f"User {user_id} does not exist")
+
+    if roles and os.getenv("DEBUG", "").lower() in ["true", "1", "yes"]:
         user.roles = roles
+
     tm = get_token_manager()
     return tm.create_token(user)
 
@@ -328,3 +339,92 @@ async def check_role(user_id: str, role: str) -> bool:
     except ValueError:
         return role in user.roles
     return rbac.has_role(user, role_enum)
+
+
+# ---------------------------------------------------------------------------
+# FastAPI Authentication Dependencies
+# ---------------------------------------------------------------------------
+
+
+class PublicEndpoint:
+    """Marker class to exempt routes from authentication.
+
+    Usage:
+        @app.get("/health")
+        async def health():
+            ...
+
+        # Or use in route definition:
+        app.add_api_route("/health", health, tags=["public"], dependencies=[])
+    """
+
+
+async def require_authenticated(request: "Request") -> User:
+    """FastAPI dependency that checks for valid JWT and returns the authenticated user.
+
+    Args:
+        request: FastAPI request object
+
+    Raises:
+        HTTPException: 401 if no token provided or token is invalid
+
+    Returns:
+        User: The authenticated user object
+    """
+    from fastapi import HTTPException
+
+    auth_header = request.headers.get("authorization")
+
+    if not auth_header:
+        raise HTTPException(
+            status_code=401,
+            detail="Authorization header missing",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    parts = auth_header.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authorization header format",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token = parts[1]
+
+    tm = get_token_manager()
+    payload = tm.verify_token(token)
+
+    if not payload:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token payload",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    rbac = get_rbac_manager()
+    user = rbac.get_user(user_id)
+
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="User not found",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not user.active:
+        raise HTTPException(
+            status_code=401,
+            detail="User account is inactive",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return user

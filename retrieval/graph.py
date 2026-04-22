@@ -1,15 +1,25 @@
 """
 Graph Retriever - Knowledge graph retrieval from FalkorDB.
-
+ 
 Queries graph relationships via Cypher with depth control
 and multi-hop traversal support.
 """
 
+import re
 import time
 from enum import Enum
 from typing import Any, Dict, List, Optional, Set
 
 import httpx
+
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _safe_identifier(name: str) -> str:
+    """Validate identifier for Cypher label/type — prevents injection."""
+    if not name or not _IDENTIFIER_RE.match(name):
+        raise ValueError(f"Invalid identifier '{name}': must match ^[A-Za-z_][A-Za-z0-9_]*$")
+    return name
 
 
 class QueryType(str, Enum):
@@ -18,6 +28,11 @@ class QueryType(str, Enum):
     MULTI_HOP = "multi_hop"
     RELATIONSHIP = "relationship"
     CAUSAL = "causal"
+
+
+# Whitelists for Cypher injection prevention
+ALLOWED_NODE_TYPES = {"Person", "Organization", "Document", "Entity", "Service", "Component", "Repository"}
+ALLOWED_EDGE_TYPES = {"IMPORTS", "CALLS", "DEPENDS_ON", "CONTAINS", "PROVIDES", "USES"}
 
 
 class GraphRetriever:
@@ -41,32 +56,36 @@ class GraphRetriever:
             MATCH (a)-[r]->(b) 
             WHERE a.name CONTAINS $query OR b.name CONTAINS $query
             RETURN a, r, b
-            LIMIT {limit}
-            """.format(limit=limit)
+            LIMIT $limit
+            """
+            params = {"query": query, "limit": limit}
         else:
             cypher = """
-            MATCH path = (a)-[r*1..{depth}]->(b)
+            MATCH path = (a)-[r*1..$depth]->(b)
             WHERE a.name CONTAINS $query
             RETURN path, length(path) as path_length
             ORDER BY path_length
-            LIMIT {limit}
-            """.format(depth=depth, limit=limit)
+            LIMIT $limit
+            """
+            params = {"query": query, "depth": depth, "limit": limit}
 
         if edge_types:
-            edge_filter = " OR ".join([f"type(r) = '{e}'" for e in edge_types])
+            for et in edge_types:
+                _safe_identifier(et)
+            edge_filter = " OR ".join([f"type(r) = '{_safe_identifier(e)}'" for e in edge_types])
             cypher = cypher.replace("WHERE", f"WHERE ({edge_filter}) AND")
 
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     f"{self.base_url}/query",
-                    json={"query": cypher, "params": {"query": query}},
+                    json={"query": cypher, "params": params},
                     timeout=30.0,
                 )
                 response.raise_for_status()
                 data = response.json()
-        except Exception:
-            data = {"results": [], "error": str(Exception)}
+        except Exception as e:
+            data = {"results": [], "error": str(e)}
 
         took = int(time.time() * 1000) - start
 
@@ -139,12 +158,13 @@ class GraphRetriever:
         start = int(time.time() * 1000)
 
         cypher = """
-        MATCH path = (a)-[r*1..{max_depth}]->(b)
+        MATCH path = (a)-[r*1..$max_depth]->(b)
         WHERE a.name = $source AND b.name = $target
         RETURN path, length(path) as hops
         ORDER BY hops
         LIMIT 10
-        """.format(max_depth=max_depth)
+        """
+        params = {"source": source, "target": target, "max_depth": max_depth}
 
         try:
             async with httpx.AsyncClient() as client:
@@ -158,8 +178,8 @@ class GraphRetriever:
                 )
                 response.raise_for_status()
                 data = response.json()
-        except Exception:
-            data = {"results": [], "error": str(Exception)}
+        except Exception as e:
+            data = {"results": [], "error": str(e)}
 
         took = int(time.time() * 1000) - start
 
@@ -192,29 +212,33 @@ class GraphRetriever:
         start = int(time.time() * 1000)
 
         if node_type:
+            if node_type not in ALLOWED_NODE_TYPES:
+                raise ValueError(f"Invalid node_type: {node_type}. Allowed: {ALLOWED_NODE_TYPES}")
             cypher = """
-            MATCH (n:{node_type})
+            MATCH (n:`$node_type`)
             WHERE n.name = $name
             RETURN n
-            """.format(node_type=node_type)
+            """
+            params = {"name": name, "node_type": node_type}
         else:
             cypher = """
             MATCH (n)
             WHERE n.name = $name
             RETURN n
             """
+            params = {"name": name}
 
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     f"{self.base_url}/query",
-                    json={"query": cypher, "params": {"name": name}},
+                    json={"query": cypher, "params": params},
                     timeout=30.0,
                 )
                 response.raise_for_status()
                 data = response.json()
-        except Exception:
-            data = {"results": [], "error": str(Exception)}
+        except Exception as e:
+            data = {"results": [], "error": str(e)}
 
         took = int(time.time() * 1000) - start
 
@@ -234,17 +258,24 @@ class GraphRetriever:
     ) -> Dict[str, Any]:
         start = int(time.time() * 1000)
 
+        if edge_type and edge_type not in ALLOWED_EDGE_TYPES:
+            raise ValueError(f"Invalid edge_type: {edge_type}. Allowed: {ALLOWED_EDGE_TYPES}")
+        if edge_type:
+            _safe_identifier(edge_type)
+        if depth < 1 or depth > 10:
+            raise ValueError(f"Invalid depth: {depth}. Must be between 1 and 10")
+
         if direction == "outgoing":
             rel_pattern = (
-                f"[r:{edge_type}*1..{depth}]->" if edge_type else f"[r*1..{depth}]->"
+                f"[r:`{edge_type}`*1..{depth}]->" if edge_type else f"[r*1..{depth}]->"
             )
         elif direction == "incoming":
             rel_pattern = (
-                f"<-[r:{edge_type}*1..{depth}]" if edge_type else f"<-[r*1..{depth}]"
+                f"<-[r:`{edge_type}`*1..{depth}]" if edge_type else f"<-[r*1..{depth}]"
             )
         else:
             rel_pattern = (
-                f"[r:{edge_type}*1..{depth}]" if edge_type else f"[r*1..{depth}]"
+                f"[r:`{edge_type}`*1..{depth}]" if edge_type else f"[r*1..{depth}]"
             )
 
         cypher = f"""
@@ -262,8 +293,8 @@ class GraphRetriever:
                 )
                 response.raise_for_status()
                 data = response.json()
-        except Exception:
-            data = {"results": [], "error": str(Exception)}
+        except Exception as e:
+            data = {"results": [], "error": str(e)}
 
         took = int(time.time() * 1000) - start
 

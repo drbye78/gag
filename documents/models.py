@@ -8,7 +8,7 @@ with source tracking and metadata.
 import hashlib
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -62,6 +62,10 @@ class DocumentMetadata:
     custom: Dict[str, Any] = field(default_factory=dict)
 
 
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 class DocumentVersion(BaseModel):
     """Version model for documents."""
 
@@ -71,7 +75,7 @@ class DocumentVersion(BaseModel):
     content: str
     content_hash: str
     format: DocumentFormat
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=_utc_now)
     created_by: Optional[str] = None
     changelog: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -98,8 +102,8 @@ class Document(BaseModel):
 
     versions: List[DocumentVersion] = field(default_factory=list)
 
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=_utc_now)
+    updated_at: datetime = field(default_factory=_utc_now)
 
     indexed_at: Optional[datetime] = None
     embedding_ids: List[str] = field(default_factory=list)
@@ -160,7 +164,7 @@ class Document(BaseModel):
         self.versions.append(version)
         self.content = content
         self.content_hash = new_hash
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(timezone.utc)
 
         return version
 
@@ -177,7 +181,7 @@ class Document(BaseModel):
 
         self.content = version.content
         self.content_hash = version.content_hash
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(timezone.utc)
 
         return True
 
@@ -194,7 +198,7 @@ class DocumentCollection(BaseModel):
 
     def add_document(self, doc: Document):
         self.documents.append(doc)
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(timezone.utc)
 
     def get_document(self, doc_id: str) -> Optional[Document]:
         for doc in self.documents:

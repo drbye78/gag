@@ -9,8 +9,9 @@
 ## Quick Start
 
 ```bash
-# Clone and navigate
-cd /home/roger/src/gag
+# Clone and navigate to project directory
+# (replace $PROJECT_DIR with your actual path, e.g., /home/roger/src/gag)
+cd $PROJECT_DIR
 
 # Start all services
 docker-compose up -d

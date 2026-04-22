@@ -75,15 +75,6 @@ def sanitize_html(text: str) -> str:
     return text
 
 
-def sanitize_sql(text: str) -> str:
-    dangerous = ["--", ";--", "/*", "*/", "xp_", "sp_", "EXEC", "EXECUTE"]
-    lower = text.lower()
-    for kw in dangerous:
-        if kw.lower() in lower:
-            return ""
-    return text
-
-
 class ErrorHandler:
     def __init__(self):
         self._errors: Dict[int, str] = {

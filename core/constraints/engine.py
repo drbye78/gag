@@ -90,6 +90,10 @@ class ConstraintEngine:
             violated = bool(actual) and actual > expected
         elif op == "lt":
             violated = bool(actual) and actual < expected
+        elif op == "lte":
+            violated = bool(actual) and actual <= expected
+        elif op == "gte":
+            violated = bool(actual) and actual >= expected
         elif op == "required":
             violated = not actual
         

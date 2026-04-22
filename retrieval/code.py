@@ -28,7 +28,10 @@ class CodeRetriever:
     ) -> Dict[str, Any]:
         start = int(time.time() * 1000)
 
-        payload = {"vector": [0.0] * 1024, "limit": limit, "filter": filters or {}}
+        from llm.router import get_router
+        router = get_router()
+        embedding = await router.embed(query)
+        payload = {"vector": embedding, "limit": limit, "filter": filters or {}}
 
         if language:
             payload["filter"]["language"] = {"eq": language}

@@ -1,13 +1,13 @@
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 
 class TraceContext:
     def __init__(self, trace_id: Optional[str] = None):
         self.trace_id = trace_id or self._generate_trace_id()
-        self.started_at = datetime.utcnow()
+        self.started_at = datetime.now(timezone.utc)
         self.steps: List[TraceStep] = []
     
     def _generate_trace_id(self) -> str:
@@ -28,7 +28,7 @@ class TraceContext:
             input_summary=input_summary,
             output_summary=output_summary,
             latency_ms=latency_ms,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             metadata=metadata or {},
         ))
 

@@ -11,7 +11,7 @@ import warnings
 from functools import lru_cache
 from typing import Any, Dict, List, Optional, Union
 
-from pydantic import Field, model_validator
+from pydantic import Field, model_validator, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -66,6 +66,18 @@ class Settings(BaseSettings):
     jwt_secret: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
     jwt_expiry_minutes: int = 60
+
+    @field_validator('jwt_secret', mode='before')
+    @classmethod
+    def validate_jwt_secret(cls, v: str) -> str:
+        if not v or v == "change-me-in-production":
+            import os
+            import sys
+            if os.getenv("DEBUG", "").lower() not in ["true", "1", "yes"]:
+                print("FATAL: JWT_SECRET must be set in production mode", file=sys.stderr)
+                print("FATAL: Set JWT_SECRET environment variable to a secure random value", file=sys.stderr)
+                sys.exit(78)  # EX_CONFIG
+        return v
 
     rate_limit_requests: int = 100
     rate_limit_window: int = 60
@@ -178,11 +190,9 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _post_validate(self):
         if self.jwt_secret == "change-me-in-production":
-            warnings.warn(
-                "SECURITY WARNING: JWT_SECRET is using the default placeholder value. "
-                "Set JWT_SECRET to a strong random value before deploying to production.",
-                RuntimeWarning,
-                stacklevel=2,
+            raise ValueError(
+                "SECURITY ERROR: JWT_SECRET is using the default placeholder value. "
+                "Set JWT_SECRET to a strong random value before deploying to production."
             )
         if not self.credential_encrypt_key:
             warnings.warn(
@@ -192,35 +202,6 @@ class Settings(BaseSettings):
                 stacklevel=2,
             )
         return self
-
-        # --- Redis ---
-        self.redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
-
-        # --- LLM ---
-        self.llm_provider = os.getenv("LLM_PROVIDER", "openrouter")
-        self.llm_model = os.getenv("LLM_MODEL", "qwen-max")
-        self.llm_api_key = os.getenv("LLM_API_KEY", "")
-
-        # --- Embeddings ---
-        self.embedding_provider = os.getenv("EMBEDDING_PROVIDER", "openai")
-        self.openai_api_key = os.getenv("OPENAI_API_KEY", "")
-        self.dashscope_api_key = os.getenv("DASHSCOPE_API_KEY", "")
-        self.ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-        self.qwen_api_key = os.getenv("QWEN_API_KEY", "")
-        self.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY", "")
-        self.vlm_provider = os.getenv("VLM_PROVIDER", "")
-
-        # --- Reranking ---
-        self.rerank_provider = os.getenv("RERANK_PROVIDER", "cohere")
-        self.rerank_strategy = os.getenv("RERANK_STRATEGY", "single")
-        self.rerank_top_k = int(os.getenv("RERANK_TOP_K", "10"))
-        self.rerank_min_score = float(os.getenv("RERANK_MIN_SCORE", "0.3"))
-        self.cohere_api_key = os.getenv("COHERE_API_KEY", "")
-        self.jina_api_key = os.getenv("JINA_API_KEY", "")
-
-        # --- Citations ---
-        self.citation_style = os.getenv("CITATION_STYLE", "parenthetical")
-        
 
 
 _settings: Optional["Settings"] = None

@@ -13,11 +13,18 @@ from pydantic import BaseModel, Field
 
 
 class RetrievalSource(str, Enum):
+    """Canonical retrieval source enum - includes all 11 sources."""
     DOCS = "docs"
     CODE = "code"
     GRAPH = "graph"
+    CODE_GRAPH = "code_graph"
     TICKETS = "tickets"
     TELEMETRY = "telemetry"
+    DIAGRAM = "diagram"
+    MULTIMODAL = "multimodal"
+    UI_SKETCH = "ui_sketch"
+    COLBERT = "colbert"
+    KNOWLEDGE = "knowledge"
 
 
 class SearchType(str, Enum):

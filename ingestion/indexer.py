@@ -292,6 +292,48 @@ class NodeType(str, Enum):
     INTERFACE = "interface"
 
 
+# Allowlists for Cypher injection prevention
+ALLOWED_NODE_TYPES = {
+    "Entity",
+    "function",
+    "class",
+    "module",
+    "file",
+    "component",
+    "service",
+    "api",
+    "interface",
+}
+
+ALLOWED_EDGE_TYPES = {
+    "RELATED_TO",
+    "CALLS",
+    "DEFINES",
+    "IMPORTS",
+    "RETURNS",
+    "CONTAINS",
+    "INHERITS",
+    "IMPLEMENTS",
+    "DEPENDS_ON",
+    "DOCUMENTED_BY",
+}
+
+
+def _validate_node_type(node_type: str) -> str:
+    """Validate node_type against allowlist to prevent Cypher injection."""
+    if node_type not in ALLOWED_NODE_TYPES:
+        raise ValueError(f"Invalid node_type: {node_type}")
+    return node_type
+
+
+def _validate_edge_type(edge_type: str) -> str:
+    """Validate edge_type against allowlist to prevent Cypher injection."""
+    validated = edge_type.upper()
+    if validated not in ALLOWED_EDGE_TYPES:
+        raise ValueError(f"Invalid edge_type: {edge_type}")
+    return validated
+
+
 class GraphIndexer:
     """FalkorDB graph indexer with batched Cypher operations."""
 
@@ -397,8 +439,9 @@ class GraphIndexer:
                     # Fallback: insert individually
                     for node in batch:
                         node_id = node.get("id", str(uuid.uuid4()))
-                        cypher = f"""
-                        MERGE (n:{node.get('node_type', 'Entity')} {{id: $id}})
+                        validated_type = _validate_node_type(node.get("node_type", "Entity"))
+                        cypher = """
+                        MERGE (n:Entity {id: $id})
                         SET n += $props
                         """
                         try:
@@ -416,8 +459,9 @@ class GraphIndexer:
                 logger.warning("Batch node insert failed, falling back: %s", e)
                 for node in batch:
                     node_id = node.get("id", str(uuid.uuid4()))
-                    cypher = f"""
-                    MERGE (n:{node.get('node_type', 'Entity')} {{id: $id}})
+                    validated_type = _validate_node_type(node.get("node_type", "Entity"))
+                    cypher = """
+                    MERGE (n:Entity {id: $id})
                     SET n += $props
                     """
                     try:
@@ -494,11 +538,11 @@ class GraphIndexer:
                 else:
                     # Fallback: individual edge creation
                     for edge in batch:
-                        rel_type = edge.get("edge_type", "RELATED_TO").upper()
-                        cypher = f"""
-                        MATCH (a {{id: $source_id}})
-                        MATCH (b {{id: $target_id}})
-                        MERGE (a)-[r:{rel_type}]->(b)
+                        rel_type = _validate_edge_type(edge.get("edge_type", "RELATED_TO"))
+                        cypher = """
+                        MATCH (a {id: $source_id})
+                        MATCH (b {id: $target_id})
+                        MERGE (a)-[r:RELATED_TO]->(b)
                         SET r += $props
                         """
                         try:
@@ -517,11 +561,11 @@ class GraphIndexer:
             except Exception as e:
                 logger.warning("Batch edge insert failed, falling back: %s", e)
                 for edge in batch:
-                    rel_type = edge.get("edge_type", "RELATED_TO").upper()
-                    cypher = f"""
-                    MATCH (a {{id: $source_id}})
-                    MATCH (b {{id: $target_id}})
-                    MERGE (a)-[r:{rel_type}]->(b)
+                    rel_type = _validate_edge_type(edge.get("edge_type", "RELATED_TO"))
+                    cypher = """
+                    MATCH (a {id: $source_id})
+                    MATCH (b {id: $target_id})
+                    MERGE (a)-[r:RELATED_TO]->(b)
                     SET r += $props
                     """
                     try:

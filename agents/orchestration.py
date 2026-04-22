@@ -323,13 +323,6 @@ class OrchestrationEngine:
                         self.max_retries,
                         e,
                     )
-                    state.error = str(e)
-                    logger.error(
-                        "Step %s failed after %d retries: %s",
-                        step_type,
-                        self.max_retries,
-                        e,
-                    )
             finally:
                 state.completed_at = time.time()
 

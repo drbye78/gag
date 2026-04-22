@@ -38,7 +38,11 @@ class QdrantEmbeddingProvider(EmbeddingProvider):
 
     async def embed(self, text: str) -> List[float]:
         results = await self.embed_batch([text])
-        return results[0] if results else [0.0] * 1024
+        if results:
+            return results[0]
+        from ingestion.embedder import EmbeddingPipeline
+        pipeline = EmbeddingPipeline()
+        return await pipeline.embed(text)
 
     async def embed_batch(self, texts: List[str]) -> List[List[float]]:
         try:
@@ -48,10 +52,12 @@ class QdrantEmbeddingProvider(EmbeddingProvider):
             )
             resp.raise_for_status()
             data = resp.json()
-            return data.get("result", [[0.0] * 1024] * len(texts))
+            return data.get("result", [])
         except Exception as e:
             logger.warning("Error in Qdrant embed_batch: %s", e)
-            return [[0.0] * 1024 for _ in texts]
+            from ingestion.embedder import EmbeddingPipeline
+            pipeline = EmbeddingPipeline()
+            return await pipeline.embed_batch(texts)
 
 
 class OpenAIEmbeddingProvider(EmbeddingProvider):
@@ -71,7 +77,9 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
 
     async def embed(self, text: str) -> List[float]:
         results = await self.embed_batch([text])
-        return results[0] if results else [0.0] * 1536
+        if not results:
+            raise RuntimeError("OpenAI embed failed: no results returned")
+        return results[0]
 
     async def embed_batch(self, texts: List[str]) -> List[List[float]]:
         try:
@@ -83,8 +91,8 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
             data = resp.json()
             return [d["embedding"] for d in data.get("data", [])]
         except Exception as e:
-            logger.warning("Error in OpenAI embed_batch: %s", e)
-            return [[0.0] * 1536 for _ in texts]
+            logger.error("OpenAI embed_batch failed: %s", e)
+            raise RuntimeError(f"OpenAI embedding failed: {e}") from e
 
 
 class DocsBackend(ABC):

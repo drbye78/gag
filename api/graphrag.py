@@ -1,6 +1,9 @@
+import logging
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 from models.graphrag import (
     GraphRAGQueryRequest,
@@ -85,7 +88,8 @@ async def list_entities(
     try:
         result = await client.execute(cypher, params)
         entities = [r.get("e", {}) for r in result.get("results", [])]
-    except Exception:
+    except Exception as e:
+        logger.exception("Failed to list entities: %s", e)
         entities = []
 
     return EntitySearchResponse(entities=entities, total=len(entities))
@@ -108,7 +112,8 @@ async def get_entity(entity_id: str):
             "entity": data.get("e", {}),
             "relationships": data.get("relationships", []),
         }
-    except Exception:
+    except Exception as e:
+        logger.exception("Failed to get entity %s: %s", entity_id, e)
         raise HTTPException(status_code=404, detail="Entity not found")
 
 
@@ -143,7 +148,8 @@ async def list_relationships(
     try:
         result = await client.execute(cypher, params)
         relationships = [r.get("r", {}) for r in result.get("results", [])]
-    except Exception:
+    except Exception as e:
+        logger.exception("Failed to list relationships: %s", e)
         relationships = []
 
     return RelationshipSearchResponse(
@@ -189,7 +195,8 @@ async def list_communities(
                     size=len(members),
                 )
             )
-    except Exception:
+    except Exception as e:
+        logger.exception("Failed to list communities: %s", e)
         communities = []
 
     return communities
@@ -215,7 +222,8 @@ async def get_community(community_id: str):
             members=[{"name": m.get("name", ""), "type": m.get("type", "")} for m in members],
             size=len(members),
         )
-    except Exception:
+    except Exception as e:
+        logger.exception("Failed to get community %s: %s", community_id, e)
         raise HTTPException(status_code=404, detail="Community not found")
 
 
@@ -235,8 +243,8 @@ async def get_graphrag_stats():
         for r in entity_result.get("results", []):
             entity_types[r.get("type", "unknown")] = r.get("count", 0)
         total_entities = sum(entity_types.values())
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to get entity types: %s", e)
 
     try:
         rel_cypher = "MATCH ()-[r]->() RETURN type(r) as type, count(r) as count"
@@ -244,16 +252,16 @@ async def get_graphrag_stats():
         for r in rel_result.get("results", []):
             relationship_types[r.get("type", "unknown")] = r.get("count", 0)
         total_relationships = sum(relationship_types.values())
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to get relationship types: %s", e)
 
     try:
         comm_cypher = "MATCH (c:Community) RETURN count(c) as count"
         comm_result = await client.execute(comm_cypher)
         if comm_result.get("results"):
             total_communities = comm_result["results"][0].get("count", 0)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to get community count: %s", e)
 
     avg_entities = total_entities / max(total_communities, 1)
 

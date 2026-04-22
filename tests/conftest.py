@@ -7,6 +7,12 @@ Provides:
 - Async test helpers
 """
 
+# MUST be set BEFORE any imports that trigger Settings() initialization
+import os
+os.environ.setdefault("DEBUG", "true")
+os.environ.setdefault("LOG_LEVEL", "DEBUG")
+os.environ.setdefault("JWT_SECRET", "test-secret-key-for-testing-ignore-security-warning")
+
 import asyncio
 import os
 import sys
@@ -19,6 +25,7 @@ import pytest
 
 os.environ.setdefault("DEBUG", "true")
 os.environ.setdefault("LOG_LEVEL", "DEBUG")
+os.environ.setdefault("JWT_SECRET", "test-secret-key-for-testing-ignore-security-warning")
 
 
 @dataclass

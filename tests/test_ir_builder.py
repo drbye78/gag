@@ -37,7 +37,6 @@ class TestIRBuilderAddUI:
         mock_matcher = MagicMock()
         mock_matcher.match_patterns.return_value = []
 
-        # asyncio is imported locally inside add_ui, so patch at the top level
         with patch("asyncio.run") as mock_run:
             mock_run.return_value = {"success": True}
             with patch("ui.graph_builder.UIGraphBuilder") as mock_builder_cls:

@@ -1,4 +1,5 @@
 from typing import Any, Dict, List, Optional
+from datetime import timezone
 import json
 import logging
 
@@ -436,7 +437,7 @@ Include actual commands for recovery."""
             "action": action,
             "target": target,
             "status": "success",
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
         }
     
     def validate_input(self, input: Dict[str, Any]) -> bool:

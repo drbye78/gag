@@ -358,6 +358,48 @@ services:
 engineering_intelligence/
 ├── api/                    # API layer (FastAPI)
 │   ├── main.py            # Application entry
+│   ├── mcp.py             # MCP server
+│   ├── knowledge.py      # Knowledge endpoints
+│   ├── adapters.py        # Platform adapters
+│   └── graphrag.py       # GraphRAG endpoints
+├── agents/                 # Agent system
+│   ├── planner.py         # Planning agent
+│   ├── retrieval.py       # Retrieval agent  
+│   ├── reasoning.py       # Reasoning agent
+│   ├── executor.py        # Tool executor
+│   └── orchestration.py   # Orchestration engine
+├── retrieval/             # Retrieval layer
+│   ├── orchestrator.py    # Retrieval orchestrator
+│   ├── docs.py           # Docs retriever
+│   ├── code.py           # Code retriever
+│   ├── graph.py          # Graph retriever
+│   ├── ticket.py         # Ticket retriever
+│   └── telemetry.py      # Telemetry retriever
+├── graph/                 # Graph layer
+│   ├── client.py         # FalkorDB client
+│   └── queries.py       # Query abstractions
+├── multimodal/           # Multimodal pipeline
+│   ├── vlm.py           # VLM processor
+│   └── ir_builder.py    # IR builder
+├── llm/                  # LLM layer
+│   └── router.py        # LLM router client
+├── tools/                 # Tool system
+│   ├── base.py          # Tool interface
+│   ├── architecture.py # Architecture evaluator
+│   ├── security.py     # Security validator
+│   └── cost.py         # Cost estimator
+├── models/               # Data models
+│   ├── ir.py           # IR schema
+│   ├── graph.py        # Graph schema
+│   ├── retrieval.py   # Retrieval schemas
+│   └── mcp.py          # MCP contracts
+├── evaluation/         # Evaluation framework
+│   └── test_cases.py   # Test cases + scoring
+└── docker-compose.yml   # Deployment config
+```
+engineering_intelligence/
+├── api/                    # API layer (FastAPI)
+│   ├── main.py            # Application entry
 │   ├── routes.py          # HTTP routes
 │   ├── mcp.py             # MCP server
 │   └── schemas.py         # Request/response models

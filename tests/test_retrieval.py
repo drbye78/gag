@@ -74,8 +74,8 @@ class TestHybridRetriever:
             retriever = HybridRetriever()
             result = await retriever.search("test", limit=5)
             assert isinstance(result, dict)
-        except Exception:
-            pass  # Expected when no backend services are running
+        except Exception as e:
+            pytest.skip(f"Backend services not available: {e}")
 
     @pytest.mark.asyncio
     async def test_retrieve_cascade(self):
@@ -85,8 +85,8 @@ class TestHybridRetriever:
             retriever = HybridRetriever()
             result = await retriever.search("test cascade", limit=5)
             assert isinstance(result, dict)
-        except Exception:
-            pass  # Expected when no backend services are running
+        except Exception as e:
+            pytest.skip(f"Backend services not available: {e}")
 
     @pytest.mark.asyncio
     async def test_retrieve_iterative(self):
@@ -96,8 +96,8 @@ class TestHybridRetriever:
             retriever = HybridRetriever()
             result = await retriever.search("test iterative", limit=5, use_reasoning=False)
             assert isinstance(result, dict)
-        except Exception:
-            pass  # Expected when no backend services are running
+        except Exception as e:
+            pytest.skip(f"Backend services not available: {e}")
 
 
 class TestQueryClassifier:
@@ -171,8 +171,8 @@ class TestReasoningEngine:
         try:
             result = await engine.reason("query", [{"content": "context"}])
             assert isinstance(result, dict)
-        except Exception:
-            pass  # Expected when no LLM backend is running
+        except Exception as e:
+            pytest.skip(f"LLM backend not available: {e}")
 
     @pytest.mark.asyncio
     async def test_reason_with_context(self):
@@ -186,8 +186,8 @@ class TestReasoningEngine:
                 [{"content": "Auth uses JWT"}],
             )
             assert result is not None
-        except Exception:
-            pass  # Expected when no LLM backend is running
+        except Exception as e:
+            pytest.skip(f"LLM backend not available: {e}")
 
 
 class TestCodeRetriever:

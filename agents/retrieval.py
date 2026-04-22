@@ -144,7 +144,7 @@ class RetrievalAgent:
         else:
             results = await self._execute_sequential(steps, query, limit)
 
-        total_time = int(time.time() - start_time) * 1000
+        total_time = int((time.time() - start_time) * 1000)
         self._update_metrics(results, total_time)
 
         return {
@@ -238,7 +238,7 @@ class RetrievalAgent:
                     query=query,
                     results=data.get("results", []),
                     total=data.get("total_results", 0),
-                    took_ms=int(time.time() - start_time) * 1000,
+                    took_ms=int((time.time() - start_time) * 1000),
                 )
 
                 self.cache.set(query, source, result)
@@ -250,7 +250,7 @@ class RetrievalAgent:
                     query=query,
                     results=[],
                     total=0,
-                    took_ms=int(time.time() - start_time) * 1000,
+                    took_ms=int((time.time() - start_time) * 1000),
                     error=str(e),
                 )
 

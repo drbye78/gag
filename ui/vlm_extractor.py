@@ -168,7 +168,9 @@ class VLMUIExtractor:
                 result = self.parse_vlm_response(response_text)
                 if result is not None:
                     return result
-            except Exception:
-                pass  # Retry on any exception
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning("VLM extraction failed: %s", e, exc_info=True)
+                raise
 
         return None

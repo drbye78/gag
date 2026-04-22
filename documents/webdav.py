@@ -107,7 +107,9 @@ class WebDAVClient:
 
             return self._parse_propfind_response(resp.text)
 
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("WebDAV list failed: %s", e, exc_info=True)
             return []
 
     def _parse_propfind_response(self, xml: str) -> List[WebDAVFile]:
@@ -192,7 +194,8 @@ class WebDAVClient:
                 headers={"Content-Type": content_type},
             )
             return resp.status_code in (200, 201, 204)
-        except Exception:
+        except Exception as e:
+            logger.warning("WebDAV upload failed: %s", e, exc_info=True)
             return False
 
     async def delete_file(self, path: str) -> bool:
@@ -203,7 +206,8 @@ class WebDAVClient:
         try:
             resp = await client.delete(url)
             return resp.status_code in (200, 204)
-        except Exception:
+        except Exception as e:
+            logger.warning("WebDAV delete failed: %s", e, exc_info=True)
             return False
 
     async def create_directory(self, path: str) -> bool:
@@ -217,7 +221,8 @@ class WebDAVClient:
                 url=url,
             )
             return resp.status_code in (200, 201)
-        except Exception:
+        except Exception as e:
+            logger.warning("WebDAV directory creation failed: %s", e, exc_info=True)
             return False
 
     async def sync_folder(
@@ -281,11 +286,9 @@ class WebDAVClient:
         return None
 
 
-_webdav_client: Optional[WebDAVClient] = None
+from functools import lru_cache
 
 
+@lru_cache(maxsize=1)
 def get_webdav_client() -> WebDAVClient:
-    global _webdav_client
-    if _webdav_client is None:
-        _webdav_client = WebDAVClient()
-    return _webdav_client
+    return WebDAVClient()

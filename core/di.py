@@ -1,7 +1,8 @@
 """Dependency injection container with lifecycle management."""
 
 import logging
-from typing import Any, Dict, Optional, Type, TypeVar
+import threading
+from typing import Any, Callable, Dict, Optional, Type, TypeVar
 from contextlib import asynccontextmanager
 
 from core.config import Settings, get_settings
@@ -10,32 +11,74 @@ from core.errors import ServiceUnavailableError
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar("T")
-
 
 class AppContainer:
-    """Central DI container with singleton and scoped lifecycles."""
+    """Central DI container with singleton and scoped lifecycles.
+    
+    Thread-safe implementation using locks for singleton registration/resolution.
+    """
+
+    _instance: Optional["AppContainer"] = None
+    _lock = threading.Lock()
+
+    def __new__(cls, *args: Any, **kwargs: Any) -> "AppContainer":
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialized_internal = False
+        return cls._instance
 
     def __init__(self, settings: Optional[Settings] = None):
+        if self._initialized_internal:
+            return
         self.settings = settings or get_settings()
         self._singletons: Dict[Type, Any] = {}
-        self._factories: Dict[Type, Any] = {}
+        self._factories: Dict[Type, Callable[..., Any]] = {}
         self._pools: Dict[str, Any] = {}
+        self._singletons_lock = threading.Lock()
+        self._factories_lock = threading.Lock()
         self._initialized = False
+        self._initialized_internal = True
 
-    def register_singleton(self, cls: Type[T], instance: T) -> None:
-        self._singletons[cls] = instance
+    def register_singleton(self, cls: Type, instance: Any) -> None:
+        with self._singletons_lock:
+            self._singletons[cls] = instance
 
-    def register_factory(self, cls: Type[T], factory: Any) -> None:
-        self._factories[cls] = factory
+    def register_factory(self, cls: Type, factory: Callable[..., Any]) -> None:
+        with self._factories_lock:
+            self._factories[cls] = factory
 
-    def singleton(self, cls: Type[T]) -> Optional[T]:
-        return self._singletons.get(cls)
+    def singleton(self, cls: Type) -> Optional[Any]:
+        with self._singletons_lock:
+            return self._singletons.get(cls)
 
-    def scoped(self, cls: Type[T]) -> T:
-        if cls in self._factories:
-            return self._factories[cls](self)
-        raise KeyError(f"No factory registered for {cls}")
+    def get_or_create(self, cls: Type) -> Any:
+        """Get existing singleton or create via factory."""
+        with self._singletons_lock:
+            if cls in self._singletons:
+                return self._singletons[cls]
+        
+        with self._factories_lock:
+            if cls in self._factories:
+                instance = self._factories[cls]()
+                with self._singletons_lock:
+                    self._singletons[cls] = instance
+                return instance
+        
+        raise KeyError(f"No singleton or factory registered for {cls}")
+
+    def register_override(self, cls: Type, instance: Any) -> None:
+        """Register override for testing - thread-safe."""
+        with self._singletons_lock:
+            self._singletons[cls] = instance
+
+    def clear_overrides(self) -> None:
+        """Clear all singleton overrides - for testing."""
+        with self._singletons_lock:
+            self._singletons.clear()
+        with self._factories_lock:
+            self._factories.clear()
 
     async def init(self) -> None:
         """Initialize all pooled resources."""

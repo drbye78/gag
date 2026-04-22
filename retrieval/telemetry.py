@@ -8,7 +8,7 @@ with in-memory fallback.
 import os
 import time
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -84,7 +84,7 @@ class PrometheusBackend(TelemetryBackend):
                 "service": r.get("metric", {}).get("service", ""),
                 "severity": r.get("metric", {}).get("severity", "info"),
                 "message": r.get("metric", {}).get("alertname", ""),
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
             for r in results[:limit]
         ]
@@ -106,7 +106,7 @@ class PrometheusBackend(TelemetryBackend):
                 "service": r.get("metric", {}).get("job", ""),
                 "value": r.get("value", 0),
                 "unit": "",
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
             for r in results[:limit]
         ]
@@ -158,7 +158,7 @@ class ElasticSearchBackend(TelemetryBackend):
                     "severity": hit["_source"].get("level", "info"),
                     "message": hit["_source"].get("message", ""),
                     "timestamp": hit["_source"].get(
-                        "@timestamp", datetime.utcnow().isoformat()
+                        "@timestamp", datetime.now(timezone.utc).isoformat()
                     ),
                 }
                 for hit in data.get("hits", {}).get("hits", [])
@@ -243,7 +243,7 @@ class InMemoryTelemetryBackend(TelemetryBackend):
                 "service": "api",
                 "severity": "info",
                 "message": "GET /api/users - 200",
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             },
             {
                 "id": "e002",
@@ -251,7 +251,7 @@ class InMemoryTelemetryBackend(TelemetryBackend):
                 "service": "api",
                 "severity": "error",
                 "message": "Connection timeout",
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             },
         ]
         self._metrics = [
@@ -261,7 +261,7 @@ class InMemoryTelemetryBackend(TelemetryBackend):
                 "service": "api",
                 "value": 45.2,
                 "unit": "percent",
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             },
             {
                 "id": "m002",
@@ -269,7 +269,7 @@ class InMemoryTelemetryBackend(TelemetryBackend):
                 "service": "api",
                 "value": 512.0,
                 "unit": "MB",
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             },
         ]
 

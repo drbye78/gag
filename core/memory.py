@@ -376,7 +376,7 @@ class MemorySystem:
         self.project_memory = ProjectMemory()
         self.long_term = LongTermMemory()
 
-    def remember(
+    async def remember(
         self,
         key: str,
         value: Any,
@@ -390,12 +390,13 @@ class MemorySystem:
         elif tier == MemoryTier.LONG_TERM:
             import asyncio
 
-            return asyncio.run(
+            loop = asyncio.get_running_loop()
+            return await loop.create_task(
                 self.long_term.store(f"project:{self.project}", key, value, metadata)
             )
         return ""
 
-    def recall(
+    async def recall(
         self,
         key: str,
         tier: Optional[MemoryTier] = None,
@@ -413,7 +414,8 @@ class MemorySystem:
         if tier is None or tier == MemoryTier.LONG_TERM:
             import asyncio
 
-            result = asyncio.run(
+            loop = asyncio.get_running_loop()
+            result = await loop.create_task(
                 self.long_term.retrieve(f"project:{self.project}", key)
             )
             if result is not None:

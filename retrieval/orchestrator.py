@@ -23,20 +23,7 @@ from retrieval.diagram import get_diagram_retriever
 from retrieval.colbert import get_colbert_search_client
 from retrieval.knowledge import get_knowledge_retriever
 from core.adapters import get_adapter_registry
-
-
-class RetrievalSource(str, Enum):
-    DOCS = "docs"
-    CODE = "code"
-    GRAPH = "graph"
-    CODE_GRAPH = "code_graph"
-    TICKETS = "tickets"
-    TELEMETRY = "telemetry"
-    DIAGRAM = "diagram"
-    MULTIMODAL = "multimodal"
-    UI_SKETCH = "ui_sketch"
-    COLBERT = "colbert"
-    KNOWLEDGE = "knowledge"
+from models.retrieval import RetrievalSource
 
 
 class RetrievalMode(str, Enum):

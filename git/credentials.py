@@ -170,18 +170,38 @@ class GitCredentialManager:
     def _encrypt(self, value: str) -> str:
         if not value:
             return ""
+        from cryptography.fernet import Fernet
         key = self._get_encrypt_key()
-        encoded = base64.b64encode(f"{key}:{value}".encode()).decode()
-        return encoded
+        
+        # Ensure key is valid Fernet format (base64 encoded 32 bytes)
+        if len(key) != 32:
+            # Derive proper Fernet key from user provided key
+            import hashlib
+            key_bytes = hashlib.sha256(key.encode()).digest()
+            fernet_key = base64.urlsafe_b64encode(key_bytes)
+        else:
+            fernet_key = key.encode()
+            
+        fernet = Fernet(fernet_key)
+        return fernet.encrypt(value.encode()).hex()
 
     def _decrypt(self, value: str) -> Optional[str]:
         if not value:
             return None
         try:
+            from cryptography.fernet import Fernet
             key = self._get_encrypt_key()
-            decoded = base64.b64decode(value.encode()).decode()
-            if decoded.startswith(f"{key}:"):
-                return decoded[len(key) + 1 :]
+            
+            # Ensure key is valid Fernet format
+            if len(key) != 32:
+                import hashlib
+                key_bytes = hashlib.sha256(key.encode()).digest()
+                fernet_key = base64.urlsafe_b64encode(key_bytes)
+            else:
+                fernet_key = key.encode()
+                
+            fernet = Fernet(fernet_key)
+            return fernet.decrypt(bytes.fromhex(value)).decode()
         except Exception as e:
             logger.error("Failed to decrypt credential: %s", e)
         return None

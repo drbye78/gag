@@ -10,7 +10,11 @@ All schemas use Pydantic v2 with strict typing.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 from enum import Enum
 from typing import Any, Optional
 
@@ -139,8 +143,8 @@ class IRNode(BaseModel):
     source_id: Optional[str] = Field(None)
     parent_id: Optional[str] = Field(None)
     technologies: list[Technology] = Field(default_factory=list)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utc_now)
+    updated_at: datetime = Field(default_factory=_utc_now)
     indexed_at: Optional[datetime] = Field(None)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -240,8 +244,8 @@ class IRCollection(BaseModel):
     description: Optional[str] = Field(None)
     nodes: list[IRNode] = Field(default_factory=list)
     version: str = Field(default="1.0.0")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utc_now)
+    updated_at: datetime = Field(default_factory=_utc_now)
 
     @property
     def node_count(self) -> int:
@@ -254,7 +258,7 @@ class IRCollection(BaseModel):
     def add_node(self, node: IRNode) -> None:
         node.parent_id = self.id
         self.nodes.append(node)
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(timezone.utc)
 
     def get_nodes_by_type(self, artifact_type: ArtifactType) -> list[IRNode]:
         return [n for n in self.nodes if n.artifact_type == artifact_type]

@@ -945,7 +945,7 @@ class HybridRetriever:
             "answer": annotated.answer,
             "results": reranked[:limit],
             "citations": [
-                {"id": c.id, "confidence": c.confidence} for c in annotated.citations
+                {"id": citation.id, "confidence": citation.confidence} for citation in annotated.citations
             ],
             "sources": [
                 {

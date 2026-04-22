@@ -128,8 +128,8 @@ class DiagramQdrantIndexer:
             else:
                 vector = list(embedding)
         except Exception as e:
-            logger.warning("Failed to embed content: %s", e)
-            vector = [0.0] * self.vector_size
+            logger.error("Failed to embed content for indexing: %s", e)
+            raise RuntimeError(f"Diagram embedding failed: {e}") from e
 
         combined_text = content
         if entities:
