@@ -1,8 +1,10 @@
+import asyncio
 import logging
 import subprocess
 import sys
 from typing import Any, Dict, List, Optional
 import json
+from concurrent.futures import ThreadPoolExecutor
 
 from pydantic import BaseModel
 
@@ -131,18 +133,22 @@ class TestExecutorTool(BaseTool):
             cmd.append("-v")
 
         try:
-            proc = await subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=300
+            loop = asyncio.get_event_loop()
+            proc = await loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=300
+                )
             )
             return TestResult(
                 exit_code=proc.returncode,
                 passed=proc.returncode == 0,
                 output=proc.stdout[:5000],
             )
-        except subprocess.TimeoutExpired:
+        except asyncio.TimeoutError:
             return TestResult(
                 exit_code=-1,
                 passed=False,
@@ -188,12 +194,16 @@ class CoverageAnalyzerTool(BaseTool):
         ]
 
         try:
-            proc = await subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=300,
-                cwd=source_path or "."
+            loop = asyncio.get_event_loop()
+            proc = await loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                    cwd=source_path or "."
+                )
             )
 
             try:
@@ -216,7 +226,7 @@ class CoverageAnalyzerTool(BaseTool):
                 percent=round(percent, 1)
             )
 
-        except subprocess.TimeoutExpired:
+        except asyncio.TimeoutError:
             return CoverageResult(
                 source_path=source_path,
                 min_coverage=min_coverage,
@@ -385,31 +395,43 @@ class MutationTesterTool(BaseTool):
         import subprocess
         import tempfile
         import os
+        import asyncio
         
         with tempfile.TemporaryDirectory() as tmpdir:
             mutation_dir = os.path.join(tmpdir, "mutmut")
             os.makedirs(mutation_dir, exist_ok=True)
             
+            loop = asyncio.get_event_loop()
+            
             try:
-                result_config = subprocess.run(
-                    ["mutmut", "run", "--no-awk", "-s", source_path, "-t", test_path],
-                    capture_output=True,
-                    text=True,
-                    timeout=300,
+                result_config = await loop.run_in_executor(
+                    None,
+                    lambda: subprocess.run(
+                        ["mutmut", "run", "--no-awk", "-s", source_path, "-t", test_path],
+                        capture_output=True,
+                        text=True,
+                        timeout=300,
+                    )
                 )
                 
-                result_html = subprocess.run(
-                    ["mutmut", "html"],
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
+                result_html = await loop.run_in_executor(
+                    None,
+                    lambda: subprocess.run(
+                        ["mutmut", "html"],
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                    )
                 )
                 
-                result_summary = subprocess.run(
-                    ["mutmut", "summary"],
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
+                result_summary = await loop.run_in_executor(
+                    None,
+                    lambda: subprocess.run(
+                        ["mutmut", "summary"],
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                    )
                 )
                 
                 survived = result_summary.stdout.count("Survived")

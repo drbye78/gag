@@ -62,7 +62,7 @@ class JiraRequirementsClient(RequirementsClient):
         if not self.url:
             return []
 
-        jql = f"project = {self.project} AND issuetype = {issue_type} ORDER BY created DESC"
+        jql = f'project = "{self.project}" AND issuetype = "{issue_type}" ORDER BY created DESC'
 
         try:
             client = self._get_client()

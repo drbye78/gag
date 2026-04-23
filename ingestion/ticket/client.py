@@ -57,7 +57,7 @@ class JiraClient:
         max_results: int = 100,
     ) -> List[Ticket]:
         if not jql:
-            jql = f"project = {self.project} ORDER BY updated DESC"
+            jql = f'project = "{self.project}" ORDER BY updated DESC'
 
         try:
             client = self._get_client()

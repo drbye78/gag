@@ -58,15 +58,22 @@ class JiraBackend(TicketBackend):
         priority: Optional[str] = None,
         limit: int = 10,
     ) -> List[Dict[str, Any]]:
-        jql = f"project = {self.project}"
-        if query:
-            jql += f' AND text ~ "{query}"'
-        if status:
-            jql += f' AND status = "{status}"'
-        if priority:
-            jql += f' AND priority = "{priority}"'
+        def _escape_jql(s: str) -> str:
+            """Escape special characters to prevent JQL injection."""
+            if not s:
+                return ""
+            # Escape backslashes first, then quotes
+            return s.replace("\\", "\\\\").replace('"', '\\"')
 
-        jql += f" ORDER BY created DESC"
+        jql = f'project = "{self.project}"'
+        if query:
+            jql += f' AND text ~ "{_escape_jql(query)}"'
+        if status:
+            jql += f' AND status = "{_escape_jql(status)}"'
+        if priority:
+            jql += f' AND priority = "{_escape_jql(priority)}"'
+
+        jql += " ORDER BY created DESC"
 
         try:
             client = self._get_client()

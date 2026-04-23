@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import logging
 from typing import Any, Callable, Dict, List, Optional
@@ -117,10 +118,18 @@ class IRBuilder:
                 try:
                     from ui.graph_builder import UIGraphBuilder
                     from ui.pattern_matcher import get_pattern_matcher
-                    import asyncio
                     builder = UIGraphBuilder()
                     er = kwargs["extraction_result"]
-                    asyncio.run(builder.build(er))
+                    try:
+                        loop = asyncio.get_running_loop()
+                        loop.create_task(builder.build(er))
+                    except RuntimeError:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        try:
+                            loop.run_until_complete(builder.build(er))
+                        finally:
+                            loop.close()
                     node.graph_node_id = er.sketch.sketch_id
                     node.element_count = len(er.elements)
                     matcher = get_pattern_matcher()

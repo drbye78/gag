@@ -6,6 +6,7 @@ methods for MCP client integration.
 """
 
 import json
+import uuid
 from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException
@@ -27,8 +28,13 @@ class MCPHandler:
     def __init__(self):
         self.engine = OrchestrationEngine()
         self.tool_registry = ToolRegistry()
+        self._request_id: Optional[str] = None
+
+    def _response_id(self) -> Optional[str]:
+        return self._request_id or str(uuid.uuid4())
 
     async def handle_request(self, request: MCPRequest) -> MCPResponse:
+        self._request_id = request.id
         method = request.method
         params = request.params or {}
 
@@ -67,7 +73,7 @@ class MCPHandler:
 
         return MCPResponse(
             jsonrpc="2.0",
-            id=None,
+            id=self._response_id(),
             result={
                 "protocol_version": "1.0",
                 "capabilities": {
@@ -89,7 +95,7 @@ class MCPHandler:
     async def _handle_tools_list(self) -> MCPResponse:
         tools = self.tool_registry.list_tools()
 
-        return MCPResponse(jsonrpc="2.0", id=None, result={"tools": tools})
+        return MCPResponse(jsonrpc="2.0", id=self._response_id(), result={"tools": tools})
 
     async def _handle_tools_call(self, params: Dict[str, Any]) -> MCPResponse:
         name = params.get("name")
@@ -98,7 +104,7 @@ class MCPHandler:
         if not name:
             return MCPResponse(
                 jsonrpc="2.0",
-                id=None,
+                id=self._response_id(),
                 error={
                     "code": MCPErrorCode.INVALID_PARAMS,
                     "message": "Missing required parameter: name",
@@ -110,7 +116,7 @@ class MCPHandler:
         if result.error:
             return MCPResponse(
                 jsonrpc="2.0",
-                id=None,
+                id=self._response_id(),
                 error={
                     "code": MCPErrorCode.EXECUTION_FAILED,
                     "message": result.error,
@@ -121,7 +127,7 @@ class MCPHandler:
 
         return MCPResponse(
             jsonrpc="2.0",
-            id=None,
+            id=self._response_id(),
             result={"content": content, "isError": False},
         )
 
@@ -131,7 +137,7 @@ class MCPHandler:
         if not calls:
             return MCPResponse(
                 jsonrpc="2.0",
-                id=None,
+                id=self._response_id(),
                 error={
                     "code": MCPErrorCode.INVALID_PARAMS,
                     "message": "Missing required parameter: calls",
@@ -159,11 +165,11 @@ class MCPHandler:
                     }
                 )
 
-        return MCPResponse(jsonrpc="2.0", id=None, result={"results": output})
+        return MCPResponse(jsonrpc="2.0", id=self._response_id(), result={"results": output})
 
     async def _handle_resources_list(self) -> MCPResponse:
         resources = self.tool_registry.list_resources()
-        return MCPResponse(jsonrpc="2.0", id=None, result={"resources": resources})
+        return MCPResponse(jsonrpc="2.0", id=self._response_id(), result={"resources": resources})
 
     async def _handle_resources_read(self, params: Dict[str, Any]) -> MCPResponse:
         uri = params.get("uri", "")
@@ -173,18 +179,18 @@ class MCPHandler:
         if not resource:
             return MCPResponse(
                 jsonrpc="2.0",
-                id=None,
+                id=self._response_id(),
                 error={
                     "code": MCPErrorCode.RESOURCE_NOT_FOUND,
                     "message": f"Resource not found: {name}",
                 },
             )
 
-        return MCPResponse(jsonrpc="2.0", id=None, result={"content": resource})
+        return MCPResponse(jsonrpc="2.0", id=self._response_id(), result={"content": resource})
 
     async def _handle_prompts_list(self) -> MCPResponse:
         prompts = self.tool_registry.list_prompts()
-        return MCPResponse(jsonrpc="2.0", id=None, result={"prompts": prompts})
+        return MCPResponse(jsonrpc="2.0", id=self._response_id(), result={"prompts": prompts})
 
     async def _handle_prompts_get(self, params: Dict[str, Any]) -> MCPResponse:
         name = params.get("name", "")
@@ -193,21 +199,21 @@ class MCPHandler:
         if not prompt:
             return MCPResponse(
                 jsonrpc="2.0",
-                id=None,
+                id=self._response_id(),
                 error={
                     "code": MCPErrorCode.PROMPT_NOT_FOUND,
                     "message": f"Prompt not found: {name}",
                 },
             )
 
-        return MCPResponse(jsonrpc="2.0", id=None, result={"prompt": prompt})
+        return MCPResponse(jsonrpc="2.0", id=self._response_id(), result={"prompt": prompt})
 
     async def _handle_query(self, params: Dict[str, Any]) -> MCPResponse:
         query = params.get("query", "")
 
         result = await self.engine.execute(query)
 
-        return MCPResponse(jsonrpc="2.0", id=None, result=result)
+        return MCPResponse(jsonrpc="2.0", id=self._response_id(), result=result)
 
 
 def create_mcp_response(
