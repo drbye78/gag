@@ -59,7 +59,7 @@ class StackOverflowClient:
             "order": "desc",
             "sort": "activity",
             "intitle": query,
-            "maxresults": max_results,
+            "pagesize": max_results,
             "site": "stackoverflow",
             "key": self.api_key,
         }
@@ -163,18 +163,19 @@ class RedditClient:
         if self._token:
             return self._token
 
+        import base64
         if not self.client_id or not self.client_secret:
             return None
 
         try:
             client = self._get_client()
+            credentials = base64.b64encode(
+                f"{self.client_id}:{self.client_secret}".encode()
+            ).decode()
             response = await client.post(
                 "https://www.reddit.com/api/v1/access_token",
-                data={
-                    "grant_type": "client_credentials",
-                    "client_id": self.client_id,
-                    "client_secret": self.client_secret,
-                },
+                headers={"Authorization": f"Basic {credentials}"},
+                data={"grant_type": "client_credentials"},
             )
             response.raise_for_status()
             data = response.json()

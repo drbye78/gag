@@ -1,6 +1,6 @@
 import logging
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -17,9 +17,10 @@ from models.graphrag import (
 )
 from retrieval.hybrid import get_enhanced_hybrid_retriever
 from graph.client import get_falkordb_client
+from core.auth import require_authenticated
 
 
-router = APIRouter(prefix="/graphrag", tags=["graphrag"])
+router = APIRouter(prefix="/graphrag", tags=["graphrag"], dependencies=[Depends(require_authenticated)])
 
 
 @router.post("/query", response_model=GraphRAGQueryResponse)

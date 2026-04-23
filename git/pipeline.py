@@ -237,9 +237,9 @@ class GitIngestionPipeline:
         try:
             await self.repo_manager.pull(repo_id)
 
-            repo = await self.repo_manager.get_repo(repo_id)
+            repo = self.repo_manager.get_repo(repo_id)
 
-            files = await self.repo_manager.list_files(repo_id)[:100]
+            files = (await self.repo_manager.list_files(repo_id))[:100]
 
             entities = []
             for file_path in files:

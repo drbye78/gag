@@ -1,5 +1,6 @@
 """Health checking for external services."""
 
+import asyncio
 import time
 from typing import Any, Dict
 
@@ -28,9 +29,8 @@ class HealthChecker:
     async def check_falkordb(self, host: str = "localhost", port: int = 7379) -> bool:
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
-                # FalkorDB exposes an HTTP health endpoint
                 resp = await client.get(f"http://{host}:{port}")
-                ok = resp.status_code in (200, 404)
+                ok = resp.status_code == 200
                 self._falkordb_ok = ok
                 return ok
         except Exception:
@@ -67,10 +67,15 @@ class HealthChecker:
         if now - self._last_check < 10 and self._last_result:
             return self._last_result
 
+        results = await asyncio.gather(
+            self.check_qdrant(),
+            self.check_falkordb(),
+            self.check_redis(),
+        )
         results = {
-            "qdrant": await self.check_qdrant(),
-            "falkordb": await self.check_falkordb(),
-            "redis": await self.check_redis(),
+            "qdrant": results[0],
+            "falkordb": results[1],
+            "redis": results[2],
         }
 
         self._last_result = results

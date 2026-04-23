@@ -210,19 +210,23 @@ class PlannerAgent:
             plan.add_step(ExecutionStep(step_type="reason", action="diagnose"))
 
         else:
-            plan.add_step(
-                ExecutionStep(step_type="retrieve", action="search", source="all")
-            )
-
-        for source in sources:
-            plan.add_step(
-                ExecutionStep(
-                    step_type="retrieve",
-                    action="search",
-                    source=source,
-                    params={"limit": 10},
+            if not sources:
+                plan.add_step(
+                    ExecutionStep(step_type="retrieve", action="search", source="all")
                 )
-            )
+            else:
+                seen_sources = set()
+                for source in sources:
+                    if source not in seen_sources:
+                        seen_sources.add(source)
+                        plan.add_step(
+                            ExecutionStep(
+                                step_type="retrieve",
+                                action="search",
+                                source=source,
+                                params={"limit": 10},
+                            )
+                        )
 
         if tools:
             plan.add_step(

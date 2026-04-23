@@ -48,6 +48,8 @@ class ChatCompletionResponse:
 
 
 class LLMRouter:
+    _client: Optional[httpx.AsyncClient] = None
+
     def __init__(
         self,
         provider: Optional[LLMProvider] = None,
@@ -62,8 +64,20 @@ class LLMRouter:
         self.model = model or LLMModel(settings.llm_model)
         self.api_key = api_key or settings.llm_api_key
         self.base_url = base_url or LLM_PROVIDER_URLS.get(self.provider, "")
-        self.timeout = timeout
+        self.timeout = httpx.Timeout(timeout)
         self.max_retries = max_retries
+
+    @classmethod
+    def get_client(cls) -> httpx.AsyncClient:
+        if cls._client is None:
+            cls._client = httpx.AsyncClient(timeout=httpx.Timeout(60))
+        return cls._client
+
+    @classmethod
+    async def close_client(cls):
+        if cls._client is not None:
+            await cls._client.aclose()
+            cls._client = None
 
     def _build_headers(self) -> Dict[str, str]:
         return {
@@ -96,14 +110,14 @@ class LLMRouter:
 
         for attempt in range(self.max_retries):
             try:
-                async with httpx.AsyncClient(timeout=self.timeout) as client:
-                    response = await client.post(
-                        f"{self.base_url}/chat/completions",
-                        headers=self._build_headers(),
-                        json=payload,
-                    )
-                    response.raise_for_status()
-                    return ChatCompletionResponse.from_dict(response.json())
+                client = self.get_client()
+                response = await client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers=self._build_headers(),
+                    json=payload,
+                )
+                response.raise_for_status()
+                return ChatCompletionResponse.from_dict(response.json())
             except Exception as e:
                 if attempt == self.max_retries - 1:
                     raise
@@ -134,23 +148,23 @@ class LLMRouter:
         if temperature is not None:
             payload["temperature"] = temperature
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            async with client.stream(
-                "POST",
-                f"{self.base_url}/chat/completions",
-                headers=self._build_headers(),
-                json=payload,
-            ) as response:
-                async for line in response.aiter_lines():
-                    if line.startswith("data: "):
-                        data = line[6:]
-                        if data == "[DONE]":
-                            break
-                        chunk = json.loads(data)
-                        if "choices" in chunk and chunk["choices"]:
-                            delta = chunk["choices"][0].get("delta", {})
-                            if "content" in delta:
-                                yield delta["content"]
+        client = self.get_client()
+        async with client.stream(
+            "POST",
+            f"{self.base_url}/chat/completions",
+            headers=self._build_headers(),
+            json=payload,
+        ) as response:
+            async for line in response.aiter_lines():
+                if line.startswith("data: "):
+                    data = line[6:]
+                    if data == "[DONE]":
+                        break
+                    chunk = json.loads(data)
+                    if "choices" in chunk and chunk["choices"]:
+                        delta = chunk["choices"][0].get("delta", {})
+                        if "content" in delta:
+                            yield delta["content"]
 
 
 from functools import lru_cache

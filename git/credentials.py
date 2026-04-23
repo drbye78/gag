@@ -171,17 +171,10 @@ class GitCredentialManager:
         if not value:
             return ""
         from cryptography.fernet import Fernet
+        import hashlib
         key = self._get_encrypt_key()
-        
-        # Ensure key is valid Fernet format (base64 encoded 32 bytes)
-        if len(key) != 32:
-            # Derive proper Fernet key from user provided key
-            import hashlib
-            key_bytes = hashlib.sha256(key.encode()).digest()
-            fernet_key = base64.urlsafe_b64encode(key_bytes)
-        else:
-            fernet_key = key.encode()
-            
+        key_bytes = hashlib.sha256(key.encode()).digest()
+        fernet_key = base64.urlsafe_b64encode(key_bytes)
         fernet = Fernet(fernet_key)
         return fernet.encrypt(value.encode()).hex()
 
@@ -190,16 +183,10 @@ class GitCredentialManager:
             return None
         try:
             from cryptography.fernet import Fernet
+            import hashlib
             key = self._get_encrypt_key()
-            
-            # Ensure key is valid Fernet format
-            if len(key) != 32:
-                import hashlib
-                key_bytes = hashlib.sha256(key.encode()).digest()
-                fernet_key = base64.urlsafe_b64encode(key_bytes)
-            else:
-                fernet_key = key.encode()
-                
+            key_bytes = hashlib.sha256(key.encode()).digest()
+            fernet_key = base64.urlsafe_b64encode(key_bytes)
             fernet = Fernet(fernet_key)
             return fernet.decrypt(bytes.fromhex(value)).decode()
         except Exception as e:

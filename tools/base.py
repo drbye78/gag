@@ -56,17 +56,54 @@ class ArchitectureEvaluator(BaseTool):
         "Evaluate architecture design for quality, consistency, and best practices"
     )
 
+    PATTERNS_SCORES = {
+        "microservices": {"correctness": 0.85, "consistency": 0.9, "best_practices": 0.88},
+        "serverless": {"correctness": 0.9, "consistency": 0.85, "best_practices": 0.92},
+        "monolith": {"correctness": 0.95, "consistency": 0.95, "best_practices": 0.7},
+        "event-driven": {"correctness": 0.82, "consistency": 0.88, "best_practices": 0.85},
+        "cqrs": {"correctness": 0.88, "consistency": 0.82, "best_practices": 0.9},
+        "default": {"correctness": 0.8, "consistency": 0.8, "best_practices": 0.8},
+    }
+
     async def execute(self, input: ToolInput) -> ToolOutput:
-        architecture_id = input.args.get("architecture_id")
+        architecture_id = input.args.get("architecture_id", "")
         criteria = input.args.get(
             "criteria", ["correctness", "consistency", "best_practices"]
         )
 
+        arch_lower = architecture_id.lower()
+        scores = {}
+        for c in criteria:
+            matched = False
+            for pattern, pattern_scores in self.PATTERNS_SCORES.items():
+                if pattern in arch_lower:
+                    scores[c] = pattern_scores.get(c, 0.8)
+                    matched = True
+                    break
+            if not matched:
+                scores[c] = self.PATTERNS_SCORES["default"].get(c, 0.8)
+
+        issues = []
+        recommendations = []
+
+        if scores.get("best_practices", 0) < 0.85:
+            issues.append("Architecture may not follow current best practices")
+            recommendations.append("Consider adopting modern architectural patterns")
+
+        if scores.get("consistency", 0) < 0.85:
+            issues.append("Architecture consistency could be improved")
+            recommendations.append("Standardize component interactions and data flow")
+
+        avg_score = sum(scores.values()) / len(scores) if scores else 0.8
+        if avg_score < 0.75:
+            issues.append("Overall architecture score below threshold")
+            recommendations.append("Review architecture against industry standards")
+
         result = {
             "architecture_id": architecture_id,
-            "scores": {c: 0.8 for c in criteria},
-            "issues": [],
-            "recommendations": [],
+            "scores": scores,
+            "issues": issues,
+            "recommendations": recommendations,
         }
 
         return ToolOutput(result=result, metadata={"evaluated": True})
@@ -79,15 +116,51 @@ class SecurityValidator(BaseTool):
     name = "security_validate"
     description = "Validate security aspects of code or architecture"
 
+    VULNERABILITY_PATTERNS = [
+        (r"password\s*=\s*['\"][^'\"]{0,8}['\"]", "Hardcoded password detected"),
+        (r"api[_-]?key\s*=\s*['\"][A-Za-z0-9]{20,}['\"]", "Potential hardcoded API key"),
+        (r"eval\s*\(", "Use of eval() is a security risk"),
+        (r"exec\s*\(", "Use of exec() is a security risk"),
+        (r"__import__\s*\(", "Dynamic imports can be a security risk"),
+        (r"os\.system\s*\(", "Shell commands via os.system are risky"),
+        (r"subprocess\.run\s*\([^,]+shell\s*=\s*True", "Shell injection vulnerability"),
+        (r"SELECT\s+\*\s+FROM", "SELECT * may expose sensitive data"),
+        (r"GRANT\s+ALL", "Overly permissive database grant"),
+        (r"\.\.\/", "Potential path traversal"),
+    ]
+
     async def execute(self, input: ToolInput) -> ToolOutput:
-        target = input.args.get("target")
+        target = input.args.get("target", "")
         target_type = input.args.get("target_type", "code")
+        content = input.args.get("content", "")
+
+        vulnerabilities = []
+
+        if content:
+            import re
+            for pattern, description in self.VULNERABILITY_PATTERNS:
+                if re.search(pattern, content, re.IGNORECASE):
+                    vulnerabilities.append({
+                        "type": "pattern_match",
+                        "description": description,
+                        "severity": "medium" if "sql" in description.lower() else "low",
+                    })
+
+        if target_type == "code":
+            if len(content) > 10000:
+                vulnerabilities.append({
+                    "type": "size_check",
+                    "description": "Large code file may need additional review",
+                    "severity": "info",
+                })
+
+        passed = len([v for v in vulnerabilities if v.get("severity") != "info"]) == 0
 
         result = {
             "target": target,
             "target_type": target_type,
-            "vulnerabilities": [],
-            "passed": True,
+            "vulnerabilities": vulnerabilities,
+            "passed": passed,
         }
 
         return ToolOutput(result=result, metadata={"validated": True})
@@ -100,20 +173,52 @@ class CostEstimator(BaseTool):
     name = "cost_estimate"
     description = "Estimate infrastructure and operational costs"
 
+    TRAFFIC_MULTIPLIERS = {
+        "low": 0.5,
+        "medium": 1.0,
+        "high": 2.5,
+        "enterprise": 5.0,
+    }
+
+    BASE_COSTS = {
+        "compute": {"low": 50, "medium": 150, "high": 400, "enterprise": 800},
+        "storage": {"low": 25, "medium": 75, "high": 200, "enterprise": 500},
+        "network": {"low": 15, "medium": 50, "high": 150, "enterprise": 350},
+        "other": {"low": 10, "medium": 30, "high": 80, "enterprise": 150},
+    }
+
+    def _estimate_by_architecture(self, architecture_id: str) -> Dict[str, float]:
+        arch_lower = architecture_id.lower()
+        if "serverless" in arch_lower or "lambda" in arch_lower:
+            return {"compute": 30, "storage": 60, "network": 40, "other": 20}
+        elif "kubernetes" in arch_lower or "eks" in arch_lower or "gke" in arch_lower:
+            return {"compute": 300, "storage": 100, "network": 80, "other": 50}
+        elif "vm" in arch_lower or "virtual" in arch_lower:
+            return {"compute": 100, "storage": 80, "network": 50, "other": 30}
+        elif "saas" in arch_lower or "managed" in arch_lower:
+            return {"compute": 150, "storage": 100, "network": 60, "other": 40}
+        return {"compute": 100, "storage": 75, "network": 50, "other": 25}
+
     async def execute(self, input: ToolInput) -> ToolOutput:
-        architecture_id = input.args.get("architecture_id")
-        traffic_estimate = input.args.get("traffic_estimate", "medium")
+        architecture_id = input.args.get("architecture_id", "")
+        traffic_estimate = input.args.get("traffic_estimate", "medium").lower()
+
+        multiplier = self.TRAFFIC_MULTIPLIERS.get(traffic_estimate, 1.0)
+        base_by_arch = self._estimate_by_architecture(architecture_id)
+
+        breakdown = {
+            category: int(base * multiplier)
+            for category, base in base_by_arch.items()
+        }
+
+        total = sum(breakdown.values())
 
         result = {
             "architecture_id": architecture_id,
-            "estimated_monthly_cost": 500.0,
+            "traffic_estimate": traffic_estimate,
+            "estimated_monthly_cost": total,
             "currency": "USD",
-            "breakdown": {
-                "compute": 200.0,
-                "storage": 100.0,
-                "network": 100.0,
-                "other": 100.0,
-            },
+            "breakdown": breakdown,
         }
 
         return ToolOutput(result=result, metadata={"estimated": True})

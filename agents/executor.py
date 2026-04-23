@@ -127,6 +127,7 @@ class ToolExecutor:
 
                 result.status = ToolStatus.COMPLETED
                 result.output = tool_output.result
+                result.error = None
                 result.retries = attempt
                 break
 

@@ -112,7 +112,10 @@ class DocumentChunker(TextChunker):
             pos += len(chunk_text)
             if pos >= text_len:
                 break
-            pos = pos - self.chunk_overlap
+            new_pos = pos - self.chunk_overlap
+            if new_pos <= 0 or new_pos >= pos:
+                break
+            pos = new_pos
             idx += 1
 
         took = int((time.time() - start) * 1000)

@@ -664,6 +664,10 @@ class CodeGraphRetriever:
         if not CODEGRAPH_FULL_AVAILABLE:
             return {"source": "code_graph", "action": "visualize", "url": None, "error": "CodeGraphContext not available"}
 
+        dangerous = ["DELETE", "DROP", "ALTER", "CREATE", "SET", "REMOVE", "FOREACH"]
+        if any(p in cypher_query.upper() for p in dangerous):
+            return {"source": "code_graph", "action": "visualize", "query": cypher_query, "url": None, "error": "Query contains write operations"}
+
         start = int(time.time() * 1000)
         result = await visualize_graph_query(cypher_query=cypher_query)
         took = int(time.time() * 1000) - start

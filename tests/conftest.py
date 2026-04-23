@@ -5,6 +5,19 @@ Provides:
 - Mock providers for external services (Qdrant, FalkorDB, Redis, LLM)
 - Sample data for testing
 - Async test helpers
+
+Testing Pyramid Structure:
+    /\       E2E (few) - full integration
+   /  \      Integration (some) - real DB, mocked external APIs
+  /----\     Unit (many) - all mocked
+ /      \
+/--------\
+
+Use markers:
+- @pytest.mark.unit - Most tests (default, all mocked)
+- @pytest.mark.integration - Tests needing real DB
+- @pytest.mark.e2e - Full end-to-end tests (marked slow)
+- @pytest.mark.slow - Tests that take >5s
 """
 
 # MUST be set BEFORE any imports that trigger Settings() initialization

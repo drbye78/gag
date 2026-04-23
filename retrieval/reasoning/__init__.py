@@ -6,9 +6,10 @@ relationship information for context-aware answer synthesis.
 """
 
 import sys
+from enum import Enum
 
 
-class ReasoningMode:
+class ReasoningMode(str, Enum):
     DIRECT = "direct"
     CHAIN_OF_THOUGHTS = "chain_of_thoughts"
     TREE_OF_THOUGHTS = "tree_of_thoughts"

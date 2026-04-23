@@ -5,6 +5,7 @@ Handles cloning, branch checkout, pulling, and file
 reading with proper credential injection.
 """
 
+import asyncio
 import logging
 import os
 import re
@@ -135,6 +136,12 @@ class GitRepoManager:
     ) -> GitRepo:
         import time
 
+        if url.startswith("-"):
+            raise ValueError("Invalid URL: cannot start with '-' (argument injection prevention)")
+
+        if branch.startswith("-"):
+            raise ValueError("Invalid branch: cannot start with '-' (argument injection prevention)")
+
         repo_id = str(uuid.uuid4())[:8]
         source = self._detect_source(url)
 
@@ -157,16 +164,20 @@ class GitRepoManager:
         auth_url = self._build_auth_url(url, credentials)
 
         cmd = ["git", "clone"]
-        if deep_clone:
+        if not deep_clone:
             cmd.append("--depth=1")
         cmd.extend([auth_url, repo.local_path])
 
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=300,
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                )
             )
             if result.returncode != 0:
                 repo.status = RepoStatus.FAILED
@@ -195,15 +206,22 @@ class GitRepoManager:
         if not repo:
             raise ValueError(f"Repo {repo_id} not found")
 
+        if branch.startswith("-"):
+            raise ValueError("Invalid branch: cannot start with '-' (argument injection prevention)")
+
         repo.status = RepoStatus.CHECKING_OUT
 
         try:
-            result = subprocess.run(
-                ["git", "checkout", branch],
-                cwd=repo.local_path,
-                capture_output=True,
-                text=True,
-                timeout=60,
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    ["git", "checkout", branch],
+                    cwd=repo.local_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
             )
             if result.returncode != 0:
                 repo.status = RepoStatus.FAILED
@@ -228,12 +246,16 @@ class GitRepoManager:
         repo.status = RepoStatus.PULLING
 
         try:
-            result = subprocess.run(
-                ["git", "pull", "origin", repo.branch],
-                cwd=repo.local_path,
-                capture_output=True,
-                text=True,
-                timeout=120,
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    ["git", "pull", "origin", repo.branch],
+                    cwd=repo.local_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
             )
             if result.returncode != 0:
                 repo.status = RepoStatus.FAILED
@@ -253,12 +275,16 @@ class GitRepoManager:
             return None
 
         try:
-            result = subprocess.run(
-                ["git", "rev-parse", "HEAD"],
-                cwd=repo.local_path,
-                capture_output=True,
-                text=True,
-                timeout=10,
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    ["git", "rev-parse", "HEAD"],
+                    cwd=repo.local_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
             )
             if result.returncode == 0:
                 return result.stdout.strip()
@@ -272,12 +298,16 @@ class GitRepoManager:
             return []
 
         try:
-            result = subprocess.run(
-                ["git", "branch", "-a"],
-                cwd=repo.local_path,
-                capture_output=True,
-                text=True,
-                timeout=30,
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    ["git", "branch", "-a"],
+                    cwd=repo.local_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
             )
             if result.returncode == 0:
                 branches = []
@@ -300,13 +330,17 @@ class GitRepoManager:
             return []
 
         try:
+            loop = asyncio.get_event_loop()
             cmd = ["git", "ls-files"]
-            result = subprocess.run(
-                cmd,
-                cwd=repo.local_path,
-                capture_output=True,
-                text=True,
-                timeout=30,
+            result = await loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    cmd,
+                    cwd=repo.local_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
             )
             if result.returncode != 0:
                 return []
@@ -327,6 +361,13 @@ class GitRepoManager:
             return None
 
         full_path = Path(repo.local_path) / file_path
+        try:
+            resolved = full_path.resolve()
+        except (ValueError, OSError):
+            return None
+        repo_resolved = Path(repo.local_path).resolve()
+        if not str(resolved).startswith(str(repo_resolved) + os.sep):
+            return None
         if not full_path.exists():
             return None
 
@@ -393,12 +434,16 @@ class GitRepoManager:
             return []
 
         try:
-            result = subprocess.run(
-                ["git", "log", f"-{limit}", "--pretty=format:%H%n%s%n%an%n%at"],
-                cwd=repo.local_path,
-                capture_output=True,
-                text=True,
-                timeout=30,
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    ["git", "log", f"-{limit}", "--pretty=format:%H%n%s%n%an%n%at"],
+                    cwd=repo.local_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
             )
             if result.returncode != 0:
                 return []

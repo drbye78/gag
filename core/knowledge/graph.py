@@ -90,23 +90,32 @@ class KnowledgeGraph(BaseModel):
         if depth == 0 or node_id not in self.nodes:
             return []
         
-        related_ids = set()
-        for edge in self.edges:
-            if edge.source_id == node_id:
-                if edge_types is None or edge.type in edge_types:
-                    related_ids.add(edge.target_id)
-            elif edge.target_id == node_id and edge.type == EdgeType.DEPENDS_ON:
-                if edge_types is None or edge.type in edge_types:
-                    related_ids.add(edge.source_id)
+        visited = set()
         
-        result = [self.nodes[rid] for rid in related_ids if rid in self.nodes]
+        def _recurse(current_id: str, current_depth: int) -> List[str]:
+            if current_id in visited:
+                return []
+            visited.add(current_id)
+            
+            related_ids = set()
+            for edge in self.edges:
+                if edge.source_id == current_id:
+                    if edge_types is None or edge.type in edge_types:
+                        related_ids.add(edge.target_id)
+                elif edge.target_id == current_id and edge.type == EdgeType.DEPENDS_ON:
+                    if edge_types is None or edge.type in edge_types:
+                        related_ids.add(edge.source_id)
+            
+            result = []
+            for rid in related_ids:
+                if rid in self.nodes:
+                    result.append(rid)
+                    if current_depth > 1:
+                        result.extend(_recurse(rid, current_depth - 1))
+            return result
         
-        if depth > 1:
-            for node in result[:]:
-                deeper = self.find_related(node.id, edge_types, depth - 1)
-                result.extend(deeper)
-        
-        return result
+        related_ids = _recurse(node_id, depth)
+        return [self.nodes[rid] for rid in related_ids if rid in self.nodes]
 
     def get_node(self, node_id: str) -> Optional[KnowledgeNode]:
         return self.nodes.get(node_id)

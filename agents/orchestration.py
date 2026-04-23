@@ -455,7 +455,8 @@ class OrchestrationEngine:
 
         execution_time = int((time.time() - start_time) * 1000)
 
-        self._update_metrics(True, len(all_states), execution_time)
+        has_errors = any(s.error for s in all_states) or reasoning_state.error
+        self._update_metrics(not has_errors, len(all_states), execution_time)
 
         memory = get_memory_system()
         memory.remember(

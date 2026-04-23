@@ -154,8 +154,9 @@ testpaths = ["tests"]
 addopts = ["--strict-markers", "--tb=short", "-ra"]
 markers = [
     "asyncio: mark test as async",
-    "unit: unit tests",
-    "integration: integration tests",
+    "unit: unit tests with full mocks",
+    "integration: integration tests with real DB",
+    "e2e: end-to-end tests",
     "slow: slow running tests",
 ]
 filterwarnings = ["ignore::DeprecationWarning", "ignore::PendingDeprecationWarning"]

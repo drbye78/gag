@@ -1,3 +1,4 @@
+from collections import deque
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 import json
@@ -69,12 +70,12 @@ class CommunityDetector:
         communities = []
 
         def bfs(start_id: str) -> List[str]:
-            queue = [start_id]
+            queue = deque([start_id])
             component = []
             visited.add(start_id)
 
             while queue:
-                node = queue.pop(0)
+                node = queue.popleft()
                 component.append(node)
 
                 for neighbor in adjacency[node]:

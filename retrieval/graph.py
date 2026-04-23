@@ -172,7 +172,7 @@ class GraphRetriever:
                     f"{self.base_url}/query",
                     json={
                         "query": cypher,
-                        "params": {"source": source, "target": target},
+                        "params": params,
                     },
                     timeout=30.0,
                 )
@@ -214,12 +214,14 @@ class GraphRetriever:
         if node_type:
             if node_type not in ALLOWED_NODE_TYPES:
                 raise ValueError(f"Invalid node_type: {node_type}. Allowed: {ALLOWED_NODE_TYPES}")
-            cypher = """
-            MATCH (n:`$node_type`)
+            # Use validated identifier - NOT as a parameter (backticks make it literal)
+            safe_label = _safe_identifier(node_type)
+            cypher = f"""
+            MATCH (n:`{safe_label}`)
             WHERE n.name = $name
             RETURN n
             """
-            params = {"name": name, "node_type": node_type}
+            params = {"name": name}
         else:
             cypher = """
             MATCH (n)

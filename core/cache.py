@@ -18,52 +18,57 @@ class _CacheEntry:
 
 
 class InMemoryCache:
-    """Thread-safe in-memory cache with per-key TTL support."""
-
     def __init__(self) -> None:
+        import threading
         self._store: Dict[str, _CacheEntry] = {}
+        self._lock = threading.RLock()
 
     def get(self, key: str) -> Optional[Any]:
-        entry = self._store.get(key)
-        if entry is None:
-            return None
-        if entry.is_expired:
-            del self._store[key]
-            return None
-        return entry.value
+        with self._lock:
+            entry = self._store.get(key)
+            if entry is None:
+                return None
+            if entry.is_expired:
+                del self._store[key]
+                return None
+            return entry.value
 
     def set(self, key: str, value: Any, ttl: int = 300) -> bool:
-        self._store[key] = _CacheEntry(value, ttl)
-        return True
+        with self._lock:
+            self._store[key] = _CacheEntry(value, ttl)
+            return True
 
     def delete(self, key: str) -> bool:
-        if key in self._store:
-            del self._store[key]
-            return True
-        return False
+        with self._lock:
+            if key in self._store:
+                del self._store[key]
+                return True
+            return False
 
     def exists(self, key: str) -> bool:
-        entry = self._store.get(key)
-        if entry is None:
-            return False
-        if entry.is_expired:
-            del self._store[key]
-            return False
-        return True
+        with self._lock:
+            entry = self._store.get(key)
+            if entry is None:
+                return False
+            if entry.is_expired:
+                del self._store[key]
+                return False
+            return True
 
     def clear_pattern(self, pattern: str) -> int:
-        """Delete all keys matching the pattern (supports * wildcard suffix)."""
         import fnmatch
 
-        deleted = 0
-        for key in list(self._store.keys()):
-            if fnmatch.fnmatch(key, pattern):
-                del self._store[key]
-                deleted += 1
-        return deleted
+        with self._lock:
+            deleted = 0
+            for key in list(self._store.keys()):
+                if fnmatch.fnmatch(key, pattern):
+                    del self._store[key]
+                    deleted += 1
+            return deleted
 
     def clear(self) -> None:
-        self._store.clear()
+        with self._lock:
+            self._store.clear()
 
     def __len__(self) -> int:
         return len(self._store)

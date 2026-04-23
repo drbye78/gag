@@ -1,11 +1,12 @@
 from typing import Any, Dict, List, Optional
 from core.adapters.base import AdapterInput, AdapterOutput, PlatformAdapter, AdapterRegistry, get_adapter_registry
+from core.adapters.mixins import RecommendationMixin
 from core.patterns.schema import Pattern, get_pattern_library
 from core.constraints.engine import get_constraint_engine
 from models.ir import IRFeature, PlatformContext
 
 
-class PowerPlatformAdapter(PlatformAdapter):
+class PowerPlatformAdapter(RecommendationMixin, PlatformAdapter):
     @property
     def platform_id(self) -> str:
         return "powerplatform"
@@ -316,52 +317,7 @@ class PowerPlatformAdapter(PlatformAdapter):
   "location": "eastus",
   "state": "Enabled"
 }'''
-    
-    def _build_recommendations(
-        self,
-        pattern_results: List[Any],
-        features: IRFeature,
-        violations: List[Any]
-    ) -> List[Dict[str, Any]]:
-        recommendations = []
-        
-        for pattern_result in pattern_results[:3]:
-            pattern = getattr(pattern_result, "pattern", None)
-            if pattern:
-                recommendations.append({
-                    "name": pattern.name,
-                    "reason": f"Matched {len(pattern_result.matched_conditions)} conditions",
-                    "score": pattern_result.match_score,
-                })
-        
-        for violation in violations:
-            recommendations.append({
-                "name": "Fix Required",
-                "reason": violation.message,
-                "severity": violation.severity,
-                "fix": violation.fix_hint,
-            })
-        
-        return recommendations
-    
-    def _explain(
-        self,
-        recommendations: List[Dict[str, Any]],
-        violations: List[Any]
-    ) -> str:
-        parts = []
-        
-        if recommendations:
-            best = recommendations[0]
-            parts.append(f"Recommended: {best.get('name', 'Unknown')}")
-        
-        if violations:
-            errors = [v for v in violations if v.severity == "error"]
-            if errors:
-                parts.append(f"Blocking issues: {len(errors)}")
-        
-        return " | ".join(parts) if parts else "Analysis complete"
-
+        return
 
 def register_powerplatform_adapter(registry=None):
     if registry:

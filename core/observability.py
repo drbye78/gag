@@ -1,3 +1,4 @@
+import contextvars
 import json
 import logging
 from datetime import datetime, timezone
@@ -85,6 +86,8 @@ class TraceLogger:
 
 
 class MetricsCollector:
+    MAX_SAMPLES_PER_KEY = 10000
+
     def __init__(self):
         self._counters: Dict[str, int] = {}
         self._histograms: Dict[str, List[float]] = {}
@@ -94,6 +97,8 @@ class MetricsCollector:
         if operation not in self._histograms:
             self._histograms[operation] = []
         self._histograms[operation].append(latency_ms)
+        if len(self._histograms[operation]) > self.MAX_SAMPLES_PER_KEY:
+            self._histograms[operation] = self._histograms[operation][-self.MAX_SAMPLES_PER_KEY:]
     
     def record_error(self, operation: str, error_type: str):
         key = f"{operation}.{error_type}"
@@ -158,7 +163,7 @@ except ImportError:
     pass
 
 _tracer_provider: Optional["TracerProvider"] = None
-_active_span: Optional[Any] = None
+_active_span_slot: contextvars.ContextVar[Optional[Any]] = contextvars.ContextVar("active_span", default=None)
 
 def setup_otel_tracing(settings) -> Optional["TracerProvider"]:
     global _tracer_provider
@@ -184,12 +189,11 @@ def get_tracer(name: str = "eis"):
     return trace.get_tracer(name)
 
 def start_span(name: str, attributes: Optional[Dict[str, Any]] = None):
-    global _active_span
     tracer = get_tracer()
     if tracer is None:
         return None
     span = tracer.start_span(name, attributes=attributes or {})
-    _active_span = span
+    _active_span_slot.set(span)
     return span
 
 def end_span(span, error: Optional[Exception] = None):

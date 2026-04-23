@@ -224,7 +224,10 @@ List relevant phases (1-9) and how they relate
 Be concise but precise. Avoid vague best practices without context."""
 
 
-class PDLCPhase:
+from enum import Enum
+
+
+class PDLCPhase(str, Enum):
     IDEATION = "ideation"
     BUSINESS_REQUIREMENTS = "business_requirements"
     ARCHITECTURE_DESIGN = "architecture_design"
@@ -236,7 +239,7 @@ class PDLCPhase:
     DAY2_OPERATIONS = "day2_operations"
 
 
-class Intent:
+class Intent(str, Enum):
     DESIGN = "design"
     EXPLAIN = "explain"
     TROUBLESHOOT = "troubleshoot"
@@ -245,9 +248,9 @@ class Intent:
     REVIEW = "review"
 
 
-class Step:
+class Step(str, Enum):
     ANALYZE_ARCHITECTURE = "analyze_architecture"
-    RETRIEVE_BEST_PRACTICES = "retrieve_best_pactices"
+    RETRIEVE_BEST_PRACTICES = "retrieve_best_practices"
     QUERY_GRAPH = "query_graph"
     RETRIEVE_INCIDENTS = "retrieve_incidents"
     GENERATE_PROPOSAL = "generate_proposal"

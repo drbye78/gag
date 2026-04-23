@@ -46,18 +46,12 @@ class QdrantEmbeddingProvider(EmbeddingProvider):
 
     async def embed_batch(self, texts: List[str]) -> List[List[float]]:
         try:
-            resp = await self._get_client().post(
-                f"{self.url}/collections/embeddings/points/search",
-                json={"vector": texts, "limit": len(texts)},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            return data.get("result", [])
+            from ingestion.embedder import get_embedder
+            embedder = get_embedder()
+            return await embedder.embed_batch(texts)
         except Exception as e:
-            logger.warning("Error in Qdrant embed_batch: %s", e)
-            from ingestion.embedder import EmbeddingPipeline
-            pipeline = EmbeddingPipeline()
-            return await pipeline.embed_batch(texts)
+            logger.warning("QdrantEmbeddingProvider: embedder unavailable: %s", e)
+            return []
 
 
 class OpenAIEmbeddingProvider(EmbeddingProvider):

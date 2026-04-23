@@ -243,16 +243,20 @@ def require_role(*roles: Role):
                 raise HTTPException(status_code=401, detail="Not authenticated")
 
             rbac = get_rbac_manager()
+            missing_roles = []
             for role in roles:
-                if rbac.has_role(user, role):
-                    return await func(*args, **kwargs)
+                if not rbac.has_role(user, role):
+                    missing_roles.append(role.value)
 
-            from fastapi import HTTPException
+            if missing_roles:
+                from fastapi import HTTPException
 
-            raise HTTPException(
-                status_code=403,
-                detail=f"Missing role: {', '.join(r.value for r in roles)}",
-            )
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Missing required roles: {', '.join(missing_roles)}",
+                )
+
+            return await func(*args, **kwargs)
 
         return wrapper
 
@@ -290,9 +294,10 @@ async def create_token(user_id: str, roles: Optional[List[str]] = None) -> str:
     """
     rbac = get_rbac_manager()
     user = rbac.get_user(user_id)
+    is_debug = os.getenv("DEBUG", "").lower() in ["true", "1", "yes"]
+
     if user is None:
-        if os.getenv("DEBUG", "").lower() in ["true", "1", "yes"]:
-            # Auto create only in test/debug mode
+        if is_debug:
             user = rbac.create_user(
                 user_id=user_id,
                 email=f"{user_id}@example.com",
@@ -302,14 +307,18 @@ async def create_token(user_id: str, roles: Optional[List[str]] = None) -> str:
         else:
             raise ValueError(f"User {user_id} does not exist")
 
-    if roles and os.getenv("DEBUG", "").lower() in ["true", "1", "yes"]:
+    if roles and is_debug:
+        has_admin_requested = Role.ADMIN.value in roles
+        has_admin_current = any(r == Role.ADMIN.value for r in user.roles)
+
+        if has_admin_requested and not has_admin_current:
+            raise PermissionError(
+                "Cannot grant admin role in DEBUG mode without existing admin privileges"
+            )
         user.roles = roles
 
     tm = get_token_manager()
     return tm.create_token(user)
-
-
-async def verify_token(token: str) -> Optional[Dict[str, Any]]:
     """Verify a JWT token and return the payload or None."""
     tm = get_token_manager()
     return tm.verify_token(token)

@@ -10,10 +10,13 @@ from core.config import get_settings
 
 
 class RateLimiter:
-    def __init__(self, requests: int = 100, window: int = 60):
+    def __init__(self, requests: int = 100, window: int = 60, max_clients: int = 10000):
         self.requests = requests
         self.window = window
+        self.max_clients = max_clients
         self._clients: Dict[str, list] = {}
+        self._last_cleanup = time.time()
+        self._cleanup_interval = 300
 
     def _get_client_id(self, request: Request) -> str:
         forwarded = request.headers.get("X-Forwarded-For")
@@ -27,8 +30,33 @@ class RateLimiter:
             self._clients[client_id] = [
                 ts for ts in self._clients[client_id] if now - ts < self.window
             ]
+            if not self._clients[client_id]:
+                del self._clients[client_id]
+
+    def _cleanup_stale_clients(self) -> None:
+        now = time.time()
+        if now - self._last_cleanup < self._cleanup_interval:
+            return
+
+        stale_keys = [
+            cid for cid, timestamps in self._clients.items()
+            if not timestamps or (now - timestamps[-1]) > self.window
+        ]
+        for key in stale_keys:
+            del self._clients[key]
+
+        if len(self._clients) > self.max_clients:
+            sorted_clients = sorted(
+                self._clients.items(),
+                key=lambda x: x[1][-1] if x[1] else 0
+            )
+            for cid, _ in sorted_clients[:len(self._clients) - self.max_clients]:
+                del self._clients[cid]
+
+        self._last_cleanup = now
 
     async def check(self, request: Request) -> bool:
+        self._cleanup_stale_clients()
         client_id = self._get_client_id(request)
         self._clean_old_requests(client_id)
 
@@ -65,6 +93,33 @@ def sanitize_input(text: str, max_length: int = 10000) -> str:
     text = text.strip()
     if len(text) > max_length:
         text = text[:max_length]
+    return text
+
+
+def sanitize_prompt_input(text: str) -> str:
+    """Remove common prompt injection patterns from user input."""
+    import re
+
+    # Common prompt injection patterns to block/filter
+    injection_patterns = [
+        r"ignore\s+(all\s+)?previous\s+instructions",
+        r"ignore\s+(all\s+)?(your\s+)?(system\s+)?(instructions?|directives?)",
+        r"system:\s*",
+        r"you\s+are\s+(now\s+)?",
+        r"act\s+as\s+",
+        r"pretend\s+(to\s+be|you\s+are)",
+        r"forget\s+(everything|all|your)",
+        r"new\s+instructions",
+        r"override\s+(your\s+)?instructions",
+        r"disregard\s+(your\s+)?(previous\s+)?(instructions?|rules?)",
+        r"\[INST\]|\[/INST\]",
+        r"<<SYS>>|<<\/SYS>>",
+        r"<\|system\|>|<\|user\|>|<\|assistant\|>",
+    ]
+
+    for pattern in injection_patterns:
+        text = re.sub(pattern, "[FILTERED]", text, flags=re.IGNORECASE)
+
     return text
 
 

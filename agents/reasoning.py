@@ -11,6 +11,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from llm.router import get_router
+from core.middleware import sanitize_prompt_input
 from agents.prompts import (
     SYSTEM_PERSONA,
     REASONING_PROTOCOL,
@@ -87,7 +88,7 @@ Prefer SAP BTP context over generic best practices."""
 - What would support advise?
 Then provide the best answer."""
 
-        base_prompt = f"""Query: {query}
+        base_prompt = f"""Query: {sanitize_prompt_input(query)}
 
 Context:
 {self._format_context(context)}

@@ -1,5 +1,5 @@
-import re
 import hashlib
+import yaml
 from typing import Any, Dict, List
 from dataclasses import dataclass
 
@@ -75,21 +75,19 @@ class KubernetesChunker(TextChunker):
         return documents
 
     def _parse_k8s_document(self, content: str) -> K8sResource:
-        lines = content.split("\n")
-        kind = "Unknown"
-        name = "unknown"
-        namespace = "default"
+        try:
+            data = yaml.safe_load(content)
+            if not isinstance(data, dict):
+                return K8sResource(kind="Unknown", name="unknown", namespace="default", content=content)
 
-        for line in lines:
-            stripped = line.strip()
-            if stripped.startswith("kind:"):
-                kind = stripped.split(":", 1)[1].strip()
-            elif stripped.startswith("name:"):
-                name = stripped.split(":", 1)[1].strip()
-            elif stripped.startswith("namespace:"):
-                namespace = stripped.split(":", 1)[1].strip()
+            kind = data.get("kind", "Unknown")
+            metadata = data.get("metadata", {})
+            name = metadata.get("name", "unknown")
+            namespace = metadata.get("namespace", "default")
 
-        return K8sResource(kind=kind, name=name, namespace=namespace, content=content)
+            return K8sResource(kind=kind, name=name, namespace=namespace, content=content)
+        except yaml.YAMLError:
+            return K8sResource(kind="Unknown", name="unknown", namespace="default", content=content)
 
     def _make_chunk_id(self, source_id: str, chunk_idx: int) -> str:
         raw = f"{source_id}:{chunk_idx}"
