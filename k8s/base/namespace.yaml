@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: eis
+  labels:
+    app.kubernetes.io/name: eis
+    app.kubernetes.io/component: namespace

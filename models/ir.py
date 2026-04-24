@@ -34,6 +34,11 @@ class PlatformContext(BaseModel):
 
 class IRFeature(BaseModel):
     """Extracted features from IR for pattern matching and constraints."""
+    # User-provided parameters for code generation
+    app_name: Optional[str] = Field(default=None, description="Application name for code generation")
+    tenant_id: Optional[str] = Field(default=None, description="Tenant identifier")
+    namespace: Optional[str] = Field(default=None, description="Namespace/project name")
+    
     # Core capabilities
     has_async: bool = Field(default=False, description="Uses async/event-driven patterns")
     has_auth: bool = Field(default=False, description="Requires authentication")

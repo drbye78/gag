@@ -20,6 +20,24 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+SUPPORTED_IMAGE_FORMATS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff"}
+SUPPORTED_DOCUMENT_FORMATS = {".pdf", ".docx", ".pptx", ".xlsx"}
+SUPPORTED_FORMATS = SUPPORTED_IMAGE_FORMATS | SUPPORTED_DOCUMENT_FORMATS
+
+
+def validate_format(file_path: str) -> bool:
+    """Check if file format is supported."""
+    import os
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext not in SUPPORTED_FORMATS:
+        logger.warning(
+            f"Unsupported file format: {ext}. "
+            f"Supported formats: {', '.join(sorted(SUPPORTED_FORMATS))}"
+        )
+        return False
+    return True
+
+
 # LlamaIndex multimodal (optional - may not be installed)
 try:
     from llama_index.core.multi_modal_llms.base import MultiModalLLM as OpenAIMultiModal

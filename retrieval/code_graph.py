@@ -5,9 +5,12 @@ Wraps CodeGraphContext MCP for precise code relationships,
 complexity metrics, and navigation (find_callers, callees, etc.).
 """
 
+import logging
 import time
 from enum import Enum
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 try:
     from CodeGraphContext_find_code import find_code
@@ -35,7 +38,11 @@ try:
 
     CODEGRAPH_AVAILABLE = True
     CODEGRAPH_FULL_AVAILABLE = True
-except ImportError:
+except ImportError as e:
+    logger.warning(
+        f"CodeGraphContext MCP not available: {e}. "
+        "Code graph features will be disabled."
+    )
     CODEGRAPH_AVAILABLE = False
     CODEGRAPH_FULL_AVAILABLE = False
     find_code = None

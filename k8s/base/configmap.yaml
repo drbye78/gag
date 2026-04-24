@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: eis-config
+  namespace: eis
+  labels:
+    app.kubernetes.io/name: eis
+    app.kubernetes.io/component: config
+data:
+  # Application settings
+  DEBUG: "false"
+  LOG_LEVEL: "INFO"
+  JSON_FORMAT: "true"
+  
+  # Service URLs (internal)
+  QDRANT_URL: "http://qdrant:6333"
+  FALKORDB_URL: "http://falkordb:7474"
+  REDIS_URL: "redis://redis:6379"
+  
+  # Feature flags
+  GRAPH_RAG_ENABLED: "true"
+  UI_SKETCH_ENABLED: "false"
+  COLPALI_ENABLED: "false"
+  
+  # Retrieval settings
+  RETRIEVAL_TIMEOUT: "30"
+  MAX_RETRIEVAL_RESULTS: "50"

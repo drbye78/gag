@@ -122,18 +122,18 @@ class SAPBTPAdapter(RecommendationMixin, PlatformAdapter):
             can_deploy=can_deploy,
         )
     
-    def generate_config(self, features: IRFeature) -> Dict[str, str]:
+    def generate_config(self, features=None) -> Dict[str, str]:
         configs = {}
         
-        if features.has_auth:
-            configs["xsuaa.json"] = self._generate_xsuaa_config()
+        if features and features.has_auth:
+            configs["xsuaa.json"] = self._generate_xsuaa_config(features)
         
         configs["mta.yaml"] = self._generate_mta_yaml(features)
         
-        configs["package.json"] = self._generate_package_json()
+        configs["package.json"] = self._generate_package_json(features)
         
-        if features.has_serverless:
-            configs["kyma-function.yaml"] = self._generate_kyma_config()
+        if features and features.has_serverless:
+            configs["kyma-function.yaml"] = self._generate_kyma_config(features)
         
         return configs
     
@@ -147,55 +147,57 @@ class SAPBTPAdapter(RecommendationMixin, PlatformAdapter):
         
         return code
     
-    def _generate_xsuaa_config(self) -> str:
-        return '''{
-  "xsappname": "my-app",
+    def _generate_xsuaa_config(self, features=None) -> str:
+        app_name = features.app_name if features and features.app_name else "my-app"
+        return f'''{{
+  "xsappname": "{app_name}",
   "tenant-mode": "dedicated",
   "scopes": [
-    {
+    {{
       "name": "$XSAPPNAME.Admin",
       "description": "Admin scope"
-    }
+    }}
   ],
   "role-templates": [
-    {
+    {{
       "name": "Admin",
       "scope-references": ["$XSAPPNAME.Admin"]
-    }
+    }}
   ]
-}'''
+}}'''
     
-    def _generate_mta_yaml(self, features: IRFeature) -> str:
+    def _generate_mta_yaml(self, features=None) -> str:
+        app_name = features.app_name if features and features.app_name else "my-app"
         return f'''_schema-version: "3.1"
-ID: my-app
+ID: {app_name}
 version: 1.0.0
 
 parameters:
   enable-parallel-deployments: true
 
 resources:
-  - name: my-app-destination
+  - name: {app_name}-destination
     type: destination
     parameters:
       service-instance-name: my-destination
-  - name: my-app-xsuaa
+  - name: {app_name}-xsuaa
     type: xsuaa
     parameters:
       service-instance-name: my-xsuaa
 
 modules:
-  - name: my-app-srv
+  - name: {app_name}-srv
     type: nodejs
     path: srv
     requires:
-      - name: my-app-destination
-      - name: my-app-xsuaa
+      - name: {app_name}-destination
+      - name: {app_name}-xsuaa
     provides:
       - name: srv-api
         properties:
           url: "{{{{ mfUrl }}}}"
 
-  - name: my-app-app
+  - name: {app_name}-app
     type: html5
     path: app
     requires:
@@ -204,50 +206,39 @@ modules:
           app-endpoints: "{{{{ srv-api.url }}}}"
 '''
     
-    def _generate_package_json(self) -> str:
-        return '''{
-  "name": "my-sap-cap-app",
+    def _generate_package_json(self, features=None) -> str:
+        app_name = features.app_name if features and features.app_name else "my-sap-cap-app"
+        return f'''{{
+  "name": "{app_name}",
   "version": "1.0.0",
-  "scripts": {
+  "scripts": {{
     "start": "cds-serve"
-  },
-  "dependencies": {
+  }},
+  "dependencies": {{
     "@sap/cds": "^7"
-  },
-  "cds": {
-    "requires": {
-      "db": {
+  }},
+  "cds": {{
+    "requires": {{
+      "db": {{
         "kind": "hana"
-      }
-    }
-  }
-}'''
+      }}
+    }}
+  }}
+}}'''
     
-    def _generate_cds_definition(self) -> str:
-        return '''using { managed } from '@sap/cds-common';
-
-entity MyEntity {
-  key ID : UUID;
-  name : String;
-  description : String;
-  createdAt : Timestamp;
-  createdBy : String;
-}
-using MyEntity as service;'''
-    
-    def _generate_kyma_config(self) -> str:
-        return '''apiVersion: serverless.kyma-project.io/v1alpha1
+    def _generate_kyma_config(self, features=None) -> str:
+        app_name = features.app_name if features and features.app_name else "my-function"
+        return f'''apiVersion: serverless.kyma-project.io/v1alpha1
 kind: Function
 metadata:
-  name: my-function
+  name: {app_name}
 spec:
   runtime: nodejs18
   source: |
-    module.exports = { main: async function (event, context) {
-      return { message: 'Hello SAP Kyma!' };
-    }}
+    module.exports = {{ main: async function (event, context) {{
+      return {{ message: 'Hello SAP Kyma!' }};
+    }}}}
 '''
-        return
 
 _adapter_registry: Optional[AdapterRegistry] = None
 

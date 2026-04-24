@@ -1,0 +1,13 @@
+apiVersion: v2
+name: eis
+description: Engineering Intelligence System Helm Chart
+type: application
+version: 3.2.0
+appVersion: "3.2.0"
+keywords:
+  - engineering
+  - intelligence
+  - rag
+  - multimodal
+maintainers:
+  - name: EIS Team

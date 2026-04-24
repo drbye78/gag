@@ -78,6 +78,8 @@ class Settings(BaseSettings):
     rate_limit_window: int = 60
     cors_origins: str = "*"
 
+    json_format: bool = True
+
     ticket_backend: str = ""
     telemetry_backend: str = ""
     docs_backend: str = ""
@@ -144,7 +146,7 @@ class Settings(BaseSettings):
     iterative_max_iterations: int = 3
     iterative_confidence_threshold: float = 0.7
 
-    graphrag_enabled: bool = Field(default=False, validation_alias="GRAPH_RAG_ENABLED")
+    graphrag_enabled: bool = Field(default=True, validation_alias="GRAPH_RAG_ENABLED")
     graphrag_use_llm_extraction: bool = Field(default=False, validation_alias="GRAPH_RAG_USE_LLM")
     graphrag_structural_chunking: bool = Field(default=True, validation_alias="GRAPH_RAG_STRUCTURAL_CHUNKING")
     graphrag_incremental: bool = Field(default=True, validation_alias="GRAPH_RAG_INCREMENTAL")
@@ -229,13 +231,11 @@ def setup_logging() -> logging.Logger:
 
     log_level = getattr(logging, settings.log_level.upper(), logging.INFO)
 
-    logging.basicConfig(
-        level=log_level,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
+    from core.logging_config import setup_logging as configure_logging
+    configure_logging(level=settings.log_level, json_format=settings.json_format)
 
     logger = logging.getLogger("config")
-    logger.debug("Logging configured at level: %s", settings.log_level)
+    logger.debug("Logging configured at level: %s, JSON: %s", settings.log_level, settings.json_format)
     return logger
 
 

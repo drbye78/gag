@@ -95,6 +95,90 @@ class VMwareTanzuAdapter(RecommendationMixin, PlatformAdapter):
                 priority=9,
                 confidence=0.9,
             ),
+            Pattern(
+                id="tanzu_build_service",
+                name="Tanzu Build Service",
+                domain="architecture",
+                triggers=["build-service", "kpack", "builder", "image"],
+                conditions=[],
+                components=["builder", "image", "clusterbuilder"],
+                benefits=["Cloud-native builds", "Supply chain", "Caching"],
+                tradeoffs=["Storage requirements"],
+                priority=7,
+                confidence=0.8,
+            ),
+            Pattern(
+                id="tanzu_gemfire",
+                name="VMware GemFire",
+                domain="architecture",
+                triggers=["gemfire", "in-memory", "geode"],
+                conditions=[],
+                components=["locator", "server", "region"],
+                benefits=["Low latency", "Distributed cache", "HA"],
+                tradeoffs=["Licensing", "Memory management"],
+                priority=6,
+                confidence=0.75,
+            ),
+            Pattern(
+                id="tanzu_rabbitmq",
+                name="RabbitMQ Messaging",
+                domain="architecture",
+                triggers=["rabbitmq", "messaging", "amqp", "queue"],
+                conditions=[],
+                components=["exchange", "queue", "binding"],
+                benefits=["Reliable delivery", "Flexible routing", "Protocols"],
+                tradeoffs=["Cluster management"],
+                priority=7,
+                confidence=0.85,
+            ),
+            Pattern(
+                id="tanzu_sql",
+                name="Tanzu SQL (PostgreSQL/MySQL)",
+                domain="architecture",
+                triggers=["sql", "postgresql", "mysql", "db"],
+                conditions=[],
+                components=["db-instance", "binding"],
+                benefits=["Managed DB", "High availability", "Backups"],
+                tradeoffs=["Cost per instance"],
+                priority=8,
+                confidence=0.9,
+            ),
+            Pattern(
+                id="tanzu_redis",
+                name="VMware Redis Enterprise",
+                domain="architecture",
+                triggers=["redis", "cache", "session"],
+                conditions=[],
+                components=["redis-cluster", "database"],
+                benefits=["High throughput", "Data structures", "Persistence"],
+                tradeoffs=["Memory costs"],
+                priority=7,
+                confidence=0.85,
+            ),
+            Pattern(
+                id="tanzu_kubernetes",
+                name="Tanzu Kubernetes Grid",
+                domain="architecture",
+                triggers=["tkg", "tkgs", "kubernetes", "k8s"],
+                conditions=[],
+                components=["cluster", "node-pool", "storage-class"],
+                benefits=["Enterprise K8s", "VMware integration", "Support"],
+                tradeoffs=["vSphere requirement"],
+                priority=9,
+                confidence=0.9,
+            ),
+            Pattern(
+                id="tanzu_microservices",
+                name="Microservices with Spring Cloud",
+                domain="architecture",
+                triggers=["microservices", "eureka", "config-server", "gateway"],
+                conditions=[],
+                components=["eureka", "zuul", "config", "feign"],
+                benefits=["Service discovery", "Config management", "Load balancing"],
+                tradeoffs=["Complexity", "Network latency"],
+                priority=8,
+                confidence=0.85,
+            ),
         ]
         
         for p in tanzu_patterns:
@@ -320,7 +404,6 @@ public class Application {
     </build>
 </project>
 '''
-        return
 
 def register_tanzu_adapter(registry=None):
     if registry:

@@ -493,16 +493,17 @@ CHUNKER_REGISTRY = {
     ".txt": "sentence",
     ".rst": "sentence",
     ".mdx": "semantic",
-    ".yaml": "semantic",
-    ".yml": "semantic",
-    ".graphql": "semantic",
-    ".gql": "semantic",
+    ".yaml": "kubernetes",
+    ".yml": "kubernetes",
+    ".helm": "helm",
+    ".tpl": "helm",
+    ".graphql": "graphql",
+    ".gql": "graphql",
     "Dockerfile": "dockerfile",
     "istio": "istio",
     "virtualservice": "istio",
     "destinationrule": "istio",
     "gateway": "istio",
-    # Tooling-specific entries
     "kubernetes": "kubernetes",
     "helm": "helm",
 }
@@ -590,9 +591,8 @@ def get_chunker_for_file(file_path: str) -> str:
 
 
 def get_chunker_from_settings():
-    """Get chunker based on config settings - uses LlamaIndex semantic chunker by default."""
+    """Get chunker based on config settings - uses specialized chunkers for k8s/helm/graphql."""
     from core.config import get_settings
-    from documents.semantic_chunker import get_semantic_chunker_from_settings, get_sentence_chunker_from_settings
 
     settings = get_settings()
     chunk_type = settings.chunking_chunker_type
@@ -600,6 +600,9 @@ def get_chunker_from_settings():
     chunkers = {
         "semantic": get_semantic_chunker_from_settings,
         "sentence": get_sentence_chunker_from_settings,
+        "kubernetes": get_kubernetes_chunker,
+        "helm": get_helm_chunker,
+        "graphql": get_graphql_chunker,
     }
 
     if chunk_type not in chunkers:

@@ -44,6 +44,7 @@ _cors_settings = get_settings()
 _cors_origins = _cors_settings.cors_origins
 
 _allow_credentials = False
+
 if "*" in _cors_origins:
     import logging
     logging.getLogger(__name__).critical(
@@ -52,10 +53,18 @@ if "*" in _cors_origins:
     )
     _cors_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
     _allow_credentials = False
-elif _cors_settings.debug:
-    _allow_credentials = False
-else:
+elif not _cors_settings.debug:
+    import logging
+    logger = logging.getLogger(__name__)
+    for origin in _cors_origins:
+        if not origin.startswith("https://"):
+            logger.warning(
+                f"CORS origin '{origin}' is not HTTPS. "
+                "Production environments should use HTTPS origins only."
+            )
     _allow_credentials = True
+else:
+    _allow_credentials = False
 
 app.add_middleware(
     CORSMiddleware,

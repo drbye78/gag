@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "eis.fullname" . }}-config
+  labels:
+    {{- include "eis.labels" . | nindent 4 }}
+data:
+  DEBUG: {{ .Values.config.debug | quote }}
+  LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  JSON_FORMAT: {{ .Values.config.jsonFormat | quote }}
+  GRAPH_RAG_ENABLED: {{ .Values.config.graphRagEnabled | quote }}
+  RETRIEVAL_TIMEOUT: {{ .Values.config.retrievalTimeout | quote }}
+  MAX_RETRIEVAL_RESULTS: {{ .Values.config.maxRetrievalResults | quote }}
+  QDRANT_HOST: "qdrant"
+  QDRANT_PORT: "6333"
+  FALKORDB_HOST: "falkordb"
+  FALKORDB_PORT: "7379"
+  REDIS_URL: "redis://redis:6379"
