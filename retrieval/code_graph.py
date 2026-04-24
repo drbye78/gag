@@ -664,9 +664,13 @@ class CodeGraphRetriever:
         if not CODEGRAPH_FULL_AVAILABLE:
             return {"source": "code_graph", "action": "visualize", "url": None, "error": "CodeGraphContext not available"}
 
-        dangerous = ["DELETE", "DROP", "ALTER", "CREATE", "SET", "REMOVE", "FOREACH"]
-        if any(p in cypher_query.upper() for p in dangerous):
+        dangerous = ["DELETE", "DROP", "ALTER", "CREATE", "SET", "REMOVE", "FOREACH", "MERGE", "CALL"]
+        upper = cypher_query.upper()
+        if any(p in upper for p in dangerous):
             return {"source": "code_graph", "action": "visualize", "query": cypher_query, "url": None, "error": "Query contains write operations"}
+        
+        if "MATCH" not in upper and "RETURN" not in upper:
+            return {"source": "code_graph", "action": "visualize", "query": cypher_query, "url": None, "error": "Only MATCH/RETURN queries allowed"}
 
         start = int(time.time() * 1000)
         result = await visualize_graph_query(cypher_query=cypher_query)

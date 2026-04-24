@@ -6,6 +6,8 @@ Provides /health, /query, /mcp, /multimodal/extract,
 /ingestion, /git, and /documents endpoints.
 """
 
+from contextlib import asynccontextmanager
+import logging
 import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,10 +17,24 @@ from typing import Any, Dict, List, Optional
 import models.mcp
 from core.middleware import setup_middleware
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    logging.getLogger(__name__).info("Starting Engineering Intelligence System...")
+    yield
+    # Shutdown - cleanup resources
+    logging.getLogger(__name__).info("Shutting down Engineering Intelligence System...")
+    from llm.router import LLMRouter
+    await LLMRouter.close_client()
+    logging.getLogger(__name__).info("Resources cleaned up.")
+
+
 app = FastAPI(
     title="Engineering Intelligence System API",
     description="Production-grade engineering intelligence system with multi-RAG, multimodal diagrams, and multilingual support",
     version="3.2.0",
+    lifespan=lifespan,
 )
 
 from core.config import get_settings

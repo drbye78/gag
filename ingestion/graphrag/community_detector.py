@@ -119,7 +119,7 @@ Entities: {", ".join(community.key_entities[:10])}
 Summary:"""
 
         try:
-            response = await self.llm_client.generate(
+            response = await self.llm_client.chat(
                 prompt=prompt,
                 max_tokens=200,
                 temperature=0.3,

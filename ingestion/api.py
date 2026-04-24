@@ -8,7 +8,9 @@ Provides /ingest, /ingest/batch, /ingest/codebase,
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, field_validator
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+
+from core.auth import require_authenticated
 
 from ingestion.pipeline import IngestionPipeline, get_ingestion_pipeline, JobStatus
 
@@ -62,7 +64,7 @@ class JobStatusResponse(BaseModel):
     error: Optional[str]
 
 
-router = APIRouter(prefix="/ingestion", tags=["ingestion"])
+router = APIRouter(prefix="/ingestion", tags=["ingestion"], dependencies=[Depends(require_authenticated)])
 
 
 @router.post("/ingest", response_model=IngestResponse)
@@ -122,6 +124,10 @@ async def ingest_codebase(request: CodebaseIngestRequest):
 
 @router.get("/jobs", response_model=List[Dict[str, Any]])
 async def list_jobs(limit: int = 50):
+    if limit < 1:
+        limit = 1
+    elif limit > 1000:
+        limit = 1000
     pipeline = get_ingestion_pipeline()
     return pipeline.list_jobs(limit)
 

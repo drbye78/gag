@@ -37,6 +37,16 @@ class ChatCompletionResponse:
         self.choices = choices
         self.usage = usage
 
+    @property
+    def text(self) -> str:
+        if self.choices and len(self.choices) > 0:
+            choice = self.choices[0]
+            if "message" in choice:
+                return choice["message"].get("content", "")
+            if "delta" in choice:
+                return choice["delta"].get("content", "")
+        return ""
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ChatCompletionResponse":
         return cls(
@@ -101,6 +111,18 @@ class LLMRouter:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
     ) -> ChatCompletionResponse:
+        if temperature is not None:
+            if not isinstance(temperature, (int, float)):
+                raise ValueError("temperature must be a number")
+            if temperature < 0 or temperature > 2.0:
+                raise ValueError("temperature must be between 0 and 2.0")
+        
+        if max_tokens is not None:
+            if not isinstance(max_tokens, int):
+                raise ValueError("max_tokens must be an integer")
+            if max_tokens < 1 or max_tokens > 32000:
+                raise ValueError("max_tokens must be between 1 and 32000")
+
         messages = self._build_messages(prompt, system_prompt)
         payload = {"model": self.model.value, "messages": messages}
         if temperature is not None:
@@ -173,3 +195,8 @@ from functools import lru_cache
 @lru_cache(maxsize=1)
 def get_router() -> LLMRouter:
     return LLMRouter()
+
+
+def get_llm_router() -> LLMRouter:
+    """Alias for get_router() for backwards compatibility."""
+    return get_router()

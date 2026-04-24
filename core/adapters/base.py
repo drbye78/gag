@@ -125,6 +125,17 @@ class AdapterRegistry:
     def list_platforms(self) -> List[str]:
         return list(self._adapters.keys())
     
+    def list_adapters(self) -> List[Dict[str, Any]]:
+        return [
+            {
+                "platform_id": pid,
+                "adapter": adapter,
+                "supported_services": adapter.supported_services,
+                "is_default": adapter is self._default,
+            }
+            for pid, adapter in self._adapters.items()
+        ]
+    
     def auto_detect(self, features: IRFeature) -> PlatformAdapter:
         feature_dict = features.model_dump()
         feature_str = str(feature_dict).lower()

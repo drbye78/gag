@@ -31,8 +31,6 @@ MAX_LIMIT = 10000
 def _safe_identifier(value: str, allowed: frozenset, default: str = "Entity") -> str:
     if value in allowed:
         return value
-    if re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", value):
-        return value
     return default
 
 
@@ -137,8 +135,11 @@ class FalkorDBClient:
 
         if properties:
             for i, (k, v) in enumerate(properties.items()):
+                safe_key = _safe_identifier(k, ALLOWED_NODE_TYPES, "")
+                if not safe_key:
+                    continue
                 key = f"k{i}"
-                where_parts.append(f"n.{k} = ${key}")
+                where_parts.append(f"n.{safe_key} = ${key}")
                 params[key] = v
 
         where_clause = " AND ".join(where_parts)

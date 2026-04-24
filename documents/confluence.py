@@ -5,10 +5,12 @@ Provides space and page sync with children support, attachments, and recursive f
 """
 
 import os
+import socket
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+import logging
 from enum import Enum
+from dataclasses import dataclass, field
+from typing import Optional, List, Dict, Any
 
 import httpx
 
@@ -136,6 +138,21 @@ class ConfluenceClient:
         if download_url.startswith("/"):
             download_url = f"{self.url}{download_url}"
 
+        # SSRF protection: validate the final URL's hostname
+        try:
+            parsed = httpx.URL(download_url)
+            hostname = parsed.host
+            if hostname:
+                if hostname == self.url.replace("https://", "").replace("http://", "").split("/")[0]:
+                    pass  # Same domain, allowed
+                elif self._is_private_ip(hostname):
+                    raise ValueError("Private IP addresses not allowed")
+                else:
+                    raise ValueError(f"Hostname {hostname} not allowed - SSRF protection")
+        except Exception as e:
+            logging.getLogger(__name__).warning(f"SSRF validation failed for {download_url}: {e}")
+            return None
+
         async with httpx.AsyncClient() as client:
             resp = await client.get(
                 download_url,
@@ -145,6 +162,19 @@ class ConfluenceClient:
             if resp.status_code == 200:
                 return resp.content
             return None
+
+    def _is_private_ip(self, hostname: str) -> bool:
+        """Check if hostname resolves to a private IP address."""
+        import ipaddress
+        try:
+            addrs = socket.getaddrinfo(hostname, None)
+            for addr in addrs:
+                ip = addr[4][0]
+                network = ipaddress.ip_address(ip)
+                return network.is_private
+        except Exception:
+            pass
+        return False
 
     async def get_page_attachments(
         self,

@@ -185,10 +185,19 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _post_validate(self):
         if self.jwt_secret == "change-me-in-production":
-            raise ValueError(
-                "SECURITY ERROR: JWT_SECRET is using the default placeholder value. "
-                "Set JWT_SECRET to a strong random value before deploying to production."
-            )
+            is_debug = os.getenv("DEBUG", "").lower() in ["true", "1", "yes"]
+            if is_debug:
+                warnings.warn(
+                    "SECURITY WARNING: JWT_SECRET is using the default placeholder value. "
+                    "This is only acceptable in development mode.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+            else:
+                raise ValueError(
+                    "SECURITY ERROR: JWT_SECRET is using the default placeholder value. "
+                    "Set JWT_SECRET to a strong random value before deploying to production."
+                )
         if not self.credential_encrypt_key:
             warnings.warn(
                 "SECURITY WARNING: CREDENTIAL_ENCRYPT_KEY is not set. "

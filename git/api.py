@@ -8,7 +8,9 @@ endpoints with credential management.
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+
+from core.auth import require_authenticated
 
 from git.pipeline import GitIngestionPipeline, get_git_pipeline, GitJobStatus
 from git.repo import get_repo_manager
@@ -71,7 +73,7 @@ class JobStatusResponse(BaseModel):
     error: Optional[str]
 
 
-router = APIRouter(prefix="/git", tags=["git"])
+router = APIRouter(prefix="/git", tags=["git"], dependencies=[Depends(require_authenticated)])
 
 
 @router.post("/clone", response_model=CloneResponse)
@@ -235,6 +237,10 @@ async def delete_credential(credential_id: str):
 
 @router.get("/jobs", response_model=List[Dict[str, Any]])
 async def list_jobs(limit: int = 50):
+    if limit < 1:
+        limit = 1
+    elif limit > 1000:
+        limit = 1000
     pipeline = get_git_pipeline()
     return pipeline.list_jobs(limit)
 

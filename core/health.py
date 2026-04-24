@@ -73,9 +73,9 @@ class HealthChecker:
             self.check_redis(),
         )
         results = {
-            "qdrant": results[0],
-            "falkordb": results[1],
-            "redis": results[2],
+            "qdrant": {"ok": results[0]},
+            "falkordb": {"ok": results[1]},
+            "redis": {"ok": results[2]},
         }
 
         self._last_result = results
@@ -84,8 +84,9 @@ class HealthChecker:
 
     async def get_status(self) -> Dict[str, Any]:
         status = await self.check_all()
-        all_ok = all(status.values())
-        any_ok = any(status.values())
+        service_status = {k: v.get("ok", False) for k, v in status.items()}
+        all_ok = all(service_status.values())
+        any_ok = any(service_status.values())
 
         if all_ok:
             overall = "healthy"

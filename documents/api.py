@@ -8,7 +8,9 @@ multimodal endpoints.
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
 
-from fastapi import APIRouter, HTTPException, UploadFile
+from fastapi import APIRouter, HTTPException, UploadFile, Depends
+
+from core.auth import require_authenticated
 
 from documents.pipeline import DocumentPipeline, get_document_pipeline
 from documents.confluence import get_confluence_client
@@ -60,7 +62,7 @@ class ImageParseRequest(BaseModel):
     title: Optional[str] = None
 
 
-router = APIRouter(prefix="/documents", tags=["documents"])
+router = APIRouter(prefix="/documents", tags=["documents"], dependencies=[Depends(require_authenticated)])
 
 
 @router.post("/upload", response_model=DocumentResponse)
@@ -224,6 +226,10 @@ async def delete_document(document_id: str):
 
 @router.get("/", response_model=List[DocumentResponse])
 async def list_documents(limit: int = 50):
+    if limit < 1:
+        limit = 1
+    elif limit > 1000:
+        limit = 1000
     pipeline = get_document_pipeline()
     docs = pipeline.list_documents(limit)
 

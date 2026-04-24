@@ -115,7 +115,7 @@ Text excerpt: {text[:1000]}
 Return JSON only:"""
 
         try:
-            response = await self.llm_client.generate(
+            response = await self.llm_client.chat(
                 prompt=prompt,
                 max_tokens=500,
                 temperature=0.1,
@@ -161,7 +161,7 @@ Text: {text[:1500]}
 Return JSON array:"""
 
         try:
-            response = await self.llm_client.generate(
+            response = await self.llm_client.chat(
                 prompt=prompt,
                 max_tokens=1500,
                 temperature=0.1,

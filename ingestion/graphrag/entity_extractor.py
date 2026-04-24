@@ -105,7 +105,7 @@ Text:
 Return JSON:"""
 
         try:
-            response = await self.llm_client.generate(
+            response = await self.llm_client.chat(
                 prompt=prompt,
                 max_tokens=2000,
                 temperature=0.1,

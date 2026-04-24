@@ -319,6 +319,9 @@ async def create_token(user_id: str, roles: Optional[List[str]] = None) -> str:
 
     tm = get_token_manager()
     return tm.create_token(user)
+
+
+async def verify_token(token: str) -> Optional[Dict[str, Any]]:
     """Verify a JWT token and return the payload or None."""
     tm = get_token_manager()
     return tm.verify_token(token)
