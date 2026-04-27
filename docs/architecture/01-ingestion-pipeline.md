@@ -51,17 +51,30 @@ The system includes **11 specialized chunkers** for different content types:
 | `IstioChunker` | `istio_chunker.py` | Istio CRD parsing (VirtualService, Gateway) |
 | `GraphQLChunker` | `graphql_chunker.py` | GraphQL schema type/operation parsing |
 
-### Chunking by Language
+## Document Parsing (`documents/parse.py`)
 
-| Language | Strategy | Patterns |
-|----------|----------|----------|
-| Python | Regex entity extraction | `^class \w+`, `^def \w+`, `^async def \w+` |
-| JavaScript/TypeScript | Generic function extraction | `function \w+`, brace counting |
-| Go, Rust, Java | Fallback generic | Function extraction or fixed-size blocks |
-| Markdown | Heading-aware | Line-by-line, respects heading boundaries |
-| Dockerfile | Instruction-aware | FROM, RUN, COPY, ENTRYPOINT instructions |
-| Kubernetes | Resource-type aware | Deployment, Service, ConfigMap separation |
-| GraphQL | Schema-aware | Directive/field parsing |
+Multi-format document parsing using LlamaIndex + Docling:
+
+| Parser | Format | Notes |
+|--------|--------|-------|
+| **LlamaIndex** | docx, xlsx, pptx, md, txt | Mandatory dependency |
+| **Docling v2.x** | PDF, images | Uses `DocumentConverter` API |
+
+### Docling v2.x Usage
+
+```python
+from docling.document_converter import DocumentConverter
+from docling.datamodel.base_models import InputFormat
+
+converter = DocumentConverter()
+result = converter.convert(path="document.pdf")
+# result.document.export_to_markdown()
+```
+
+**Key differences from v1.x:**
+- Uses `DocumentConverter` class (not `DoclingEasyConverter`)
+- Returns `ConversionResult` with `.document` property
+- Exports via `export_to_markdown()` not `.body.md`
 
 ### Chunker Registry (`chunker.py`, lines 469-505)
 

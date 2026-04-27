@@ -17,24 +17,14 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-# LlamaIndex readers (mandatory dependency)
-# Use SimpleDirectoryReader which auto-detects file types
+# LlamaIndex - mandatory
 from llama_index.core import SimpleDirectoryReader
 from llama_index.core.readers import StringIterableReader
 
-# Docling imports
-try:
-    from docling.document import PdfConverter
-    from docling.datamodel.base import PdfNote
-
-    DOCLING_AVAILABLE = True
-except ImportError:
-    PdfConverter = None
-    PdfNote = None
-    DOCLING_AVAILABLE = False
-
-# LlamaIndex is mandatory
-LLAMA_INDEX_AVAILABLE = True
+# Docling v2.x - now mandatory
+from docling.document_converter import DocumentConverter
+from docling.datamodel.base_models import InputFormat
+from docling.datamodel.document import ConversionResult
 
 
 @dataclass
@@ -61,7 +51,7 @@ class LlamaIndexParser:
 
     @property
     def available(self) -> bool:
-        return LLAMA_INDEX_AVAILABLE
+        return True  # Mandatory
 
     def _get_reader(self, ext: str):
         if ext in self._readers:
@@ -71,16 +61,16 @@ class LlamaIndexParser:
             return None
 
         reader_map = {
-            ".md": MarkdownReader,
-            ".markdown": MarkdownReader,
-            ".pdf": PDFReader,
-            ".docx": DocxReader,
-            ".pptx": PptxReader,
-            ".csv": CSVReader,
-            ".html": HTMLTagReader,
-            ".htm": HTMLTagReader,
-            ".txt": FlatReader,
-            ".text": FlatReader,
+            ".txt": SimpleDirectoryReader,
+            ".text": SimpleDirectoryReader,
+            ".md": SimpleDirectoryReader,
+            ".markdown": SimpleDirectoryReader,
+            ".pdf": SimpleDirectoryReader,
+            ".docx": SimpleDirectoryReader,
+            ".pptx": SimpleDirectoryReader,
+            ".csv": SimpleDirectoryReader,
+            ".html": SimpleDirectoryReader,
+            ".htm": SimpleDirectoryReader,
         }
 
         reader_cls = reader_map.get(ext)
@@ -126,59 +116,62 @@ class LlamaIndexParser:
 
 
 class DoclingParser:
-    """Docling-based advanced document parser with optional OCR."""
+    """Docling v2.x based parser."""
+
+    _converter: Any = None
 
     def __init__(self, use_ocr: bool = False):
-        self._converter = None
         self._use_ocr = use_ocr
 
     @property
     def available(self) -> bool:
-        return DOCLING_AVAILABLE
+        return True  # Mandatory
 
-    def _get_converter(self):
+    def _get_converter(self) -> Any:
         if not self.available:
             return None
-
         if self._converter is None:
-            try:
-                if self._use_ocr:
-                    self._converter = PdfConverter(
-                        ocr=DoclingProxyOcr(),
-                    )
-                else:
-                    self._converter = PdfConverter()
-            except Exception as e:
-                logger.error("Failed to initialize Docling PdfConverter: %s", e)
-
-        return self._converter
+            self._converter = DocumentConverter()
+        return self._converter  # type: ignore[return-value]
 
     async def parse(
         self,
         content: bytes,
     ) -> ParsedDocumentResult:
         converter = self._get_converter()
-
         if not converter:
             return ParsedDocumentResult(text="", error="Docling not available")
 
         try:
+            from io import BytesIO
+            import tempfile
+            import os
+
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
                 tmp.write(content)
                 tmp_path = tmp.name
 
             try:
-                note = PdfNote.from_path(tmp_path)
-                result = converter.convert(note)
-                text = result.document.export_to_markdown()
-                return ParsedDocumentResult(
-                    text=text,
-                    metadata={"page_count": len(result.pages)},
-                    used_docling=True,
-                )
+                result = converter.convert(tmp_path)
+                if result.status.name == "SUCCESS":
+                    text = result.document.export_to_markdown()
+                    return ParsedDocumentResult(
+                        text=text,
+                        metadata={
+                            "page_count": len(result.pages),
+                            "status": result.status.name,
+                        },
+                        used_docling=True,
+                    )
+                else:
+                    return ParsedDocumentResult(
+                        text="",
+                        error=f"Docling conversion failed: {result.status.name}",
+                    )
             finally:
                 os.unlink(tmp_path)
         except Exception as e:
+            logger.warning("Docling parse failed: %s", e)
             return ParsedDocumentResult(text="", error=str(e))
 
     async def parse_with_elements(
@@ -190,7 +183,6 @@ class DoclingParser:
         Returns raw tuples for callers to wrap in their own result types.
         """
         converter = self._get_converter()
-
         if not converter:
             return "", [], {}
 
@@ -200,20 +192,18 @@ class DoclingParser:
                 tmp_path = tmp.name
 
             try:
-                note = PdfNote.from_path(tmp_path)
-                result = converter.convert(note)
+                result = converter.convert(tmp_path)
                 text = result.document.export_to_markdown()
 
                 elements = []
-                for item in result.document.iter_inferred_terms():
-                    elements.append(
-                        {
-                            "element_id": item.id or "",
-                            "type": item.label or "unknown",
-                            "label": item.text,
-                            "confidence": getattr(item, "score", 0.0),
-                        }
-                    )
+                if hasattr(result.document, 'iter_inferred_terms'):
+                    for item in result.document.iter_inferred_terms():
+                        elements.append({
+                            "element_id": getattr(item, 'id', "") or "",
+                            "type": getattr(item, 'label', "") or "unknown",
+                            "label": getattr(item, 'text', "") or "",
+                            "confidence": getattr(item, 'score', 0.0),
+                        })
 
                 metadata = {"page_count": len(result.pages)}
                 return text, elements, metadata
@@ -736,6 +726,42 @@ class HybridDocumentParser:
 
         return self.fallback.parse(content, filename)
 
+    async def parse_file(
+        self,
+        file_path: str,
+        use_ocr: bool = True,
+    ) -> ParsedDocumentResult:
+        """Parse a file from disk."""
+        if not os.path.exists(file_path):
+            return ParsedDocumentResult(text="", error=f"File not found: {file_path}")
+
+        try:
+            with open(file_path, "rb") as f:
+                content = f.read()
+        except Exception as e:
+            return ParsedDocumentResult(text="", error=f"Failed to read file: {e}")
+
+        return await self.parse(content, os.path.basename(file_path))
+
+    async def parse_url(
+        self,
+        url: str,
+        use_ocr: bool = True,
+    ) -> ParsedDocumentResult:
+        """Parse a document from URL."""
+        import httpx
+
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(url)
+                response.raise_for_status()
+                content = response.content
+                filename = url.split("/")[-1] or "document"
+        except Exception as e:
+            return ParsedDocumentResult(text="", error=f"Failed to fetch URL: {e}")
+
+        return await self.parse(content, filename)
+
 
 # Global instance
 _parser: Optional[HybridDocumentParser] = None
@@ -749,8 +775,8 @@ def get_document_parser() -> HybridDocumentParser:
 
 
 def is_llama_index_available() -> bool:
-    return LLAMA_INDEX_AVAILABLE
+    return True  # Mandatory
 
 
 def is_docling_available() -> bool:
-    return DOCLING_AVAILABLE
+    return True  # Mandatory

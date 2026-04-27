@@ -3,15 +3,34 @@ CodeGraph Retriever - Code-specific graph queries via CodeGraphContext.
 
 Wraps CodeGraphContext MCP for precise code relationships,
 complexity metrics, and navigation (find_callers, callees, etc.).
+Uses CLI fallback when MCP unavailable.
 """
 
+import json
 import logging
+import subprocess
 import time
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+# Check for CLI availability (fallback)
+def _check_cgc_available() -> bool:
+    try:
+        result = subprocess.run(
+            ["cgc", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+_cgc_available = _check_cgc_available()
+
+# Try MCP imports first, fall back to CLI
 try:
     from CodeGraphContext_find_code import find_code
     from CodeGraphContext_analyze_code_relationships import (
@@ -39,27 +58,195 @@ try:
     CODEGRAPH_AVAILABLE = True
     CODEGRAPH_FULL_AVAILABLE = True
 except ImportError as e:
-    logger.warning(
-        f"CodeGraphContext MCP not available: {e}. "
-        "Code graph features will be disabled."
-    )
-    CODEGRAPH_AVAILABLE = False
-    CODEGRAPH_FULL_AVAILABLE = False
-    find_code = None
-    analyze_code_relationships = None
-    find_dead_code = None
-    find_most_complex_functions = None
-    calculate_cyclomatic_complexity = None
-    watch_directory = None
-    add_code_to_graph = None
-    switch_context = None
-    discover_codegraph_contexts = None
-    list_indexed_repositories = None
-    load_bundle = None
-    search_registry_bundles = None
-    add_package_to_graph = None
-    execute_cypher_query = None
-    visualize_graph_query = None
+    logger.warning(f"CodeGraphContext MCP not available: {e}")
+    CODEGRAPH_AVAILABLE = _cgc_available
+    CODEGRAPH_FULL_AVAILABLE = _cgc_available
+
+    # CLI fallback functions
+    def _run_cgc(args: List[str], timeout: int = 30) -> Dict[str, Any]:
+        try:
+            result = subprocess.run(
+                ["cgc"] + args,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+            if result.returncode == 0:
+                output = result.stdout
+                # Try JSON first
+                try:
+                    return {"success": True, "data": json.loads(output)}
+                except json.JSONDecodeError:
+                    # Parse table output
+                    lines = output.strip().split("\n")
+                    matches = []
+                    for line in lines:
+                        # Parse table rows: | Name | Type | Location | Source |
+                        if "│" in line and "─" not in line and "╭" not in line and "╰" not in line and "Name" not in line:
+                            parts = [p.strip() for p in line.split("│")]
+                            if len(parts) >= 3 and parts[1]:
+                                matches.append({
+                                    "name": parts[1],
+                                    "type": parts[2] if len(parts) > 2 else "",
+                                    "location": parts[3] if len(parts) > 3 else "",
+                                })
+                    return {"success": True, "data": matches}
+            return {"success": False, "error": result.stderr}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    async def find_code(query: str, limit: int = 10) -> Dict[str, Any]:
+        result = await _cgc_find_pattern(query)  # Use the helper
+        if result.get("success"):
+            data = result.get("results", [])
+            return {"results": data[:limit], "total": len(data)}
+        return {"results": [], "error": result.get("error")}
+
+    # Helper function to avoid duplicate definitions
+    async def _cgc_find_pattern(pattern: str) -> Dict[str, Any]:
+        """Call cgc find pattern and parse results."""
+        result = subprocess.run(
+            ["cgc", "find", "pattern", pattern],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        # Table output goes to stderr
+        combined = result.stdout + "\n" + result.stderr
+        lines = combined.strip().split("\n")
+        matches = []
+        for line in lines:
+            if "│" in line and "─" not in line and "╭" not in line and "╰" not in line and "Name" not in line and "Type" not in line:
+                parts = [p.strip() for p in line.split("│")]
+                if len(parts) >= 3 and parts[1]:
+                    matches.append({
+                        "name": parts[1],
+                        "type": parts[2] if len(parts) > 2 else "",
+                        "location": parts[3] if len(parts) > 3 else "",
+                    })
+        return {"success": result.returncode == 0, "results": matches}
+
+    async def analyze_code_relationships(
+        query_type: str,
+        target: str,
+        context: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        cmd_map = {
+            "find_callers": ["analyze", "callers", target],
+            "find_callees": ["analyze", "calls", target],
+            "class_hierarchy": ["analyze", "tree", target],
+            "module_deps": ["analyze", "deps", target],
+        }
+        args = cmd_map.get(query_type, ["find", "pattern", target])
+        result = _run_cgc(args)
+        if result.get("success"):
+            data = result.get("data", {})
+            return {"results": data.get("results", []) if isinstance(data, dict) else []}
+        return {"results": [], "error": result.get("error")}
+
+    async def find_dead_code(
+        exclude_decorators: Optional[List[str]] = None,
+        limit: int = 20,
+    ) -> Dict[str, Any]:
+        args = ["find", "dead-code"]
+        if exclude_decorators:
+            for dec in exclude_decorators:
+                args.extend(["--decorator", dec])
+        args.extend(["--limit", str(limit)])
+        result = _run_cgc(args)
+        if result.get("success"):
+            data = result.get("data", {})
+            return {"results": data.get("results", []) if isinstance(data, dict) else []}
+        return {"results": [], "error": result.get("error")}
+
+    async def find_most_complex_functions(limit: int = 10) -> Dict[str, Any]:
+        result = _run_cgc(["analyze", "complexity", "--limit", str(limit)])
+        if result.get("success"):
+            data = result.get("data", {})
+            return {"results": data.get("results", []) if isinstance(data, dict) else []}
+        return {"results": [], "error": result.get("error")}
+
+    async def calculate_cyclomatic_complexity(
+        function_name: str,
+        path: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        args = ["analyze", "complexity", function_name]
+        result = _run_cgc(args)
+        if result.get("success"):
+            data = result.get("data", {})
+            return {"results": data.get("results", []) if isinstance(data, dict) else []}
+        return {"results": [], "error": result.get("error")}
+
+    async def watch_directory(path: str) -> Dict[str, Any]:
+        result = _run_cgc(["watch", path])
+        return {"success": result.get("success"), "error": result.get("error")}
+
+    async def add_code_to_graph(path: str, is_dependency: bool = False) -> Dict[str, Any]:
+        args = ["index", path]
+        if is_dependency:
+            args.append("--dependency")
+        result = _run_cgc(args)
+        return {"success": result.get("success"), "error": result.get("error")}
+
+    async def switch_context(context_path: str) -> Dict[str, Any]:
+        result = _run_cgc(["switch", context_path])
+        return {"success": result.get("success"), "error": result.get("error")}
+
+    async def discover_codegraph_contexts(
+        max_depth: int = 1,
+    ) -> List[Dict[str, Any]]:
+        result = _run_cgc(["discover", "--max-depth", str(max_depth)])
+        if result.get("success"):
+            data = result.get("data", [])
+            return data if isinstance(data, list) else []
+        return []
+
+    async def list_indexed_repositories() -> List[str]:
+        result = _run_cgc(["stats"])
+        if result.get("success"):
+            data = result.get("data", {})
+            return data.get("repositories", [])
+        return []
+
+    async def load_bundle(bundle_name: str, clear_existing: bool = False) -> Dict[str, Any]:
+        args = ["load", bundle_name]
+        if clear_existing:
+            args.append("--clear")
+        result = _run_cgc(args)
+        return {"success": result.get("success"), "error": result.get("error")}
+
+    async def search_registry_bundles(query: str) -> List[Dict[str, Any]]:
+        result = _run_cgc(["search", "bundles", query])
+        if result.get("success"):
+            data = result.get("data", [])
+            return data if isinstance(data, list) else []
+        return []
+
+    async def add_package_to_graph(
+        package_name: str,
+        language: str,
+        is_dependency: bool = True,
+    ) -> Dict[str, Any]:
+        args = ["add", "package", package_name, "--language", language]
+        if is_dependency:
+            args.append("--dependency")
+        result = _run_cgc(args)
+        return {"success": result.get("success"), "error": result.get("error")}
+
+    async def execute_cypher_query(cypher: str) -> Dict[str, Any]:
+        result = _run_cgc(["cypher", cypher])
+        if result.get("success"):
+            return {"results": result.get("data")}
+        return {"error": result.get("error")}
+
+    async def visualize_graph_query(cypher: str) -> str:
+        result = _run_cgc(["viz", cypher])
+        return result.get("data", "") if result.get("success") else ""
+
+if CODEGRAPH_AVAILABLE:
+    logger.info("CodeGraphContext available (MCP: %s, CLI: %s)",
+               "yes" if CODEGRAPH_FULL_AVAILABLE else "no",
+               "yes" if _cgc_available else "no")
 
 
 class CodeGraphQueryType(str, Enum):
@@ -112,7 +299,7 @@ class CodeGraphRetriever:
         limit: int = 10,
     ) -> Dict[str, Any]:
         start = int(time.time() * 1000)
-        result = await find_code(query=query, repo_path=self.repo_path)
+        result = await find_code(query=query)
         took = int(time.time() * 1000) - start
         return {
             "source": "code_graph",

@@ -6,8 +6,8 @@ The system provides deep code understanding through entity extraction, relations
 
 ```
 Code Source → Chunking → Entity Extraction → Relationship Inference → Graph Indexing
-                                                                          ↓
-                                              Query ← CodeGraphRetriever (MCP)
+                                                                           ↓
+                                               Query ← CodeGraphRetriever (MCP + CLI)
 ```
 
 ## Core Components
@@ -172,7 +172,7 @@ Specialized chunkers for infrastructure-as-code:
 
 ### CodeGraphRetriever
 
-MCP-compatible wrapper for CodeGraphContext:
+MCP-compatible wrapper for CodeGraphContext with CLI fallback:
 
 | Query Type | Method | Description |
 |------------|--------|-------------|
@@ -180,21 +180,38 @@ MCP-compatible wrapper for CodeGraphContext:
 | find_callees | `find_callees()` | Functions called by a given function |
 | find_all_callers | `find_all_callers()` | Transitive callers (whole call graph) |
 | find_all_callees | `find_all_callees()` | Transitive callees |
-| find_importers | `find_importers()` | Files importing a module |
 | class_hierarchy | `get_class_hierarchy()` | Parent classes |
-| overrides | `get_overrides()` | Methods overriding a given method |
-| dead_code | `get_dead_code()` | Unused functions |
-| complexity | `get_complexity()` | Cyclomatic complexity |
+| dead_code | `find_dead_code()` | Unused functions |
+| complexity | `calculate_cyclomatic_complexity()` | Cyclomatic complexity |
 | module_deps | `get_module_deps()` | Module dependencies |
-| call_chain | `get_call_chain()` | Full call chain |
 | execute_cypher | `execute_cypher()` | Raw graph queries (read-only) |
 | visualize | `visualize()` | Generate Mermaid from Cypher |
+
+#### MCP + CLI Fallback
+
+The retriever tries MCP imports first, falls back to `cgc` CLI:
+
+```python
+# Try MCP first
+try:
+    from CodeGraphContext_find_code import find_code
+    CODEGRAPH_AVAILABLE = True
+except ImportError:
+    # CLI fallback
+    CODEGRAPH_AVAILABLE = _check_cgc_available()
+    # Uses: subprocess.run(["cgc", "find", "pattern", query])
+```
+
+**CLI Notes:**
+- Table output goes to stderr, parse with combined streams
+- Index: `cgc index .` to index codebase
+- MCP unavailable when `codegraphcontext` package not installed
 
 ## MCP Tool Integration
 
 ### API Handler (`api/mcp.py`)
 
-JSON-RPC 2.0 server:
+JSON-RPC 2.0 server with session management, rate limiting, and subscriptions:
 
 | Method | Purpose |
 |--------|---------|
@@ -206,6 +223,16 @@ JSON-RPC 2.0 server:
 | `resources/read` | Read resource |
 | `prompts/list` | Prompt templates |
 | `prompts/get` | Get prompt |
+| `query` | Direct query execution |
+| `notifications/listen` | Subscribe to topics |
+| `notifications/unsubscribe` | Cancel subscription |
+| `session/get` | Get session state |
+| `session/set` | Set session state |
+
+**Features:**
+- Session management via `_sessions` dict
+- Rate limiting: 100 calls/minute per client_id
+- Sliding window algorithm
 
 ### CodeGraph Tools (`tools/base.py`)
 

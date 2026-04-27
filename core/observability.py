@@ -152,12 +152,22 @@ def get_metrics_collector() -> MetricsCollector:
 
 OTEL_AVAILABLE = False
 try:
-    from opentelemetry import trace
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
-    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-    from opentelemetry.sdk.resources import Resource, SERVICE_NAME
-    from opentelemetry.trace import Status, StatusCode
+    from opentelemetry import trace as _otel_trace
+    from opentelemetry.sdk.trace import TracerProvider as _Tp
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor as _Bsp, ConsoleSpanExporter as _Cse
+    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter as _Otlp
+    from opentelemetry.sdk.resources import Resource as _Res, SERVICE_NAME as _SvcName
+    from opentelemetry.trace import Status as _St, StatusCode as _Sc
+    
+    trace = _otel_trace
+    TracerProvider = _Tp
+    BatchSpanProcessor = _Bsp
+    ConsoleSpanExporter = _Cse
+    OTLPSpanExporter = _Otlp
+    Resource = _Res
+    SERVICE_NAME = _SvcName
+    Status = _St
+    StatusCode = _Sc
     OTEL_AVAILABLE = True
 except ImportError:
     pass
@@ -178,7 +188,7 @@ def setup_otel_tracing(settings) -> Optional["TracerProvider"]:
             endpoint=settings.otel_exporter_otlp_endpoint,
             insecure=settings.otel_exporter_otlp_insecure,
         )
-        provider.add_span_processor(BatchSpanExporter(exporter))
+        provider.add_span_processor(BatchSpanProcessor(exporter))
     trace.set_tracer_provider(provider)
     _tracer_provider = provider
     return provider

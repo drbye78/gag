@@ -6,6 +6,7 @@ methods for MCP client integration.
 """
 
 import json
+import time
 import uuid
 from typing import Any, Dict, List, Optional
 
@@ -29,14 +30,43 @@ class MCPHandler:
         self.engine = OrchestrationEngine()
         self.tool_registry = ToolRegistry()
         self._request_id: Optional[str] = None
+        self._sessions: Dict[str, Dict[str, Any]] = {}
+        self._subscriptions: Dict[str, Dict[str, Any]] = {}
+        self._rate_limits: Dict[str, List[float]] = {}
 
     def _response_id(self) -> Optional[str]:
         return self._request_id or str(uuid.uuid4())
+
+    def _get_or_create_session(self, session_id: Optional[str]) -> str:
+        if not session_id:
+            session_id = str(uuid.uuid4())
+            self._sessions[session_id] = {"created_at": time.time(), "state": {}}
+        elif session_id not in self._sessions:
+            self._sessions[session_id] = {"created_at": time.time(), "state": {}}
+        return session_id
+
+    def _check_rate_limit(self, client_id: str, max_calls: int = 100, window_seconds: int = 60) -> bool:
+        now = time.time()
+        if client_id not in self._rate_limits:
+            self._rate_limits[client_id] = []
+        self._rate_limits[client_id] = [t for t in self._rate_limits[client_id] if now - t < window_seconds]
+        if len(self._rate_limits[client_id]) >= max_calls:
+            return False
+        self._rate_limits[client_id].append(now)
+        return True
 
     async def handle_request(self, request: MCPRequest) -> MCPResponse:
         self._request_id = request.id
         method = request.method
         params = request.params or {}
+        client_id = params.get("client_id", "default") if params else "default"
+
+        if not self._check_rate_limit(client_id):
+            return MCPResponse(
+                jsonrpc="2.0",
+                id=request.id,
+                error={"code": MCPErrorCode.RATELIMITED, "message": "Rate limit exceeded"},
+            )
 
         if method == "initialize":
             return await self._handle_initialize(params)
@@ -56,6 +86,14 @@ class MCPHandler:
             return await self._handle_prompts_get(params)
         elif method == "query":
             return await self._handle_query(params)
+        elif method == "notifications/listen":
+            return await self._handle_notifications_listen(params)
+        elif method == "notifications/unsubscribe":
+            return await self._handle_notifications_unsubscribe(params)
+        elif method == "session/get":
+            return await self._handle_session_get(params)
+        elif method == "session/set":
+            return await self._handle_session_set(params)
         else:
             return MCPResponse(
                 jsonrpc="2.0",
@@ -81,6 +119,8 @@ class MCPHandler:
                     "resources": len(resources) > 0,
                     "prompts": len(prompts) > 0,
                     "batch_tools": True,
+                    "sessions": True,
+                    "notifications": True,
                 },
                 "server_info": {
                     "name": "Engineering Intelligence System",
@@ -94,7 +134,6 @@ class MCPHandler:
 
     async def _handle_tools_list(self) -> MCPResponse:
         tools = self.tool_registry.list_tools()
-
         return MCPResponse(jsonrpc="2.0", id=self._response_id(), result={"tools": tools})
 
     async def _handle_tools_call(self, params: Dict[str, Any]) -> MCPResponse:
@@ -124,7 +163,6 @@ class MCPHandler:
             )
 
         content = [{"type": "text", "text": json.dumps(result.result)}]
-
         return MCPResponse(
             jsonrpc="2.0",
             id=self._response_id(),
@@ -149,21 +187,17 @@ class MCPHandler:
         output = []
         for i, result in enumerate(results):
             if result.error:
-                output.append(
-                    {
-                        "index": i,
-                        "error": result.error,
-                        "isError": True,
-                    }
-                )
+                output.append({
+                    "index": i,
+                    "error": result.error,
+                    "isError": True,
+                })
             else:
-                output.append(
-                    {
-                        "index": i,
-                        "result": result.result,
-                        "isError": False,
-                    }
-                )
+                output.append({
+                    "index": i,
+                    "result": result.result,
+                    "isError": False,
+                })
 
         return MCPResponse(jsonrpc="2.0", id=self._response_id(), result={"results": output})
 
@@ -210,10 +244,60 @@ class MCPHandler:
 
     async def _handle_query(self, params: Dict[str, Any]) -> MCPResponse:
         query = params.get("query", "")
-
         result = await self.engine.execute(query)
-
         return MCPResponse(jsonrpc="2.0", id=self._response_id(), result=result)
+
+    async def _handle_notifications_listen(self, params: Dict[str, Any]) -> MCPResponse:
+        topics = params.get("topics", [])
+        stream = params.get("stream", False)
+        subscription_id = f"sub_{uuid.uuid4().hex[:8]}"
+        self._subscriptions[subscription_id] = {
+            "topics": topics,
+            "created_at": time.time(),
+        }
+        return MCPResponse(
+            jsonrpc="2.0",
+            id=self._response_id(),
+            result={"subscription_id": subscription_id, "topics": topics},
+        )
+
+    async def _handle_notifications_unsubscribe(self, params: Dict[str, Any]) -> MCPResponse:
+        subscription_id = params.get("subscription_id", "")
+        if subscription_id in self._subscriptions:
+            del self._subscriptions[subscription_id]
+            return MCPResponse(jsonrpc="2.0", id=self._response_id(), result={"success": True})
+        return MCPResponse(
+            jsonrpc="2.0",
+            id=self._response_id(),
+            error={"code": MCPErrorCode.RESOURCE_NOT_FOUND, "message": "Subscription not found"},
+        )
+
+    async def _handle_session_get(self, params: Dict[str, Any]) -> MCPResponse:
+        session_id = params.get("session_id")
+        key = params.get("key")
+        if session_id and session_id in self._sessions:
+            session = self._sessions[session_id]
+            if key:
+                return MCPResponse(jsonrpc="2.0", id=self._response_id(), result={"value": session["state"].get(key)})
+            return MCPResponse(jsonrpc="2.0", id=self._response_id(), result={"state": session["state"]})
+        return MCPResponse(
+            jsonrpc="2.0",
+            id=self._response_id(),
+            error={"code": MCPErrorCode.SESSION_EXPIRED, "message": "Session not found"},
+        )
+
+    async def _handle_session_set(self, params: Dict[str, Any]) -> MCPResponse:
+        session_id = self._get_or_create_session(params.get("session_id"))
+        key = params.get("key")
+        value = params.get("value")
+        if key:
+            self._sessions[session_id]["state"][key] = value
+            return MCPResponse(jsonrpc="2.0", id=self._response_id(), result={"session_id": session_id})
+        return MCPResponse(
+            jsonrpc="2.0",
+            id=self._response_id(),
+            error={"code": MCPErrorCode.INVALID_PARAMS, "message": "Missing key/value"},
+        )
 
 
 def create_mcp_response(
@@ -222,12 +306,10 @@ def create_mcp_response(
     id: Optional[str] = None,
 ) -> JSONResponse:
     response = {"jsonrpc": "2.0", "id": id}
-
     if result:
         response["result"] = result
     if error:
         response["error"] = error
-
     return JSONResponse(content=response)
 
 
