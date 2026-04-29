@@ -66,7 +66,21 @@ JSON-RPC 2.0 handler for MCP clients.
 }
 ```
 
-Supported methods: `initialize`, `tools/list`, `tools/call`, `tools/call/batch`, `resources/list`, `resources/read`, `prompts/list`, `prompts/get`, `query`
+Supported methods: `initialize`, `tools/list`, `tools/call`, `tools/call/batch`, `resources/list`, `resources/read`, `prompts/list`, `prompts/get`, `query`, `notifications/listen`, `notifications/unsubscribe`, `session/get`, `session/set`
+
+**Error Codes:**
+| Code | Name | Description |
+|------|------|-------------|
+| -32001 | TOOL_NOT_FOUND | Requested tool does not exist |
+| -32002 | INVALID_PARAMS | Invalid parameters passed to tool |
+| -32003 | EXECUTION_FAILED | Tool execution failed |
+| -32004 | RATELIMITED | Rate limit exceeded |
+| -32005 | RESOURCE_NOT_FOUND | Requested resource does not exist |
+| -32006 | PROMPT_NOT_FOUND | Requested prompt does not exist |
+| -32007 | AUTHENTICATION_FAILED | Authentication required |
+| -32008 | AUTHORIZATION_DENIED | Authorization required |
+| -32009 | SESSION_EXPIRED | Session has expired |
+| -32010 | BATCH_CANCELLED | Batch operation cancelled |
 
 ### `GET /mcp`
 Lists all available MCP tools and schema.
@@ -83,6 +97,98 @@ Extract text from images using Vision Language Model.
 {
   "image_url": "https://example.com/diagram.png",
   "prompt": "Extract all text from this image"
+}
+```
+
+### `POST /multimodal/diagram/extract`
+Extract unified DiagramIR from text or image. Supports PlantUML, Mermaid, Draw.io, OpenAPI, BPMN, and images via VLM.
+
+**Request:**
+```json
+{
+  "content": "@startuml\nparticipant A\nparticipant B\nA -> B: hello\n@enduml",
+  "image_url": null,
+  "source": "doc-123",
+  "enrich": true
+}
+```
+
+**Response:**
+```json
+{
+  "diagram_id": "diag_abc123",
+  "diagram_type": "sequence",
+  "title": "doc-123",
+  "nodes": [
+    {"id": "node_0", "type": "service", "name": "A", "label": ""},
+    {"id": "node_1", "type": "service", "name": "B", "label": ""}
+  ],
+  "edges": [
+    {"id": "edge_0", "source": "node_0", "target": "node_1", "type": "calls", "label": "hello", "protocol": ""}
+  ],
+  "extraction_confidence": 0.9
+}
+```
+
+### `POST /multimodal/diagram/search`
+Search indexed diagrams by query.
+
+**Request:**
+```json
+{
+  "query": "user authentication flow",
+  "limit": 10,
+  "diagram_types": ["sequence", "flowchart"]
+}
+```
+
+**Response:**
+```json
+{
+  "results": [
+    {
+      "diagram_id": "diag_xyz",
+      "diagram_type": "sequence",
+      "title": "Auth Flow",
+      "nodes": [...],
+      "edges": [...],
+      "extraction_confidence": 0.85
+    }
+  ],
+  "count": 1
+}
+```
+
+### `GET /multimodal/diagram/{diagram_id}`
+Get a specific diagram by ID.
+
+**Response:**
+```json
+{
+  "diagram_id": "diag_xyz",
+  "diagram_type": "sequence",
+  "title": "Auth Flow",
+  "nodes": [...],
+  "edges": [...],
+  "extraction_confidence": 0.85
+}
+```
+
+### `GET /multimodal/diagram/visualize/{diagram_id}`
+Get graph visualization data for a diagram.
+
+**Response:**
+```json
+{
+  "graph": {
+    "nodes": [
+      {"id": "n1", "label": "User", "type": "user"},
+      {"id": "n2", "label": "API", "type": "service"}
+    ],
+    "edges": [
+      {"from": "n1", "to": "n2", "label": "calls"}
+    ]
+  }
 }
 ```
 
@@ -567,6 +673,89 @@ Generate visualization URL for a Cypher query.
 {
   "url": "https://...",
   "cypher_query": "MATCH ..."
+}
+```
+
+### `POST /codegraph/index/git`
+Clone and index a git repository.
+
+**Request:**
+```json
+{
+  "url": "https://github.com/user/repo",
+  "branch": "main",
+  "source_path": "src/"
+}
+```
+
+### `POST /codegraph/index/zip`
+Upload and index a ZIP archive.
+
+**Request:**
+```json
+{
+  "content": "base64-encoded-zip",
+  "source_name": "code.zip"
+}
+```
+
+### `POST /codegraph/index/confluence`
+Index a single Confluence page.
+
+**Request:**
+```json
+{
+  "base_url": "https://company.atlassian.net",
+  "page_id": "123456",
+  "email": "user@company.com",
+  "api_token": "your-api-token"
+}
+```
+
+### `POST /codegraph/index/confluence/space`
+Sync entire Confluence space.
+
+**Request:**
+```json
+{
+  "base_url": "https://company.atlassian.net",
+  "space_key": "ENG",
+  "email": "user@company.com",
+  "api_token": "your-api-token",
+  "include_children": true,
+  "max_depth": 3,
+  "include_attachments": false
+}
+```
+
+### `POST /codegraph/index/confluence/tree`
+Fetch page with children tree.
+
+**Request:**
+```json
+{
+  "base_url": "https://company.atlassian.net",
+  "page_id": "123456",
+  "email": "user@company.com",
+  "api_token": "your-api-token",
+  "depth": 3,
+  "include_attachments": true
+}
+```
+
+### `POST /codegraph/index/confluence/page`
+Enhanced single page with optional children/attachments.
+
+**Request:**
+```json
+{
+  "base_url": "https://company.atlassian.net",
+  "page_id": "123456",
+  "email": "user@company.com",
+  "api_token": "your-api-token",
+  "include_attachments": true,
+  "include_children": true,
+  "children_depth": 2
 }
 ```
 

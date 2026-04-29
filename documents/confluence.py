@@ -171,7 +171,9 @@ class ConfluenceClient:
             for addr in addrs:
                 ip = addr[4][0]
                 network = ipaddress.ip_address(ip)
-                return network.is_private
+                if network.is_private:
+                    return True
+            return False
         except Exception:
             pass
         return False

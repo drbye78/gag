@@ -7,6 +7,7 @@ Provides /health, /query, /mcp, /multimodal/extract,
 """
 
 from contextlib import asynccontextmanager
+import base64
 import logging
 import os
 from fastapi import FastAPI, HTTPException
@@ -566,6 +567,97 @@ class CodeGraphVisualizeRequest(BaseModel):
     cypher_query: str
 
 
+class CodeGraphIndexGitRequest(BaseModel):
+    url: str
+    branch: Optional[str] = "main"
+    depth: Optional[int] = 1
+
+
+class CodeGraphIndexZipRequest(BaseModel):
+    content: str  # base64 encoded
+    filename: Optional[str] = None
+
+
+class CodeGraphIndexURLRequest(BaseModel):
+    url: str
+    url_type: Optional[str] = "zip"  # "zip", "markdown"
+
+
+class CodeGraphIndexMarkdownRequest(BaseModel):
+    content: str
+    source_name: Optional[str] = "document.md"
+
+
+class CodeGraphIndexConfluenceRequest(BaseModel):
+    base_url: str
+    page_id: str
+    email: str
+    api_token: str
+
+
+class CodeGraphIndexConfluenceSpaceRequest(BaseModel):
+    base_url: str
+    space_key: str
+    email: str
+    api_token: str
+    include_children: bool = True
+    max_depth: int = 3
+    include_attachments: bool = False
+
+
+class CodeGraphIndexConfluenceSpaceResponse(BaseModel):
+    source: str
+    space_key: str
+    success: bool
+    pages_indexed: int = 0
+    errors: List[str] = []
+
+
+class CodeGraphIndexConfluenceTreeRequest(BaseModel):
+    base_url: str
+    page_id: str
+    email: str
+    api_token: str
+    depth: int = 3
+    include_attachments: bool = True
+
+
+class CodeGraphIndexConfluenceTreeResponse(BaseModel):
+    source: str
+    root_page_id: str
+    success: bool
+    pages_indexed: int = 0
+    attachments_indexed: int = 0
+
+
+class CodeGraphIndexConfluencePageRequest(BaseModel):
+    base_url: str
+    page_id: str
+    email: str
+    api_token: str
+    include_attachments: bool = False
+    include_children: bool = False
+    children_depth: int = 1
+
+
+class CodeGraphIndexConfluencePageResponse(BaseModel):
+    source: str
+    page_id: str
+    success: bool
+    indexed: bool = False
+    attachments_count: int = 0
+    children_count: int = 0
+
+
+class CodeGraphIndexResponse(BaseModel):
+    source: str
+    success: bool
+    error: Optional[str] = None
+    url: Optional[str] = None
+    branch: Optional[str] = None
+    filename: Optional[str] = None
+
+
 class CodeGraphResponse(BaseModel):
     query: str
     results: Any
@@ -598,6 +690,33 @@ class UISketchSearchRequest(BaseModel):
 class UISketchSearchResponse(BaseModel):
     results: Any
     method: str = "ui_sketch"
+    count: int
+
+
+class DiagramExtractRequest(BaseModel):
+    content: Optional[str] = None
+    image_url: Optional[str] = None
+    source: Optional[str] = None
+    enrich: bool = False
+
+
+class DiagramExtractResponse(BaseModel):
+    diagram_id: str
+    diagram_type: str
+    title: str
+    nodes: List[Dict[str, Any]]
+    edges: List[Dict[str, Any]]
+    extraction_confidence: float
+
+
+class DiagramSearchRequest(BaseModel):
+    query: str
+    limit: Optional[int] = 10
+    diagram_types: Optional[List[str]] = None
+
+
+class DiagramSearchResponse(BaseModel):
+    results: List[Dict[str, Any]]
     count: int
 
 
@@ -780,11 +899,240 @@ async def codegraph_dead_code(request: CodeGraphDeadCodeRequest = CodeGraphDeadC
 @app.post("/codegraph/visualize", dependencies=[Depends(require_authenticated)])
 async def codegraph_visualize(request: CodeGraphVisualizeRequest):
     from retrieval.code_graph import CodeGraphRetriever
-
+    
+    query = request.cypher_query.upper()
+    forbidden = ["DETACH DELETE", "DELETE (", "DROP ", "MERGE (n)", "REMOVE ", "SET n=", "FOREACH "]
+    if any(block in query for block in forbidden):
+        return {"error": "Query contains forbidden operations", "url": None}
+    
     retriever = CodeGraphRetriever()
     result = await retriever.visualize(request.cypher_query)
 
     return {"url": result.get("url"), "cypher_query": request.cypher_query}
+
+
+# ---------------------------------------------------------------------------
+# CodeGraph Ingestion Endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.post("/codegraph/index/git", response_model=CodeGraphIndexResponse, dependencies=[Depends(require_authenticated)])
+async def codegraph_index_git(request: CodeGraphIndexGitRequest):
+    from retrieval.code_graph import index_git_repository
+    
+    result = await index_git_repository(
+        url=request.url,
+        branch=request.branch or "main",
+        depth=request.depth or 1,
+    )
+    return CodeGraphIndexResponse(
+        source="git",
+        url=request.url,
+        branch=request.branch,
+        success=result.get("success", False),
+        error=result.get("error"),
+    )
+
+
+@app.post("/codegraph/index/zip", response_model=CodeGraphIndexResponse, dependencies=[Depends(require_authenticated)])
+async def codegraph_index_zip(request: CodeGraphIndexZipRequest):
+    from retrieval.code_graph import index_zip_archive
+    
+    content = base64.b64decode(request.content)
+    result = await index_zip_archive(content, request.filename or "archive.zip")
+    return CodeGraphIndexResponse(
+        source="zip",
+        filename=request.filename,
+        success=result.get("success", False),
+        error=result.get("error"),
+    )
+
+
+@app.post("/codegraph/index/url", response_model=CodeGraphIndexResponse, dependencies=[Depends(require_authenticated)])
+async def codegraph_index_url(request: CodeGraphIndexURLRequest):
+    from retrieval.code_graph import index_from_url
+    
+    result = await index_from_url(
+        url=request.url,
+        url_type=request.url_type or "zip",
+    )
+    return CodeGraphIndexResponse(
+        source="url",
+        url=request.url,
+        success=result.get("success", False),
+        error=result.get("error"),
+    )
+
+
+@app.post("/codegraph/index/markdown", response_model=CodeGraphIndexResponse, dependencies=[Depends(require_authenticated)])
+async def codegraph_index_markdown(request: CodeGraphIndexMarkdownRequest):
+    from retrieval.code_graph import index_markdown_content
+    
+    result = await index_markdown_content(
+        content=request.content,
+        source_name=request.source_name or "document.md",
+    )
+    return CodeGraphIndexResponse(
+        source="markdown",
+        source_name=request.source_name,
+        success=result.get("success", False),
+        error=result.get("error"),
+    )
+
+
+@app.post("/codegraph/index/confluence", response_model=CodeGraphIndexResponse, dependencies=[Depends(require_authenticated)])
+async def codegraph_index_confluence(request: CodeGraphIndexConfluenceRequest):
+    from retrieval.code_graph import index_confluence_page
+    
+    result = await index_confluence_page(
+        base_url=request.base_url,
+        page_id=request.page_id,
+        api_token=request.api_token,
+        email=request.email,
+    )
+    return CodeGraphIndexResponse(
+        source="confluence",
+        page_id=request.page_id,
+        success=result.get("success", False),
+        error=result.get("error"),
+    )
+
+
+@app.post("/codegraph/index/confluence/space", response_model=CodeGraphIndexConfluenceSpaceResponse, dependencies=[Depends(require_authenticated)])
+async def codegraph_index_confluence_space(request: CodeGraphIndexConfluenceSpaceRequest):
+    from documents.confluence import ConfluenceClient
+    from retrieval.code_graph import index_markdown_content, _html_to_markdown
+    
+    client = ConfluenceClient(url=request.base_url, email=request.email, api_token=request.api_token)
+    
+    pages = await client.sync_space(
+        space_key=request.space_key,
+        include_children=request.include_children,
+        max_depth=request.max_depth,
+    )
+    
+    indexed = 0
+    errors = []
+    for page in pages:
+        try:
+            content = _html_to_markdown(page.content)
+            result = await index_markdown_content(content, f"confluence_{page.page_id}.md")
+            if result.get("success"):
+                indexed += 1
+        except Exception as e:
+            errors.append(f"{page.page_id}: {str(e)}")
+    
+    attachments_indexed = 0
+    if request.include_attachments:
+        for page in pages:
+            try:
+                attachments = await client.get_page_attachments(page.page_id)
+                for att in attachments:
+                    binary = await client.download_attachment(page.page_id, att.attachment_id)
+                    if binary:
+                        attachments_indexed += 1
+            except Exception:
+                pass
+    
+    return CodeGraphIndexConfluenceSpaceResponse(
+        source="confluence",
+        space_key=request.space_key,
+        success=indexed > 0,
+        pages_indexed=indexed,
+        errors=errors,
+    )
+
+
+@app.post("/codegraph/index/confluence/tree", response_model=CodeGraphIndexConfluenceTreeResponse, dependencies=[Depends(require_authenticated)])
+async def codegraph_index_confluence_tree(request: CodeGraphIndexConfluenceTreeRequest):
+    from documents.confluence import ConfluenceClient
+    from retrieval.code_graph import index_markdown_content, _html_to_markdown
+    
+    client = ConfluenceClient(url=request.base_url, email=request.email, api_token=request.api_token)
+    
+    page = await client.get_page_tree(
+        page_id=request.page_id,
+        include_attachments=request.include_attachments,
+    )
+    
+    pages_indexed = 0
+    
+    async def _index_page_recursive(p):
+        nonlocal pages_indexed
+        try:
+            content = _html_to_markdown(p.content)
+            result = await index_markdown_content(content, f"confluence_{p.page_id}.md")
+            if result.get("success"):
+                pages_indexed += 1
+        except Exception:
+            pass
+        for child in p.children:
+            await _index_page_recursive(child)
+    
+    await _index_page_recursive(page)
+    
+    attachments_indexed = 0
+    if request.include_attachments:
+        attachments = await client.get_page_attachments(request.page_id)
+        for att in attachments:
+            binary = await client.download_attachment(request.page_id, att.attachment_id)
+            if binary:
+                attachments_indexed += 1
+    
+    return CodeGraphIndexConfluenceTreeResponse(
+        source="confluence",
+        root_page_id=request.page_id,
+        success=pages_indexed > 0,
+        pages_indexed=pages_indexed,
+        attachments_indexed=attachments_indexed,
+    )
+
+
+@app.post("/codegraph/index/confluence/page", response_model=CodeGraphIndexConfluencePageResponse, dependencies=[Depends(require_authenticated)])
+async def codegraph_index_confluence_page(request: CodeGraphIndexConfluencePageRequest):
+    from documents.confluence import ConfluenceClient
+    from retrieval.code_graph import index_markdown_content, _html_to_markdown
+    
+    client = ConfluenceClient(url=request.base_url, email=request.email, api_token=request.api_token)
+    
+    page = await client.get_page(request.page_id)
+    if not page:
+        return CodeGraphIndexConfluencePageResponse(
+            source="confluence",
+            page_id=request.page_id,
+            success=False,
+            indexed=False,
+        )
+    
+    body = await client.get_page_body(request.page_id)
+    content = _html_to_markdown(body or "")
+    result = await index_markdown_content(content, f"confluence_{request.page_id}.md")
+    indexed = result.get("success", False)
+    
+    children_count = 0
+    if request.include_children:
+        children = await client.get_page_children(request.page_id, depth=request.children_depth)
+        children_count = len(children)
+        for child in children:
+            child_body = await client.get_page_body(child.page_id)
+            child_content = _html_to_markdown(child_body or "")
+            await index_markdown_content(child_content, f"confluence_{child.page_id}.md")
+    
+    attachments_count = 0
+    if request.include_attachments:
+        attachments = await client.get_page_attachments(request.page_id)
+        attachments_count = len(attachments)
+        for att in attachments:
+            await client.download_attachment(request.page_id, att.attachment_id)
+    
+    return CodeGraphIndexConfluencePageResponse(
+        source="confluence",
+        page_id=request.page_id,
+        success=True,
+        indexed=indexed,
+        attachments_count=attachments_count,
+        children_count=children_count,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -823,6 +1171,78 @@ async def search_ui_sketch(request: UISketchSearchRequest):
         method="ui_sketch",
         count=len(results),
     )
+
+
+@app.post("/multimodal/diagram/extract", dependencies=[Depends(require_authenticated)])
+async def extract_diagram(request: DiagramExtractRequest):
+    from multimodal.diagram_ir import DiagramFormat, get_diagram_ir_builder
+
+    builder = get_diagram_ir_builder()
+    if request.image_url:
+        ir = await builder.from_image(request.image_url, source=request.source)
+    elif request.content:
+        ir = await builder.from_text(request.content, source=request.source)
+    else:
+        from multimodal.diagram_ir import DiagramIR
+
+        ir = DiagramIR(id="empty", diagram_type="unknown")
+
+    if request.enrich and ir.nodes:
+        ir = await builder.enrich(ir)
+
+    return DiagramExtractResponse(
+        diagram_id=ir.id,
+        diagram_type=ir.diagram_type,
+        title=ir.title,
+        nodes=[n.to_dict() for n in ir.nodes],
+        edges=[e.to_dict() for e in ir.edges],
+        extraction_confidence=ir.extraction_confidence,
+    )
+
+
+@app.post("/multimodal/diagram/search", dependencies=[Depends(require_authenticated)])
+async def search_diagram(request: DiagramSearchRequest):
+    from multimodal.diagram_registry import DiagramRegistry
+
+    registry = DiagramRegistry(use_qdrant=False, use_falkor=False)
+    results = await registry.search(
+        request.query, limit=request.limit or 10, diagram_types=request.diagram_types
+    )
+
+    return DiagramSearchResponse(
+        results=[r.ir.to_dict() for r in results],
+        count=len(results),
+    )
+
+
+@app.get("/multimodal/diagram/{diagram_id}", dependencies=[Depends(require_authenticated)])
+async def get_diagram(diagram_id: str):
+    from multimodal.diagram_registry import DiagramRegistry
+
+    registry = DiagramRegistry(use_qdrant=False, use_falkor=False)
+    ir = await registry.get_by_id(diagram_id)
+
+    if not ir:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail="Diagram not found")
+
+    return ir.to_dict()
+
+
+@app.get("/multimodal/diagram/visualize/{diagram_id}", dependencies=[Depends(require_authenticated)])
+async def visualize_diagram(diagram_id: str):
+    from multimodal.diagram_registry import DiagramRegistry
+
+    registry = DiagramRegistry(use_qdrant=False, use_falkor=False)
+    graph = await registry.get_graph(diagram_id)
+
+    if not graph:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail="Diagram not found")
+
+    return {"graph": graph}
 
 
 if __name__ == "__main__":
