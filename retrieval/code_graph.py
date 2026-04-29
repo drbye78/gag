@@ -339,7 +339,71 @@ async def index_confluence_page(
                 content_html = data.get("body", {}).get("storage", {}).get("value", "")
                 
                 content = _html_to_markdown(content_html)
-                return await index_markdown_content(content, f"confluence_{page_id}.md")
+                
+                entities_indexed = 0
+                relationships_indexed = 0
+                
+                plantuml_blocks = _extract_plantuml_blocks(content)
+                for block in plantuml_blocks:
+                    try:
+                        from documents.diagram_formats import PlantUMLParser
+                        result = PlantUMLParser().parse(block)
+                        if result.entities:
+                            for entity in result.entities:
+                                entity_result = await index_markdown_content(
+                                    f"ENTITY: {entity.get('name', '')}\n"
+                                    f"TYPE: {entity.get('type', 'node')}\n"
+                                    f"SOURCE: confluence_{page_id}_plantuml\n"
+                                    f"DIAGRAM_TYPE: plantuml_{result.diagram_type}",
+                                    f"confluence_{page_id}_entity_{entities_indexed}.md"
+                                )
+                                if entity_result.get("success"):
+                                    entities_indexed += 1
+                        if result.relationships:
+                            relationships_indexed += len(result.relationships)
+                    except Exception:
+                        pass
+                
+                drawio_blocks = _extract_drawio_blocks(content_html)
+                for block in drawio_blocks:
+                    try:
+                        from documents.diagram_formats import DrawIOParser
+                        result = DrawIOParser().parse(block)
+                        if result.nodes:
+                            for node in result.nodes:
+                                node_result = await index_markdown_content(
+                                    f"ENTITY: {node.get('id', node.get('label', ''))}\n"
+                                    f"TYPE: node\n"
+                                    f"LABEL: {node.get('label', '')}\n"
+                                    f"SOURCE: confluence_{page_id}_drawio",
+                                    f"confluence_{page_id}_drawio_{entities_indexed}.md"
+                                )
+                                if node_result.get("success"):
+                                    entities_indexed += 1
+                        if result.edges:
+                            for edge in result.edges:
+                                rel_result = await index_markdown_content(
+                                    f"RELATIONSHIP: {edge.get('source', '')} -> {edge.get('target', '')}\n"
+                                    f"TYPE: {edge.get('style', 'arrow')}\n"
+                                    f"SOURCE: confluence_{page_id}_drawio",
+                                    f"confluence_{page_id}_rel_{relationships_indexed}.md"
+                                )
+                                if rel_result.get("success"):
+                                    relationships_indexed += 1
+                    except Exception:
+                        pass
+                
+                md_result = await index_markdown_content(content, f"confluence_{page_id}.md")
+                
+                return {
+                    "success": md_result.get("success", False),
+                    "page_id": page_id,
+                    "content_indexed": md_result.get("success", False),
+                    "diagram_entities_indexed": entities_indexed,
+                    "diagram_relationships_indexed": relationships_indexed,
+                    "plantuml_blocks_found": len(plantuml_blocks),
+                    "drawio_blocks_found": len(drawio_blocks),
+                }
         except Exception as e:
             return {"success": False, "error": str(e)}
 
@@ -364,6 +428,46 @@ def _html_to_markdown(html: str) -> str:
     md = re.sub(r"<[^>]+>", "", md)
     
     return md.strip()
+
+
+def _extract_plantuml_blocks(md: str) -> List[str]:
+    """Extract PlantUML code blocks from markdown content."""
+    import re
+    blocks = []
+    
+    pattern = r"```plantuml\n(.*?)```"
+    matches = re.findall(pattern, md, re.DOTALL)
+    blocks.extend(matches)
+    
+    pattern = r"@startuml(.*?)@enduml"
+    matches = re.findall(pattern, md, re.DOTALL)
+    blocks.extend(matches)
+    
+    return blocks
+
+
+def _extract_drawio_blocks(html: str) -> List[str]:
+    """Extract draw.io XML from Confluence HTML."""
+    import re
+    blocks = []
+    
+    pattern = r'<ac:structured-macro ac:name="diagram"[^>]*>.*?<ac:parameter ac:name="xml">(.*?)</ac:parameter>'
+    matches = re.findall(pattern, html, re.DOTALL)
+    for xml in matches:
+        if "mxfile" in xml or "diagram" in xml:
+            blocks.append(xml)
+    
+    pattern = r'<div[^>]*data-model[^>]*>(.*?)</div>'
+    matches = re.findall(pattern, html, re.DOTALL)
+    for xml in matches:
+        if "<diagram" in xml or "<mxfile" in xml:
+            blocks.append(xml)
+    
+    pattern = r'<mxfile[^>]*>(.*?)</mxfile>'
+    matches = re.findall(pattern, html, re.DOTALL)
+    blocks.extend(matches)
+    
+    return blocks
 
     async def switch_context(context_path: str) -> Dict[str, Any]:
         result = _run_cgc(["switch", context_path])

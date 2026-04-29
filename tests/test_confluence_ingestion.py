@@ -128,3 +128,56 @@ class TestConfluenceClientIntegration:
         assert page.page_id == "123"
         assert page.title == "Test Page"
         assert page.space_key == "TEST"
+
+
+class TestDiagramExtraction:
+    @pytest.mark.asyncio
+    async def test_extract_plantuml_blocks_fence(self):
+        from retrieval.code_graph import _extract_plantuml_blocks
+        
+        md = """
+Some text here
+```plantuml
+Alice -> Bob: Hello
+Bob --> Alice: Hi
+```
+More text
+"""
+        blocks = _extract_plantuml_blocks(md)
+        assert len(blocks) == 1
+        assert "Alice -> Bob" in blocks[0]
+
+    @pytest.mark.asyncio
+    async def test_extract_plantuml_blocks_uml(self):
+        from retrieval.code_graph import _extract_plantuml_blocks
+        
+        md = """
+@startuml
+Alice -> Bob
+Bob --> Alice
+@enduml
+"""
+        blocks = _extract_plantuml_blocks(md)
+        assert len(blocks) == 1
+        assert "Alice -> Bob" in blocks[0]
+
+    @pytest.mark.asyncio
+    async def test_extract_drawio_blocks(self):
+        from retrieval.code_graph import _extract_drawio_blocks
+        
+        html = '''
+<ac:structured-macro ac:name="diagram">
+<ac:parameter ac:name="xml"><diagram name="Test">mxfile</diagram></ac:parameter>
+</ac:structured-macro>
+'''
+        blocks = _extract_drawio_blocks(html)
+
+    @pytest.mark.asyncio
+    async def test_no_diagrams(self):
+        from retrieval.code_graph import _extract_plantuml_blocks, _extract_drawio_blocks
+        
+        md = "Just plain text content"
+        assert _extract_plantuml_blocks(md) == []
+        
+        html = "<p>No diagrams here</p>"
+        assert _extract_drawio_blocks(html) == []
