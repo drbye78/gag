@@ -6,6 +6,7 @@ Supports:
 - Azure Key Vault
 """
 
+import json
 import logging
 import os
 from abc import ABC, abstractmethod
@@ -97,7 +98,11 @@ class AWSSecretsManagerProvider(SecretsProvider):
                 profile_name=self.profile
             )
             response = client.get_secret_value(SecretId=key)
-            return response.get("SecretString", {}).get(key)
+            secret_string = response.get("SecretString")
+            if secret_string:
+                secret_dict = json.loads(secret_string)
+                return secret_dict.get(key)
+            return None
         except Exception as e:
             logger.error(f"Failed to get AWS secret {key}: {e}")
             return None
@@ -166,7 +171,7 @@ class AzureKeyVaultProvider(SecretsProvider):
             client = SecretClient(vault_url=self.vault_url, credential=credential)
             
             secrets = {}
-            async for secret in client.list_properties_of_secrets():
+            for secret in client.list_properties_of_secrets():
                 if prefix and not secret.name.startswith(prefix):
                     continue
                 value = await self.get_secret(secret.name)

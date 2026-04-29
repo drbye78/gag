@@ -17,15 +17,18 @@ def get_metrics() -> _MetricsCollector:
 
 
 def observe_request(method: str, path: str, status: int, duration: float) -> None:
-    """Deprecated: Use observability tracing instead."""
-    pass
+    """Record request metrics via the metrics collector."""
+    collector = get_metrics()
+    collector.record_request(method, path, status, duration)
 
 
 def observe_retrieval(source: str, duration: float, count: int) -> None:
-    """Deprecated: Use observability tracing instead."""
-    pass
+    """Record retrieval metrics via the metrics collector."""
+    collector = get_metrics()
+    collector.record_retrieval(source, duration, count)
 
 
 def observe_llm(duration: float, model: str, tokens: int) -> None:
-    """Deprecated: Use observability tracing instead."""
-    pass
+    """Record LLM metrics via the metrics collector."""
+    collector = get_metrics()
+    collector.record_llm(duration, model, tokens)

@@ -21,10 +21,18 @@ logger = logging.getLogger(__name__)
 from llama_index.core import SimpleDirectoryReader
 from llama_index.core.readers import StringIterableReader
 
-# Docling v2.x - now mandatory
-from docling.document_converter import DocumentConverter
-from docling.datamodel.base_models import InputFormat
-from docling.datamodel.document import ConversionResult
+# Docling v2.x - lazy import (heavy, includes PyTorch)
+try:
+    from docling.document_converter import DocumentConverter
+    from docling.datamodel.base_models import InputFormat
+    from docling.datamodel.document import ConversionResult
+    DOCLING_AVAILABLE = True
+except ImportError:
+    DOCLING_AVAILABLE = False
+    DocumentConverter = None
+    InputFormat = None
+    ConversionResult = None
+    logger.warning("Docling not available - PDF parsing will use fallbacks")
 
 
 @dataclass

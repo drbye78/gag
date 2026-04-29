@@ -10,18 +10,29 @@ Query → Knowledge Resolver → Platform Adapter → Platform-specific Output
             Knowledge Graph (platforms, services, patterns)
 ```
 
+### Data Flow
+
+```
+1. User Query: "deploy lambda with dynamodb"
+2. Knowledge Resolver extracts: IRFeature(has_serverless=True, has_database=True)
+3. Pattern Matching: serverless, data patterns
+4. Constraint Check: all passed
+5. Platform Adapter Selection: AWSAdapter
+6. Output Generation: Lambda config, IAM role, CloudFormation
+```
+
 ## Platform Adapters
 
 ### Adapters (`core/adapters/`)
 
-| Adapter | Platform ID | Services |
-|---------|------------|----------|
-| `SAPBTPAdapter` | `sap` | XSUAA, HANA, Kyma, CAP |
-| `VMwareTanzuAdapter` | `tanzu` | Kubernetes, Spring, TAS |
-| `PowerPlatformAdapter` | `powerplatform` | Power Apps, Dataverse |
-| `AWSAdapter` | `aws` | Lambda, S3, DynamoDB, EKS |
-| `AzureAdapter` | `azure` | Functions, Cosmos DB, AKS |
-| `GCPAdapter` | `gcp` | Cloud Functions, Firestore, GKE |
+| Adapter | Platform ID | Services | File |
+|---------|------------|---------|------|
+| `SAPBTPAdapter` | `sap` | XSUAA, HANA, Kyma, CAP | `sap.py` |
+| `VMwareTanzuAdapter` | `tanzu` | Kubernetes, Spring, TAS | `tanzu.py` |
+| `PowerPlatformAdapter` | `powerplatform` | Power Apps, Dataverse | `powerplatform.py` |
+| `AWSAdapter` | `aws` | Lambda, S3, DynamoDB, EKS | `clouds.py` |
+| `AzureAdapter` | `azure` | Functions, Cosmos DB, AKS | `clouds.py` |
+| `GCPAdapter` | `gcp` | Cloud Functions, Firestore, GKE | `clouds.py` |
 
 ### Adapter Interface (`core/adapters/base.py`)
 
@@ -52,13 +63,68 @@ class PlatformAdapter(ABC):
         ...
 ```
 
+### Creating a Custom Adapter
+
+```python
+from core.adapters.base import PlatformAdapter, AdapterInput, AdapterOutput
+
+class MyCustomAdapter(PlatformAdapter):
+    @property
+    def platform_id(self) -> str:
+        return "myplatform"
+    
+    @property
+    def supported_services(self) -> List[str]:
+        return ["service1", "service2"]
+    
+    @property
+    def patterns(self) -> List[Pattern]:
+        return [
+            Pattern(id="my-pattern", domain=PatternDomain.ARCHITECTURE)
+        ]
+    
+    @property
+    def constraints(self) -> List[Constraint]:
+        return [
+            Constraint(id="max-timeout", type=ConstraintType.HARD, 
+                      condition={"timeout": {"lt": 300}})
+        ]
+    
+    def transform_ir_to_platform(self, input: AdapterInput) -> AdapterOutput:
+        # Transform IR features to platform artifacts
+        return AdapterOutput(
+            configs=self.generate_config(input.ir_features),
+            code=self.generate_code(input.ir_features),
+            metadata={"platform": self.platform_id}
+        )
+    
+    def generate_config(self, features: IRFeature) -> Dict[str, str]:
+        # Generate platform config (YAML, JSON, etc.)
+        return {"config.yaml": "..."}
+    
+    def generate_code(self, features: IRFeature) -> Dict[str, str]:
+        # Generate platform code
+        return {"main.py": "..."}
+```
+
 ### Adapter Registry
 
 ```python
+from core.adapters import get_adapter_registry
+
+# Get specific adapter
 registry = get_adapter_registry()
-adapter = registry.get("aws")  # Get AWS adapter
-adapter = registry.auto_detect(features)  # Auto-detect from IR features
-platforms = registry.list_platforms()  # List all registered platforms
+adapter = registry.get("aws")
+
+# Auto-detect from features
+adapter = registry.auto_detect(features)
+
+# List all platforms
+platforms = registry.list_platforms()
+
+# Check platform capabilities
+if registry.has_service("aws", "lambda"):
+    ...
 ```
 
 ### Adapter Example: AWS Serverless
@@ -70,18 +136,22 @@ adapter = registry.get("aws")
 features = IRFeature(
     has_serverless=True,
     has_event_driven=True,
-    has_async=True
+    has_async=True,
+    has_database=True,
+    has_storage=True
 )
 
 # Transform to platform-specific output
 output = adapter.transform_ir_to_platform(AdapterInput(
     ir_features=features,
-    pattern_matches=[...],
-    constraint_violations=[...],
-    platform_context=...
+    pattern_matches=[serverless_pattern, event_driven_pattern],
+    constraint_violations=[],
+    platform_context={"region": "us-east-1"}
 ))
 
 # Output includes Lambda config, IAM role, CloudFormation template
+print(output.configs)  # { "lambda.yaml": "...", "iam.yaml": "..." }
+print(output.code)       # { "handler.py": "..." }
 ```
 
 ## Knowledge Layer
@@ -307,3 +377,169 @@ result = await resolver.resolve(
 | `/knowledge/graph` | GET | Knowledge graph stats |
 | `/knowledge/patterns` | GET | List all patterns |
 | `/knowledge/constraints/{platform}` | GET | Platform constraints |
+
+---
+
+## Developer Guide
+
+### Creating a Custom Adapter
+
+This guide shows how to create a custom platform adapter for a new platform (e.g., Oracle Cloud, DigitalOcean).
+
+#### Step 1: Define the Adapter Class
+
+```python
+from core.adapters.base import PlatformAdapter, AdapterOutput
+from pydantic import BaseModel
+
+class OracleCloudAdapter(PlatformAdapter):
+    """Oracle Cloud Infrastructure adapter."""
+
+    platform: str = "oracle"
+    supported_services: list[str] = [
+        "functions",
+        "object_storage",
+        "autonomous_db",
+        "apiGateway"
+    ]
+
+    async def transform_ir_to_platform(
+        self,
+        input: AdapterInput
+    ) -> AdapterOutput:
+        # Transform IR features to Oracle-specific config
+        configs = {}
+        code = {}
+
+        if input.ir_features.has_serverless:
+            configs["function.yaml"] = self._generate_fn_config(input)
+            code["handler.py"] = self._generate_handler(input)
+
+        if input.ir_features.has_storage:
+            configs["bucket.yaml"] = self._generate_bucket_config(input)
+
+        return AdapterOutput(configs=configs, code=code)
+
+    def _generate_fn_config(self, input: AdapterInput) -> str:
+        return """Generate Oracle Functions config."""
+        return """
+        functions:
+          fn_compartment_id: ${COMPARTMENT_ID}
+          application:
+            displayName: ${APP_NAME}
+            sourceDirectory: src
+        """
+
+    def _generate_handler(self, input: AdapterInput) -> str:
+        return """Generate handler code."""
+        return '''def handler(ctx, data):
+    return {"status": "ok"}
+'''
+```
+
+#### Step 2: Register the Adapter
+
+```python
+# core/adapters/registry.py
+from core.adapters import adapter_registry
+
+@adapter_registry.register("oracle")
+class OracleCloudAdapter(PlatformAdapter):
+    ...
+
+# Now available via registry
+adapter = adapter_registry.get("oracle")
+```
+
+#### Step 3: Add to Knowledge Graph
+
+```python
+# core/knowledge/seed.py
+ORACLE_SERVICES = {
+    "oracle": {
+        "functions": {
+            "name": "Oracle Functions",
+            "type": "serverless",
+            "runtime": ["python", "node", "java", "go"],
+            "memory": "1024MB",
+            "timeout": "300s"
+        },
+        "object_storage": {
+            "name": "Object Storage",
+            "type": "storage",
+            "tier": "Standard"
+        }
+    }
+}
+```
+
+#### Step 4: Add Platform Constraints
+
+```python
+# core/constraints/oracle.py
+from core.constraints.base import PlatformConstraints
+
+class OracleConstraints(PlatformConstraints):
+    platform = "oracle"
+
+    hard_constraints = [
+        Constraint(
+            id="oracle_region",
+            message="Oracle functions require specific region",
+            check=lambda ctx: ctx.get("region") in OCI_REGIONS
+        ),
+        Constraint(
+            id="oracle_memory",
+            message="Max memory is 1024MB",
+            check=lambda ctx: ctx.get("memory", 0) <= 1024
+        )
+    ]
+
+    soft_constraints = [
+        Constraint(
+            id="oracle_cold_start",
+            message="Consider warm containers for low latency",
+            severity="warning"
+        )
+    ]
+```
+
+#### Step 5: Test the Adapter
+
+```python
+# tests/test_oracle_adapter.py
+import pytest
+from core.adapters import adapter_registry
+
+@pytest.mark.asyncio
+async def test_oracle_serverless():
+    adapter = adapter_registry.get("oracle")
+
+    result = await adapter.transform_ir_to_platform(AdapterInput(
+        ir_features=IRFeature(has_serverless=True),
+        pattern_matches=[serverless_pattern],
+        constraint_violations=[],
+        platform_context={"region": "us-phoenix-1"}
+    ))
+
+    assert "function.yaml" in result.configs
+    assert "handler.py" in result.code
+```
+
+### Adapter Interface Reference
+
+| Method | Description | Required |
+|--------|-------------|----------|
+| `transform_ir_to_platform()` | Transform IR to platform output | Yes |
+| `validate_constraints()` | Check platform constraints | Yes |
+| `list_services()` | List available services | No |
+| `get_service_config()` | Get service configuration | No |
+
+### Best Practices
+
+1. **Inherit from base class** - Use `PlatformAdapter` base class
+2. **Implement all required methods** - `transform_ir_to_platform()`, `validate_constraints()`
+3. **Add logging** - Use `structlog` for debugging
+4. **Handle errors gracefully** - Return empty configs, not exceptions
+5. **Add tests** - Cover all service transformations
+6. **Document limitations** - Note unsupported features

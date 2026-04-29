@@ -36,7 +36,7 @@ class TestSearchByElementType:
             return []
 
         retriever._execute_cypher = mock_execute
-        results = _run(retriever.search_by_element_type("nonexistent"))
+        results = _run(retriever.search_by_element_type("form"))
         assert results == []
 
 

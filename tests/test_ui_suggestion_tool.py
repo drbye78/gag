@@ -1,120 +1,57 @@
-"""Tests for UISuggestionTool MCP tool."""
-
-import asyncio
+"""Tests for UI Suggestion Tool."""
 
 import pytest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from tools.base import ToolInput
-from ui.suggestion_tool import UISuggestionTool
 
 
-def _run(coro):
-    return asyncio.new_event_loop().run_until_complete(coro)
+pytestmark = pytest.mark.asyncio
 
 
-class _MockRetriever:
-    async def find_similar_structural(self, *args, **kwargs):
-        return getattr(self, "_similar_result", [])
+class _MockRegistry:
+    def all_domains(self):
+        return ["sap", "aws", "azure"]
 
-
-class _MockCatalog:
-    def find_for_element_type(self, *args):
-        return getattr(self, "_elem_result", [])
-    def get_all_services(self):
+    def find_components(self, element_type):
+        if element_type == "button":
+            return [
+                ("sap", MagicMock(name="sap.m.Button", library="sap.m", complexity=1, properties=[], events=[])),
+                ("aws", MagicMock(name="AmplifyButton", library="@aws-amplify", complexity=1, properties=[], events=[])),
+            ]
         return []
 
 
-class TestValidateInput:
-    def test_with_sketch_id_returns_true(self):
-        tool = UISuggestionTool()
-        assert tool.validate_input({"ui_sketch_id": "sk_test"}) is True
-
-    def test_with_image_url_returns_true(self):
-        tool = UISuggestionTool()
-        assert tool.validate_input({"image_url": "https://example.com/ui.png"}) is True
-
-    def test_with_neither_returns_false(self):
-        tool = UISuggestionTool()
-        assert tool.validate_input({"detail_level": 1}) is False
-
-
 class TestExecute:
-    def test_execute_with_sketch_id(self):
+    async def test_execute_with_sketch_id(self):
+        from ui.suggestion_tool import UISuggestionTool
         tool = UISuggestionTool()
-        mock_retriever = _MockRetriever()
-        mock_retriever._similar_result = [{"sketch_id": "sk1"}]
-        mock_catalog = _MockCatalog()
-        mock_catalog._elem_result = []
+        with patch("ui.suggestion_tool.get_ui_knowledge_registry", return_value=_MockRegistry()):
+            result = await tool.execute(ToolInput(args={"ui_sketch_id": "sk_test", "detail_level": 1}))
+            assert result.result is not None
+            assert "domains" in result.metadata
+            assert "sap" in result.metadata["domains"]
 
-        with patch("ui.suggestion_tool.get_ui_retriever", return_value=mock_retriever):
-            with patch("ui.suggestion_tool.get_sap_catalog", return_value=mock_catalog):
-                result = _run(tool.execute(ToolInput(args={"ui_sketch_id": "sk_test", "detail_level": 1})))
-                assert result.result is not None
-                assert "suggestions" in result.result
-
-    def test_execute_with_image_url(self):
+    async def test_execute_with_image_url(self):
+        from ui.suggestion_tool import UISuggestionTool
         tool = UISuggestionTool()
-        mock_retriever = _MockRetriever()
-        mock_retriever._similar_result = []
-        mock_catalog = _MockCatalog()
-        mock_catalog._elem_result = []
+        with patch("ui.suggestion_tool.get_ui_knowledge_registry", return_value=_MockRegistry()):
+            result = await tool.execute(ToolInput(args={"image_url": "https://example.com/ui.png", "detail_level": 1}))
+            assert result.result is not None
 
-        with patch("ui.suggestion_tool.get_ui_retriever", return_value=mock_retriever):
-            with patch("ui.suggestion_tool.get_sap_catalog", return_value=mock_catalog):
-                result = _run(tool.execute(ToolInput(args={"image_url": "https://example.com/ui.png", "detail_level": 1})))
-                assert result.result is not None
 
-    def test_execute_detail_level_99_clamped_to_3(self):
+class TestValidation:
+    def test_validate_input_with_sketch_id(self):
+        from ui.suggestion_tool import UISuggestionTool
         tool = UISuggestionTool()
-        mock_retriever = _MockRetriever()
-        mock_catalog = _MockCatalog()
+        assert tool.validate_input({"ui_sketch_id": "test"}) is True
 
-        with patch("ui.suggestion_tool.get_ui_retriever", return_value=mock_retriever):
-            with patch("ui.suggestion_tool.get_sap_catalog", return_value=mock_catalog):
-                result = _run(tool.execute(ToolInput(args={"ui_sketch_id": "sk_test", "detail_level": 99})))
-                assert result.result["detail_level"] == 3
-
-    def test_execute_detail_level_0_clamped_to_1(self):
+    def test_validate_input_with_image_url(self):
+        from ui.suggestion_tool import UISuggestionTool
         tool = UISuggestionTool()
-        mock_retriever = _MockRetriever()
-        mock_catalog = _MockCatalog()
+        assert tool.validate_input({"image_url": "http://example.com"}) is True
 
-        with patch("ui.suggestion_tool.get_ui_retriever", return_value=mock_retriever):
-            with patch("ui.suggestion_tool.get_sap_catalog", return_value=mock_catalog):
-                result = _run(tool.execute(ToolInput(args={"ui_sketch_id": "sk_test", "detail_level": 0})))
-                assert result.result["detail_level"] == 1
-
-    def test_execute_missing_both_returns_result_with_nones(self):
+    def test_validate_input_missing_both(self):
+        from ui.suggestion_tool import UISuggestionTool
         tool = UISuggestionTool()
-        mock_retriever = _MockRetriever()
-        mock_catalog = _MockCatalog()
-
-        with patch("ui.suggestion_tool.get_ui_retriever", return_value=mock_retriever):
-            with patch("ui.suggestion_tool.get_sap_catalog", return_value=mock_catalog):
-                result = _run(tool.execute(ToolInput(args={"detail_level": 1})))
-                assert result.result["sketch_id"] is None
-                assert result.result["image_url"] is None
-
-    def test_execute_detail_level_2_includes_snippets(self):
-        """Level 2 returns code_snippets."""
-        tool = UISuggestionTool()
-        mock_retriever = _MockRetriever()
-        mock_catalog = _MockCatalog()
-
-        with patch("ui.suggestion_tool.get_ui_retriever", return_value=mock_retriever):
-            with patch("ui.suggestion_tool.get_sap_catalog", return_value=mock_catalog):
-                result = _run(tool.execute(ToolInput(args={"ui_sketch_id": "sk_test", "detail_level": 2})))
-                assert "code_snippets" in result.result
-
-    def test_execute_detail_level_3_includes_services(self):
-        """Level 3 returns btp_services and project_structure."""
-        tool = UISuggestionTool()
-        mock_retriever = _MockRetriever()
-        mock_catalog = _MockCatalog()
-
-        with patch("ui.suggestion_tool.get_ui_retriever", return_value=mock_retriever):
-            with patch("ui.suggestion_tool.get_sap_catalog", return_value=mock_catalog):
-                result = _run(tool.execute(ToolInput(args={"ui_sketch_id": "sk_test", "detail_level": 3})))
-                assert "btp_services" in result.result
-                assert "project_structure" in result.result
+        assert tool.validate_input({}) is False

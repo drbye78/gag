@@ -285,7 +285,7 @@ class ValidatorAgent:
 
     def _extract_topics(self, text: str) -> set:
         words = text.lower().split()
-        return {w for w in words if len(w) > 4} & {
+        return {w for w in words if len(w) >= 3} & {
             "api",
             "service",
             "config",

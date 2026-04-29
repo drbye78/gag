@@ -59,6 +59,7 @@ class ChatCompletionResponse:
 
 class LLMRouter:
     _client: Optional[httpx.AsyncClient] = None
+    _embed_pipeline: Optional[Any] = None
 
     def __init__(
         self,
@@ -149,15 +150,17 @@ class LLMRouter:
 
     async def embed(self, text: str) -> List[float]:
         """Generate embedding for a single text using configured embedding provider."""
-        from ingestion.embedder import EmbeddingPipeline
-        pipeline = EmbeddingPipeline()
-        return await pipeline.embed(text)
+        if LLMRouter._embed_pipeline is None:
+            from ingestion.embedder import EmbeddingPipeline
+            LLMRouter._embed_pipeline = EmbeddingPipeline()
+        return await LLMRouter._embed_pipeline.embed(text)
 
     async def embed_batch(self, texts: List[str]) -> List[List[float]]:
         """Generate embeddings for multiple texts using configured embedding provider."""
-        from ingestion.embedder import EmbeddingPipeline
-        pipeline = EmbeddingPipeline()
-        return await pipeline.embed_batch(texts)
+        if LLMRouter._embed_pipeline is None:
+            from ingestion.embedder import EmbeddingPipeline
+            LLMRouter._embed_pipeline = EmbeddingPipeline()
+        return await LLMRouter._embed_pipeline.embed_batch(texts)
 
     async def chat_stream(
         self,

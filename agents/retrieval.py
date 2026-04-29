@@ -271,9 +271,10 @@ class RetrievalAgent:
         self._metrics["total_results"] += sum(r.total for r in results)
 
         if self._metrics["avg_latency_ms"]:
+            alpha = 0.3
             self._metrics["avg_latency_ms"] = (
-                self._metrics["avg_latency_ms"] + total_time
-            ) / 2
+                self._metrics["avg_latency_ms"] * (1 - alpha) + total_time * alpha
+            )
         else:
             self._metrics["avg_latency_ms"] = total_time
 

@@ -1,0 +1,69 @@
+# External Infrastructure Overrides
+# Copy to docker-compose.override.yml to use external services
+# cp docker-compose.external.yml docker-compose.override.yml
+
+version: "3.9"
+
+services:
+  api:
+    environment:
+      # External Qdrant (set QDRANT_HOST externally to skip container)
+      - QDRANT_HOST=${QDRANT_HOST:-qdrant}
+      - QDRANT_PORT=${QDRANT_PORT:-6333}
+      # External FalkorDB
+      - FALKORDB_HOST=${FALKORDB_HOST:-falkordb}
+      - FALKORDB_PORT=${FALKORDB_PORT:-6379}
+      # External Redis
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+    depends_on: ${DEPEND_ON_SERVICES:-qdrant falkordb redis}
+
+  # Local Qdrant - comment out to use external
+  qdrant:
+    image: qdrant/qdrant:v1.7.4
+    profiles:
+      - local
+    ports:
+      - "${QDRANT_EXTERNAL_PORT:-6333}:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant-storage:/qdrant/storage
+    networks:
+      - engineering-net
+    restart: unless-stopped
+
+  # Local FalkorDB - comment out to use external
+  falkordb:
+    image: falkordb/falkordb:v4.18.0
+    profiles:
+      - local
+    ports:
+      - "${FALKORDB_EXTERNAL_PORT:-6379}:6379"
+      - "3000:3000"
+    volumes:
+      - falkordb-data:/data
+    networks:
+      - engineering-net
+    restart: unless-stopped
+
+  # Local Redis - comment out to use external
+  redis:
+    image: redis:7.4-alpine
+    profiles:
+      - local
+    ports:
+      - "${REDIS_EXTERNAL_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - engineering-net
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+networks:
+  engineering-net:
+    driver: bridge
+
+volumes:
+  qdrant-storage:
+  falkordb-data:
+  redis-data:

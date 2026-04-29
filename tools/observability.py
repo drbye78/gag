@@ -74,9 +74,10 @@ Generate 5-10 realistic metrics for monitoring dashboards."""
     ) -> List[Dict[str, Any]]:
         return [
             {
-                "name": "http_requests_total",
-                "value": 1000,
-                "timestamp": time.time(),
+                "name": None,
+                "value": None,
+                "error": "LLM metrics unavailable",
+                "available": False,
             }
         ]
     
@@ -456,10 +457,12 @@ Calculate realistic values."""
         return {
             "name": slo.get("name", "availability"),
             "target": slo.get("target", 99.9),
-            "current": 99.5,
-            "error_budget_remaining": 0.5,
-            "error_budget_burn_rate": 1.1,
-            "status": "ok",
+            "current": None,
+            "error_budget_remaining": None,
+            "error_budget_burn_rate": None,
+            "status": None,
+            "error": "LLM SLO tracking unavailable",
+            "available": False,
         }
     
     def validate_input(self, input: Dict[str, Any]) -> bool:

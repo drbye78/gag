@@ -12,7 +12,6 @@ Models:
 
 import io
 import base64
-import torch
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
@@ -25,21 +24,28 @@ ColPaliForRetrieval = None
 ColPaliProcessor = None
 ColQwen2 = None
 ColQwen2Processor = None
+torch = None
 
 try:
+    import torch
     from transformers import ColPaliForRetrieval, ColPaliProcessor
 
     COLPALI_AVAILABLE = True
 except ImportError:
     try:
+        import torch
         from colpali_engine.models import ColQwen2, ColQwen2Processor
 
         ColPaliForRetrieval = ColQwen2
         ColPaliProcessor = ColQwen2Processor
         COLPALI_AVAILABLE = True
     except ImportError:
+        torch = None
         ColPaliForRetrieval = None
         ColPaliProcessor = None
+        ColQwen2 = None
+        ColQwen2Processor = None
+        COLPALI_AVAILABLE = False
 
 
 class ColPaliModel(str, Enum):

@@ -1,9 +1,19 @@
 """Graph builder for UI sketch understanding - constructs FalkorDB graph nodes and relationships."""
 
 import json
-from typing import Any, Dict
+import re
+from typing import Any, Dict, Tuple
 
 from ui.models import UIExtractionResult
+
+
+def _escape_cypher_string(value: str) -> str:
+    """Escape string for Cypher to prevent injection."""
+    if not isinstance(value, str):
+        value = str(value)
+    if not re.match(r'^[A-Za-z0-9_\-]+$', value):
+        raise ValueError(f"Invalid characters in identifier: {value!r}")
+    return value.replace("\\", "\\\\").replace("'", "\\'")
 
 
 class UIGraphBuilder:

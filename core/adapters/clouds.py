@@ -126,16 +126,70 @@ class AWSAdapter(PlatformAdapter):
     
     def transform_ir_to_platform(self, input: AdapterInput) -> AdapterOutput:
         features = input.ir_features
+        pattern_results = input.pattern_matches
+        violations = input.constraint_violations
+        
         configs = self.generate_config(features)
         code = self.generate_code(features)
         
+        recommendations = self._build_recommendations(pattern_results, features, violations)
+        
+        can_deploy = not any(v.severity == "error" for v in violations)
+        
+        confidence = (
+            sum(p.match_score for p in pattern_results) / max(1, len(pattern_results))
+            if pattern_results else 0.7
+        )
+        
         return AdapterOutput(
-            recommendations=[{"name": "AWS Architecture", "reason": "Based on extracted features"}],
+            recommendations=recommendations,
             config_templates=configs,
             code_snippets=code,
             platform=self.platform_id,
-            confidence=0.8,
+            confidence=confidence,
+            can_deploy=can_deploy,
         )
+    
+    def _build_recommendations(
+        self,
+        patterns: List[Any],
+        features: IRFeature,
+        violations: List[Any],
+    ) -> List[Dict[str, Any]]:
+        recs = []
+        
+        if patterns:
+            for p in patterns:
+                recs.append({
+                    "name": p.pattern_id,
+                    "reason": f"Matched pattern {p.pattern_id} with score {p.match_score:.2f}",
+                    "priority": p.priority,
+                })
+        
+        if features.has_serverless:
+            recs.append({
+                "name": "aws_lambda",
+                "reason": "Features indicate serverless requirement",
+                "priority": 9,
+            })
+        
+        if features.has_container:
+            recs.append({
+                "name": "aws_ecs_fargate",
+                "reason": "Features indicate container requirement",
+                "priority": 8,
+            })
+        
+        if violations:
+            for v in violations:
+                if v.severity == "warning":
+                    recs.append({
+                        "name": "constraint_warning",
+                        "reason": v.message,
+                        "priority": 5,
+                    })
+        
+        return recs
     
     def generate_config(self, features: IRFeature) -> Dict[str, str]:
         configs = {}
@@ -286,16 +340,70 @@ class AzureAdapter(PlatformAdapter):
     
     def transform_ir_to_platform(self, input: AdapterInput) -> AdapterOutput:
         features = input.ir_features
+        pattern_results = input.pattern_matches
+        violations = input.constraint_violations
+        
         configs = self.generate_config(features)
         code = self.generate_code(features)
         
+        recommendations = self._build_recommendations(pattern_results, features, violations)
+        
+        can_deploy = not any(v.severity == "error" for v in violations)
+        
+        confidence = (
+            sum(p.match_score for p in pattern_results) / max(1, len(pattern_results))
+            if pattern_results else 0.7
+        )
+        
         return AdapterOutput(
-            recommendations=[{"name": "Azure Architecture", "reason": "Based on extracted features"}],
+            recommendations=recommendations,
             config_templates=configs,
             code_snippets=code,
             platform=self.platform_id,
-            confidence=0.8,
+            confidence=confidence,
+            can_deploy=can_deploy,
         )
+    
+    def _build_recommendations(
+        self,
+        patterns: List[Any],
+        features: IRFeature,
+        violations: List[Any],
+    ) -> List[Dict[str, Any]]:
+        recs = []
+        
+        if patterns:
+            for p in patterns:
+                recs.append({
+                    "name": p.pattern_id,
+                    "reason": f"Matched pattern {p.pattern_id} with score {p.match_score:.2f}",
+                    "priority": p.priority,
+                })
+        
+        if features.has_serverless:
+            recs.append({
+                "name": "azure_functions",
+                "reason": "Features indicate serverless requirement",
+                "priority": 9,
+            })
+        
+        if features.has_container:
+            recs.append({
+                "name": "azure_aks",
+                "reason": "Features indicate container requirement",
+                "priority": 8,
+            })
+        
+        if violations:
+            for v in violations:
+                if v.severity == "warning":
+                    recs.append({
+                        "name": "constraint_warning",
+                        "reason": v.message,
+                        "priority": 5,
+                    })
+        
+        return recs
     
     def generate_config(self, features: IRFeature) -> Dict[str, str]:
         configs = {}
@@ -443,16 +551,70 @@ class GCPAdapter(PlatformAdapter):
     
     def transform_ir_to_platform(self, input: AdapterInput) -> AdapterOutput:
         features = input.ir_features
+        pattern_results = input.pattern_matches
+        violations = input.constraint_violations
+        
         configs = self.generate_config(features)
         code = self.generate_code(features)
         
+        recommendations = self._build_recommendations(pattern_results, features, violations)
+        
+        can_deploy = not any(v.severity == "error" for v in violations)
+        
+        confidence = (
+            sum(p.match_score for p in pattern_results) / max(1, len(pattern_results))
+            if pattern_results else 0.7
+        )
+        
         return AdapterOutput(
-            recommendations=[{"name": "GCP Architecture", "reason": "Based on extracted features"}],
+            recommendations=recommendations,
             config_templates=configs,
             code_snippets=code,
             platform=self.platform_id,
-            confidence=0.8,
+            confidence=confidence,
+            can_deploy=can_deploy,
         )
+    
+    def _build_recommendations(
+        self,
+        patterns: List[Any],
+        features: IRFeature,
+        violations: List[Any],
+    ) -> List[Dict[str, Any]]:
+        recs = []
+        
+        if patterns:
+            for p in patterns:
+                recs.append({
+                    "name": p.pattern_id,
+                    "reason": f"Matched pattern {p.pattern_id} with score {p.match_score:.2f}",
+                    "priority": p.priority,
+                })
+        
+        if features.has_serverless:
+            recs.append({
+                "name": "gcp_functions",
+                "reason": "Features indicate serverless requirement",
+                "priority": 9,
+            })
+        
+        if features.has_container:
+            recs.append({
+                "name": "gcp_gke",
+                "reason": "Features indicate container requirement",
+                "priority": 8,
+            })
+        
+        if violations:
+            for v in violations:
+                if v.severity == "warning":
+                    recs.append({
+                        "name": "constraint_warning",
+                        "reason": v.message,
+                        "priority": 5,
+                    })
+        
+        return recs
     
     def generate_config(self, features: IRFeature) -> Dict[str, str]:
         configs = {}

@@ -1,16 +1,16 @@
-"""SAP documentation ingestion stub — parses markdown to SAPComponent/SAPService nodes."""
+"""SAP documentation ingestion stub — parses markdown to UIComponent/UIService nodes."""
 
 import logging
 import uuid
 from typing import Optional
 
-from ui.models import SAPComponent, SAPService
+from ui.knowledge import ComponentType, UIComponent, UIService, get_ui_knowledge_registry
 
 logger = logging.getLogger(__name__)
 
 
 class SAPDocParser:
-    def parse_component_markdown(self, markdown: str) -> Optional[SAPComponent]:
+    def parse_component_markdown(self, markdown: str) -> Optional[UIComponent]:
         lines = markdown.strip().split("\n")
         name = ""
         library = ""
@@ -39,17 +39,17 @@ class SAPDocParser:
         if not name:
             return None
 
-        return SAPComponent(
+        return UIComponent(
             component_id=f"sc_parsed_{uuid.uuid4().hex[:8]}",
             name=name,
             library=library or (name.rsplit(".", 1)[0] if "." in name else "unknown"),
-            component_type=comp_type,
+            component_type=ComponentType.CONTROL,
             properties=properties,
             events=events,
             complexity=2,
         )
 
-    def parse_service_markdown(self, markdown: str) -> Optional[SAPService]:
+    def parse_service_markdown(self, markdown: str) -> Optional[UIService]:
         lines = markdown.strip().split("\n")
         name = ""
         service_type = ""
@@ -64,13 +64,13 @@ class SAPDocParser:
                 service_type = line.split(":", 1)[1].strip()
             elif line.startswith("## "):
                 current_section = line[3:].strip().lower()
-            elif line.startswith("- ") and "capabilit" in current_section:
+            elif line.startswith("- ") and current_section and "capabilit" in current_section:
                 capabilities.append(line[2:].strip())
 
         if not name:
             return None
 
-        return SAPService(
+        return UIService(
             service_id=f"ss_parsed_{uuid.uuid4().hex[:8]}",
             name=name,
             service_type=service_type,

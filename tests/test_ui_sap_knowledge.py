@@ -1,113 +1,94 @@
-"""Tests for SAP Component Catalog."""
+"""Tests for UI Component Knowledge Registry."""
 
 import pytest
 
-from ui.models import SAPComponent, SAPService
-from ui.sap_knowledge import SAPComponentCatalog, get_sap_catalog
+from ui.knowledge import (
+    ComponentType,
+    UIComponent,
+    UIService,
+    get_ui_knowledge_registry,
+)
 
 
-class TestCatalogInitialization:
-    def test_catalog_has_components(self):
-        catalog = SAPComponentCatalog()
-        assert len(catalog.get_all_components()) > 0
+class TestKnowledgeRegistry:
+    def test_registry_has_domains(self):
+        registry = get_ui_knowledge_registry()
+        assert len(registry.all_domains()) == 3
 
-    def test_catalog_has_services(self):
-        catalog = SAPComponentCatalog()
-        assert len(catalog.get_all_services()) > 0
+    def test_sap_domain_registered(self):
+        registry = get_ui_knowledge_registry()
+        sap = registry.get("sap")
+        assert sap is not None
+
+    def test_aws_domain_registered(self):
+        registry = get_ui_knowledge_registry()
+        aws = registry.get("aws")
+        assert aws is not None
+
+    def test_azure_domain_registered(self):
+        registry = get_ui_knowledge_registry()
+        azure = registry.get("azure")
+        assert azure is not None
 
 
-class TestSeedDataComponents:
+class TestSAPKnowledge:
     def setup_method(self):
-        self.catalog = SAPComponentCatalog()
+        self.registry = get_ui_knowledge_registry()
+        self.sap = self.registry.get("sap")
 
-    def test_seeds_sap_m_table(self):
-        comp = self.catalog.get_by_name("sap.m.Table")
-        assert comp is not None
-        assert comp.library == "sap.m"
-        assert comp.complexity == 2
+    def test_sap_components_loaded(self):
+        assert len(self.sap.components) == 12
 
-    def test_seeds_sap_m_button(self):
-        comp = self.catalog.get_by_name("sap.m.Button")
-        assert comp is not None
-        assert comp.library == "sap.m"
-        assert comp.complexity == 1
+    def test_sap_services_loaded(self):
+        assert len(self.sap.services) == 3
 
-    def test_seeds_sap_ui_layout_form_simpleform(self):
-        comp = self.catalog.get_by_name("sap.ui.layout.form.SimpleForm")
-        assert comp is not None
-        assert comp.library == "sap.ui.layout"
-        assert comp.complexity == 2
+    def test_sap_table_mapping(self):
+        table_comps = self.sap.map_element_to_components("table")
+        assert len(table_comps) == 2
+
+    def test_sap_button_mapping(self):
+        button_comps = self.sap.map_element_to_components("button")
+        assert len(button_comps) == 1
+        assert button_comps[0].name == "sap.m.Button"
+
+    def test_sap_xsuaa_service(self):
+        xsuaa = self.sap.get_service("XSUAA")
+        assert xsuaa is not None
+        assert "authentication" in xsuaa.capabilities
 
 
-class TestFindForElementType:
-    def setup_method(self):
-        self.catalog = SAPComponentCatalog()
+class TestCrossDomainLookup:
+    def test_find_table_across_domains(self):
+        registry = get_ui_knowledge_registry()
+        results = registry.find_components("table")
+        assert len(results) == 4
 
-    def test_find_table_returns_sap_m_table(self):
-        results = self.catalog.find_for_element_type("table")
-        names = [c.name for c in results]
-        assert "sap.m.Table" in names
+    def test_find_button_across_domains(self):
+        registry = get_ui_knowledge_registry()
+        results = registry.find_components("button")
+        assert len(results) == 3
 
-    def test_find_button_returns_sap_m_button(self):
-        results = self.catalog.find_for_element_type("button")
-        names = [c.name for c in results]
-        assert "sap.m.Button" in names
 
-    def test_find_form_returns_non_empty(self):
-        results = self.catalog.find_for_element_type("form")
-        assert len(results) > 0
-
-    def test_add_custom_component_found_by_element_type(self):
-        custom = SAPComponent(
-            component_id="comp-custom",
-            name="CustomControl",
-            library="custom.lib",
-            component_type="control",
-            supported_element_types=["custom-type"],
-            complexity=1,
+class TestComponentModel:
+    def test_ui_component_fields(self):
+        comp = UIComponent(
+            component_id="test",
+            name="TestComponent",
+            library="test.lib",
+            component_type=ComponentType.CONTROL,
+            supported_element_types=["button"],
+            properties=["onClick"],
+            events=["click"],
         )
-        self.catalog.add_component(custom)
-        results = self.catalog.find_for_element_type("custom-type")
-        names = [c.name for c in results]
-        assert "CustomControl" in names
+        assert comp.name == "TestComponent"
+        assert ComponentType.CONTROL == comp.component_type
 
-
-class TestGetByName:
-    def setup_method(self):
-        self.catalog = SAPComponentCatalog()
-
-    def test_get_existing_component(self):
-        comp = self.catalog.get_by_name("sap.m.Table")
-        assert comp is not None
-        assert comp.name == "sap.m.Table"
-
-    def test_get_nonexistent_returns_none(self):
-        assert self.catalog.get_by_name("nonexistent") is None
-
-
-class TestFreshness:
-    def setup_method(self):
-        self.catalog = SAPComponentCatalog()
-
-    def test_last_updated_is_not_none(self):
-        assert self.catalog.last_updated is not None
-
-    def test_fresh_catalog_not_stale(self):
-        assert self.catalog.is_stale() is False
-
-
-class TestServices:
-    def setup_method(self):
-        self.catalog = SAPComponentCatalog()
-
-    def test_find_services_by_type_security(self):
-        results = self.catalog.find_services_by_type("security")
-        assert len(results) > 0
-        assert any(s.name == "XSUAA" for s in results)
-
-
-class TestSingleton:
-    def test_get_sap_catalog_returns_same_instance(self):
-        cat1 = get_sap_catalog()
-        cat2 = get_sap_catalog()
-        assert cat1 is cat2
+    def test_ui_service_fields(self):
+        svc = UIService(
+            service_id="test",
+            name="TestService",
+            service_type="database",
+            capabilities=["CRUD"],
+        )
+        assert svc.name == "TestService"
+        assert "CRUD" in svc.capabilities

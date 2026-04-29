@@ -74,9 +74,11 @@ Use HPA/VPA best practices."""
     ) -> Dict[str, Any]:
         return {
             "resource": resource,
-            "current_replicas": 3,
-            "target_replicas": 5,
-            "action": "scale_up",
+            "current_replicas": None,
+            "target_replicas": None,
+            "action": None,
+            "error": "LLM autoscale unavailable",
+            "available": False,
         }
     
     def validate_input(self, input: Dict[str, Any]) -> bool:
@@ -291,8 +293,10 @@ Be thorough - don't stop at symptoms."""
     async def _analyze_root_cause_fallback(self, incident_id: str) -> Dict[str, Any]:
         return {
             "incident_id": incident_id,
-            "root_cause": "memory_leak",
-            "confidence": 0.85,
+            "root_cause": None,
+            "confidence": None,
+            "error": "LLM RCA unavailable",
+            "available": False,
         }
     
     def validate_input(self, input: Dict[str, Any]) -> bool:
@@ -432,14 +436,14 @@ Include actual commands for recovery."""
         action: str,
         target: str
     ) -> Dict[str, Any]:
-        from datetime import datetime
         return {
             "action": action,
             "target": target,
-            "status": "success",
-            "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
+            "status": None,
+            "error": "LLM backup unavailable",
+            "available": False,
         }
-    
+
     def validate_input(self, input: Dict[str, Any]) -> bool:
         return "action" in input
 

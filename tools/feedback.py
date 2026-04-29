@@ -239,8 +239,10 @@ Generate realistic time series data."""
         return {
             "metric": metric,
             "timeframe": timeframe,
-            "direction": "increasing",
-            "change_percent": 10.5,
+            "direction": None,
+            "change_percent": None,
+            "error": "LLM analysis unavailable",
+            "available": False,
         }
     
     def validate_input(self, input: Dict[str, Any]) -> bool:
@@ -378,8 +380,10 @@ Generate realistic prediction."""
     async def _predict_churn_fallback(self, customer_id: str) -> Dict[str, Any]:
         return {
             "customer_id": customer_id,
-            "churn_probability": 0.15,
-            "risk_level": "low",
+            "churn_probability": None,
+            "risk_level": "unknown",
+            "error": "LLM prediction unavailable",
+            "available": False,
         }
     
     def validate_input(self, input: Dict[str, Any]) -> bool:

@@ -3,6 +3,7 @@ Reasoning Engine - Chains retrieved facts for complex answers.
 
 Implements Chain of Thoughts, Tree of Thoughts,
 Reflective reasoning for multi-step queries.
+Optionally uses LLM for deep reasoning when available.
 """
 
 import time
@@ -31,16 +32,27 @@ class ReasoningStep:
 
 
 class ReasoningEngine:
-    def __init__(self, mode: ReasoningMode = ReasoningMode.CHAIN_OF_THOUGHTS):
+    def __init__(
+        self,
+        mode: ReasoningMode = ReasoningMode.CHAIN_OF_THOUGHTS,
+        use_llm: bool = True,
+    ):
         if isinstance(mode, str):
             try:
                 mode = ReasoningMode(mode)
             except ValueError:
                 mode = ReasoningMode.CHAIN_OF_THOUGHTS
         self.mode = mode
+        self.use_llm = use_llm
         self.max_steps = 10
         self.max_branches = 3
         self._steps: Dict[str, ReasoningStep] = {}
+        self._llm_router = None
+        self._llm_available = False
+    
+    def set_llm_router(self, router: Any) -> None:
+        self._llm_router = router
+        self._llm_available = True
 
     async def reason(
         self,
@@ -76,6 +88,9 @@ class ReasoningEngine:
                 "confidence": 0.0,
             }
 
+        if self.use_llm and self._llm_available and self._llm_router:
+            return await self._llm_reason(query, facts)
+        
         top_fact = facts[0]
         answer = top_fact.get("content", "")
 
@@ -87,12 +102,89 @@ class ReasoningEngine:
             "confidence": top_fact.get("score", 0.5),
             "sources": [f.get("source", "") for f in facts[:3]],
         }
+    
+    async def _llm_reason(
+        self,
+        query: str,
+        facts: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        facts_text = "\n".join(
+            f"- {f.get('content', '')[:200]}" for i, f in enumerate(facts[:5])
+        )
+        
+        prompt = f"""Based on the following facts, answer the query concisely.
+
+Query: {query}
+
+Facts:
+{facts_text}
+
+Provide a direct answer in 2-3 sentences."""
+        
+        try:
+            result = await self._llm_router.chat(
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3,
+            )
+            answer = result.get("content", "").strip()
+        except Exception:
+            answer = facts[0].get("content", "") if facts else "No answer found."
+
+        return {
+            "query": query,
+            "answer": answer,
+            "reasoning_mode": "llm",
+            "steps": [],
+            "confidence": 0.7,
+            "sources": [f.get("source", "") for f in facts[:3]],
+        }
+    
+    async def _llm_chain_reason(
+        self,
+        query: str,
+        facts: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        facts_text = "\n".join(
+            f"{i+1}. {f.get('content', '')[:250]}"
+            for i, f in enumerate(facts[:7])
+        )
+        
+        prompt = f"""Think step by step about this query. Show your reasoning.
+
+Query: {query}
+
+Facts:
+{facts_text}
+
+Provide your reasoning steps and final answer."""
+        
+        try:
+            result = await self._llm_router.chat(
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.4,
+            )
+            answer = result.get("content", "").strip()
+        except Exception:
+            answer = " | ".join(
+                f.get("content", "")[:100] for f in facts[:2])
+        
+        return {
+            "query": query,
+            "answer": answer,
+            "reasoning_mode": "llm_chain",
+            "steps": [],
+            "confidence": 0.75,
+            "sources": [f.get("source", "") for f in facts[:3]],
+        }
 
     async def _chain_reason(
         self,
         query: str,
         facts: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
+        if self.use_llm and self._llm_available and self._llm_router:
+            return await self._llm_chain_reason(query, facts)
+        
         self._steps.clear()
 
         current_step = ReasoningStep(

@@ -49,6 +49,7 @@ class CypherBuilder:
         "Component", "Service", "API", "Endpoint", "Database",
         "Function", "Class", "Module", "File", "Entity",
         "Person", "Organization", "Document", "UISketch",
+        "UIElement", "UILayout",
     }
     
     # Relationship type allowlist
@@ -56,6 +57,7 @@ class CypherBuilder:
         "CALLS", "DEFINES", "IMPORTS", "RETURNS", "CONTAINS",
         "INHERITS", "IMPLEMENTS", "DEPENDS_ON", "RELATED_TO",
         "DOCUMENTED_BY", "TRIGGERS", "AFFECTS", "HAS_PROPERTY",
+        "HAS_LAYOUT", "CONTAINS_ELEMENT",
     }
     
     # Valid operators for WHERE clauses
@@ -293,6 +295,102 @@ class CypherBuilder:
         props_str = "{" + ", ".join(prop_parts) + "}" if prop_parts else "{}"
         
         self._parts.append(f"MATCH (n{label_str} {props_str})")
+        return self
+    
+    def create_node(
+        self,
+        labels: list[str],
+        properties: dict[str, Any]
+    ) -> "CypherBuilder":
+        """Create a new node with labels and properties using parameterized syntax.
+        
+        Args:
+            labels: List of node labels (e.g., ["UISketch", "UIElement"]).
+            properties: Dictionary of property key-value pairs.
+            
+        Returns:
+            Self for method chaining.
+        """
+        validated_labels = []
+        for label in labels:
+            self.validate_identifier(label)
+            self._validate_type_in_allowlist(label)
+            validated_labels.append(label)
+        
+        label_str = ":" + ":".join([f"`{l}`" for l in validated_labels]) if validated_labels else ""
+        
+        prop_parts = []
+        for key, value in properties.items():
+            self.validate_identifier(key)
+            param_name = self._generate_param_name()
+            prop_parts.append(f"{key}: ${param_name}")
+            self._params[param_name] = value
+        
+        props_str = "{" + ", ".join(prop_parts) + "}" if prop_parts else "{}"
+        
+        self._parts.append(f"CREATE (n{label_str} {props_str})")
+        return self
+    
+    def create_relationship(
+        self,
+        from_labels: list[str],
+        from_props: dict[str, Any],
+        rel_type: str,
+        to_labels: list[str],
+        to_props: dict[str, Any],
+        rel_properties: dict[str, Any] | None = None
+    ) -> "CypherBuilder":
+        """Create a relationship between two nodes using parameterized syntax.
+        
+        Args:
+            from_labels: Labels for the source node.
+            from_props: Properties for the source node.
+            rel_type: Relationship type (e.g., "HAS_LAYOUT", "CONTAINS_ELEMENT").
+            to_labels: Labels for the target node.
+            to_props: Properties for the target node.
+            rel_properties: Optional relationship properties.
+            
+        Returns:
+            Self for method chaining.
+        """
+        validated_rel = self._validate_rel_type_in_allowlist(rel_type)
+        
+        from_label_str = ":" + ":".join([f"`{l}`" for l in from_labels]) if from_labels else ""
+        to_label_str = ":" + ":".join([f"`{l}`" for l in to_labels]) if to_labels else ""
+        
+        from_prop_parts = []
+        for key, value in from_props.items():
+            self.validate_identifier(key)
+            param_name = self._generate_param_name()
+            from_prop_parts.append(f"{key}: ${param_name}")
+            self._params[param_name] = value
+        
+        to_prop_parts = []
+        for key, value in to_props.items():
+            self.validate_identifier(key)
+            param_name = self._generate_param_name()
+            to_prop_parts.append(f"{key}: ${param_name}")
+            self._params[param_name] = value
+        
+        from_props_str = "{" + ", ".join(from_prop_parts) + "}"
+        to_props_str = "{" + ", ".join(to_prop_parts) + "}"
+        
+        rel_str = f"-[:`{validated_rel}`"
+        if rel_properties:
+            rel_prop_parts = []
+            for key, value in rel_properties.items():
+                self.validate_identifier(key)
+                param_name = self._generate_param_name()
+                rel_prop_parts.append(f"{key}: ${param_name}")
+                self._params[param_name] = value
+            rel_str += " {" + ", ".join(rel_prop_parts) + "}"
+        rel_str += "]->"
+        
+        self._parts.append(
+            f"MATCH (a{from_label_str} {from_props_str}) "
+            f"MATCH (b{to_label_str} {to_props_str}) "
+            f"CREATE (a){rel_str}(b)"
+        )
         return self
     
     def match_relationship(

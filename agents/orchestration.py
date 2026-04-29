@@ -11,7 +11,7 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional, cast
 
 from agents.planner import ExecutionPlan, ExecutionStep, PlannerAgent
 from agents.retrieval import RetrievalAgent
@@ -103,7 +103,7 @@ class RetrieveStepExecutor(StepExecutor):
         self.retriever = retriever
 
     async def execute(self, state: ExecutionState, context: Dict[str, Any]) -> Any:
-        source = state.step.source
+        source = state.step.source or "auto"
         query = context.get("query", "")
         limit = state.step.params.get("limit", 10)
         return await self.retriever.retrieve_single(query, source, limit)
@@ -342,6 +342,10 @@ class OrchestrationEngine:
         tasks = [self._execute_step(s, context) for s in states]
         await asyncio.gather(*tasks, return_exceptions=True)
 
+        for step, state in zip(plan.steps, states):
+            if state.result is not None:
+                context[f"{step.step_type}_result"] = state.result
+
         return states
 
     async def _execute_plan_sequential(
@@ -459,7 +463,7 @@ class OrchestrationEngine:
         self._update_metrics(not has_errors, len(all_states), execution_time)
 
         memory = get_memory_system()
-        memory.remember(
+        await memory.remember(
             key=f"execution:{int(start_time)}",
             value={
                 "query": query,
@@ -617,7 +621,11 @@ class OrchestrationEngine:
 
         branch_outcomes = await asyncio.gather(*branch_tasks, return_exceptions=True)
 
-        valid_results = [r for r in branch_outcomes if not isinstance(r, Exception)]
+        valid_results = [
+            cast(Dict[str, Any], r) 
+            for r in branch_outcomes 
+            if not isinstance(r, Exception)
+        ]
 
         merged_context = self._merge_branch_results(valid_results, context)
 

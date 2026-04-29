@@ -117,7 +117,9 @@ class RetrievalOrchestrator:
     ) -> Dict:
         try:
             return await self.docs_retriever.search(query, limit, filters=filters)
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"docs retrieval failed: {e}")
             return {"source": "docs", "results": [], "total": 0, "took_ms": 0}
 
     async def _retrieve_code(
@@ -125,7 +127,9 @@ class RetrievalOrchestrator:
     ) -> Dict:
         try:
             return await self.code_retriever.search(query, limit, filters=filters)
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"code retrieval failed: {e}")
             return {"source": "code", "results": [], "total": 0, "took_ms": 0}
 
     async def _retrieve_graph(
@@ -133,7 +137,9 @@ class RetrievalOrchestrator:
     ) -> Dict:
         try:
             return await self.graph_retriever.search(query, limit=limit)
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"graph retrieval failed: {e}")
             return {"source": "graph", "results": [], "total": 0, "took_ms": 0}
 
     async def _retrieve_code_graph(
@@ -141,7 +147,9 @@ class RetrievalOrchestrator:
     ) -> Dict:
         try:
             return await self.code_graph_retriever.search(query, limit=limit)
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"code_graph retrieval failed: {e}")
             return {"source": "code_graph", "results": [], "total": 0, "took_ms": 0}
 
     async def _retrieve_tickets(
@@ -149,7 +157,9 @@ class RetrievalOrchestrator:
     ) -> Dict:
         try:
             return await self.ticket_retriever.search(query, limit=limit)
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"tickets retrieval failed: {e}")
             return {"source": "tickets", "results": [], "total": 0, "took_ms": 0}
 
     async def _retrieve_telemetry(
@@ -157,7 +167,9 @@ class RetrievalOrchestrator:
     ) -> Dict:
         try:
             return await self.telemetry_retriever.search_events(query, limit=limit)
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"telemetry retrieval failed: {e}")
             return {"source": "telemetry", "results": [], "total": 0, "took_ms": 0}
 
     async def _retrieve_diagram(
@@ -165,7 +177,9 @@ class RetrievalOrchestrator:
     ) -> Dict:
         try:
             return await self.diagram_retriever.search_diagrams(query, limit=limit)
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"diagram retrieval failed: {e}")
             return {"source": "diagram", "results": [], "total": 0, "took_ms": 0}
 
     async def _retrieve_ui(self, query: str, limit: int, filters: Optional[Dict]) -> Dict:
@@ -174,7 +188,9 @@ class RetrievalOrchestrator:
                 element_types=[query.lower()], limit=limit
             )
             return {"source": "ui_sketch", "results": results, "total": len(results), "took_ms": 0}
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"ui_sketch retrieval failed: {e}")
             return {"source": "ui_sketch", "results": [], "total": 0, "took_ms": 0}
 
     async def _retrieve_colbert(self, query: str, limit: int, filters: Optional[Dict]) -> Dict:
@@ -184,14 +200,18 @@ class RetrievalOrchestrator:
                 results = result.get("results", [])
                 return {"source": "colbert", "results": results, "total": len(results), "took_ms": result.get("took_ms", 0)}
             return {"source": "colbert", "results": [], "total": 0, "took_ms": 0}
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"colbert retrieval failed: {e}")
             return {"source": "colbert", "results": [], "total": 0, "took_ms": 0}
 
     async def _retrieve_knowledge(self, query: str, limit: int, filters: Optional[Dict]) -> Dict:
         try:
             result = await self.knowledge_retriever.search(query, limit=limit, filters=filters)
             return result
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"knowledge retrieval failed: {e}")
             return {"source": "knowledge", "results": [], "total": 0, "took_ms": 0}
 
     def detect_platform_from_query(self, query: str) -> List[str]:

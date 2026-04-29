@@ -10,6 +10,12 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from ingestion.chunker import ChunkResult, DocumentChunker, CodeChunker
+from ingestion.codegraph_indexer import (
+    CodeGraphIndexer,
+    CodeGraphFallbackIndexer,
+    CodeGraphIndexResult,
+    get_codegraph_indexer,
+)
 from ingestion.embedder import EmbeddingPipeline, get_embedding_pipeline
 from ingestion.indexer import VectorIndexer, GraphIndexer, IndexerResult
 from core.config import get_settings
@@ -129,25 +135,27 @@ class JobRegistry:
 
 
 class IngestionPipeline:
-    """Production-grade ingestion pipeline with job management and structured errors."""
-
     def __init__(
         self,
         chunker: Optional[DocumentChunker] = None,
         code_chunker: Optional[CodeChunker] = None,
+        codegraph_indexer: Optional["CodeGraphIndexer | CodeGraphFallbackIndexer"] = None,
         embedder: Optional[EmbeddingPipeline] = None,
         vector_indexer: Optional[VectorIndexer] = None,
         graph_indexer: Optional[GraphIndexer] = None,
         use_graphrag: bool = False,
+        use_codegraph: bool = False,
         max_jobs: int = 1000,
     ):
         settings = get_settings()
         self.chunker = chunker or DocumentChunker()
         self.code_chunker = code_chunker or CodeChunker()
+        self.codegraph_indexer = codegraph_indexer or get_codegraph_indexer()
         self.embedder = embedder or get_embedding_pipeline()
         self.vector_indexer = vector_indexer or VectorIndexer()
         self.graph_indexer = graph_indexer or GraphIndexer()
         self.use_graphrag = use_graphrag
+        self.use_codegraph = use_codegraph or settings.codegraph_enabled
         self._graphrag_pipeline = None
         self._registry = JobRegistry(max_size=max_jobs)
 
@@ -342,6 +350,123 @@ class IngestionPipeline:
         self,
         files: Dict[str, str],
         index_graph: bool = False,
+        use_codegraph: bool = False,
+    ) -> IngestionJob:
+        use_cg = use_codegraph or self.use_codegraph
+        if use_cg and self.codegraph_indexer.is_available:
+            return await self._ingest_codebase_with_graph(files, index_graph)
+        return await self._ingest_codebase_standard(files, index_graph)
+
+    async def _ingest_codebase_with_graph(
+        self,
+        files: Dict[str, str],
+        index_graph: bool = False,
+    ) -> IngestionJob:
+        job = IngestionJob(
+            job_id=str(uuid.uuid4()),
+            source_type="codebase",
+            source_id="batch",
+            content="",
+            metadata={"file_count": len(files), "mode": "codegraph"},
+        )
+        await self._registry.put(job)
+
+        try:
+            job.status = JobStatus.CHUNKING
+
+            cg_result = await self.codegraph_indexer.index_codebase(files)
+
+            all_chunks = []
+            for c in cg_result.chunks:
+                all_chunks.append(
+                    {
+                        "id": c.id,
+                        "content": c.content,
+                        "source_id": "codebase",
+                        "source_type": "code",
+                        "chunk_index": c.chunk_index,
+                        "metadata": {
+                            "file_path": c.file_path,
+                            "entity_type": c.entity_type,
+                            "entity_name": c.entity_name,
+                            "language": c.language,
+                            "complexity": c.complexity,
+                            "start_line": c.start_line,
+                            "end_line": c.end_line,
+                            "callers": c.callers,
+                            "callees": c.callees,
+                        },
+                    }
+                )
+
+            all_entities = []
+            for e in cg_result.entities:
+                all_entities.append(
+                    {
+                        "id": e.id,
+                        "node_type": e.node_type,
+                        "properties": {
+                            "name": e.name,
+                            "file_path": e.file_path,
+                            "complexity": e.complexity,
+                            "language": e.language,
+                        },
+                    }
+                )
+
+            all_relationships = [
+                {
+                    "source_id": r.source_id,
+                    "target_id": r.target_id,
+                    "relation_type": r.relation_type,
+                    "properties": r.properties,
+                }
+                for r in cg_result.relationships
+            ]
+
+            job.chunks = all_chunks
+            job.total_chunks = len(all_chunks)
+            job.metadata["graph_entities"] = len(all_entities)
+            job.metadata["graph_relationships"] = len(all_relationships)
+            job.status = JobStatus.EMBEDDING
+
+            all_embedded = await self.embedder.embed_chunks(all_chunks)
+            job.embedded_chunks = all_embedded
+            job.status = JobStatus.INDEXING
+
+            if all_embedded:
+                index_result = await self.vector_indexer.index_chunks(all_embedded)
+                job.indexed_count = index_result.indexed_count
+
+            if index_graph and all_entities:
+                await self.graph_indexer.index_nodes(all_entities)
+                if all_relationships:
+                    await self.graph_indexer.index_edges(all_relationships)
+
+            if job.indexed_count == 0:
+                job.status = JobStatus.FAILED
+                job.error = "No chunks were indexed"
+            else:
+                job.status = JobStatus.COMPLETED
+
+            job.updated_at = time.time()
+            logger.info(
+                "CodeGraph ingestion job %s completed: %d files, %d chunks, %d entities, %d relationships",
+                job.job_id, len(files), job.total_chunks, len(all_entities), len(all_relationships)
+            )
+
+        except Exception as e:
+            logger.exception("CodeGraph ingestion job %s failed: %s", job.job_id, e)
+            job.status = JobStatus.FAILED
+            job.error = str(e)
+            job.updated_at = time.time()
+
+        return job
+
+    async def _ingest_codebase_standard(
+        self,
+        files: Dict[str, str],
+        index_graph: bool = False,
     ) -> IngestionJob:
         job = IngestionJob(
             job_id=str(uuid.uuid4()),
@@ -467,10 +592,21 @@ class IngestionPipeline:
 _pipeline: Optional[IngestionPipeline] = None
 
 
-def get_ingestion_pipeline(use_graphrag: bool = False) -> IngestionPipeline:
+def get_ingestion_pipeline(
+    use_graphrag: bool = False,
+    use_codegraph: bool = False,
+) -> IngestionPipeline:
     global _pipeline
     settings = get_settings()
     effective_use_graphrag = use_graphrag or settings.graphrag_enabled
-    if _pipeline is None or _pipeline.use_graphrag != effective_use_graphrag:
-        _pipeline = IngestionPipeline(use_graphrag=effective_use_graphrag)
+    effective_use_codegraph = use_codegraph or settings.codegraph_enabled
+    if (
+        _pipeline is None
+        or _pipeline.use_graphrag != effective_use_graphrag
+        or _pipeline.use_codegraph != effective_use_codegraph
+    ):
+        _pipeline = IngestionPipeline(
+            use_graphrag=effective_use_graphrag,
+            use_codegraph=effective_use_codegraph,
+        )
     return _pipeline

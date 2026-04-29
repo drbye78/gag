@@ -119,7 +119,9 @@ class AdapterRegistry:
     
     def get_default(self) -> PlatformAdapter:
         if self._default is None:
-            raise RuntimeError("No default adapter configured")
+            if self._adapters:
+                return next(iter(self._adapters.values()))
+            raise RuntimeError("No adapters registered. Call register() with at least one platform adapter.")
         return self._default
     
     def list_platforms(self) -> List[str]:

@@ -7,7 +7,7 @@ Provides JSON logging with correlation IDs for request tracing.
 import json
 import logging
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 from contextvars import ContextVar
 

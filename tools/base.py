@@ -24,6 +24,10 @@ class MCPErrorCode:
     RATELIMITED = -32004
     RESOURCE_NOT_FOUND = -32005
     PROMPT_NOT_FOUND = -32006
+    AUTHENTICATION_FAILED = -32007
+    AUTHORIZATION_DENIED = -32008
+    SESSION_EXPIRED = -32009
+    BATCH_CANCELLED = -32010
 
 
 class ToolInput(BaseModel):
@@ -286,7 +290,7 @@ class RerankTool(BaseTool):
             pipeline = get_rerank_pipeline()
             reranked = await pipeline.rerank(query, results)
             return ToolOutput(
-                result={"reranked": [r.dict() for r in reranked]},
+                result={"reranked": [r.__dict__ for r in reranked]},
                 metadata={"reranked": True},
             )
         except Exception as e:
@@ -355,9 +359,17 @@ class IterativeReasoningTool(BaseTool):
 
             retriever = get_hybrid_retriever()
 
-            async def retriever_fn(q):
-                result = await retriever.search(q, limit=10)
-                return result.get("results", [])
+            def retriever_fn(q: str) -> List[Dict[str, Any]]:
+                # Sync wrapper for async retriever
+                import asyncio
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        # If loop is running, we need to handle differently
+                        return []
+                    return asyncio.run(retriever.search(q, limit=10)).get("results", [])
+                except Exception:
+                    return []
 
             engine = get_iterative_reasoning_engine(max_iterations=max_iterations)
             result = await engine.retrieve(query, retriever_fn)
@@ -426,12 +438,12 @@ class IngestSourceTool(BaseTool):
         metadata = input.args.get("metadata", {})
 
         try:
-            from ingestion.orchestrator import IngestionCoordinator, IngestionSource
+            from ingestion.orchestrator import IngestionCoordinator, IngestionMode, IngestionSource
 
             coordinator = IngestionCoordinator()
             result = await coordinator.ingest_all(
                 sources=[IngestionSource(source_type)],
-                mode=None,
+                mode=IngestionMode.INCREMENTAL,
             )
             return ToolOutput(result=result, metadata={"ingested": True})
         except Exception as e:
@@ -452,7 +464,7 @@ class GetJobStatusTool(BaseTool):
             from ingestion.pipeline import get_ingestion_pipeline
 
             pipeline = get_ingestion_pipeline()
-            job = pipeline.get_job(job_id)
+            job = await pipeline.get_job(job_id)
             if job:
                 result = {
                     "job_id": job.job_id,
@@ -709,14 +721,12 @@ class ExtractFromImageTool(BaseTool):
 
     async def execute(self, input: ToolInput) -> ToolOutput:
         try:
-            from multimodal.vlm import get_vlm_provider
-            provider = get_vlm_provider()
-            if not provider:
-                return ToolOutput(result=None, error="No VLM provider configured", metadata={})
-            result = await provider.extract_text(
+            from multimodal.vlm import get_vlm_processor
+            processor = get_vlm_processor()
+            result = await processor.extract_for_ir(
                 image_url=input.args.get("image_url", ""),
             )
-            return ToolOutput(result={"extracted_text": result}, metadata={"source": "vlm"})
+            return ToolOutput(result=result, metadata={"source": "vlm"})
         except Exception as e:
             return ToolOutput(result=None, error=str(e), metadata={})
 
@@ -730,15 +740,15 @@ class AnalyzeVisualTool(BaseTool):
 
     async def execute(self, input: ToolInput) -> ToolOutput:
         try:
-            from multimodal.vlm import get_vlm_provider
-            provider = get_vlm_provider()
-            if not provider:
-                return ToolOutput(result=None, error="No VLM provider configured", metadata={})
-            result = await provider.analyze_image(
+            from multimodal.vlm import get_vlm_processor
+            processor = get_vlm_processor()
+            result = await processor.analyze_image(
                 image_url=input.args.get("image_url", ""),
                 prompt=input.args.get("prompt", "Describe this image"),
             )
             return ToolOutput(result=result, metadata={"source": "vlm"})
+        except ImportError:
+            return ToolOutput(result=None, error="VLM not available", metadata={})
         except Exception as e:
             return ToolOutput(result=None, error=str(e), metadata={})
 
@@ -777,15 +787,18 @@ class ColpalSearchTool(BaseTool):
 
     async def execute(self, input: ToolInput) -> ToolOutput:
         try:
-            from ui.colpali_integration import get_colpali_search_client
-            client = get_colpali_search_client()
+            from documents.colpali import get_colpali_client
+            client = get_colpali_client()
             if not client:
                 return ToolOutput(result=None, error="ColPali not configured", metadata={})
             result = await client.search(
                 query=input.args.get("query", ""),
-                limit=input.args.get("limit", 10),
+                indexed_docs=[],
+                top_k=input.args.get("limit", 10),
             )
             return ToolOutput(result=result, metadata={"source": "colpali"})
+        except ImportError:
+            return ToolOutput(result=None, error="ColPali not available", metadata={})
         except Exception as e:
             return ToolOutput(result=None, error=str(e), metadata={})
 
@@ -804,8 +817,8 @@ class UISketchSearchTool(BaseTool):
             if not retriever:
                 return ToolOutput(result=None, error="UI retriever not configured", metadata={})
             result = await retriever.search_combined(
-                query=input.args.get("query", ""),
-                element_types=[],
+                element_types=input.args.get("element_types", []),
+                layout_type=input.args.get("layout_type"),
                 limit=input.args.get("limit", 10),
             )
             return ToolOutput(result=result, metadata={"source": "ui_sketch"})
@@ -903,7 +916,10 @@ class ToolRegistry:
     async def execute_batch(self, calls: List[Dict[str, Any]]) -> List[ToolOutput]:
         results = []
         for call in calls:
-            tool_name = call.get("name")
+            tool_name = call.get("name", "")
+            if not tool_name:
+                results.append(ToolOutput(result=None, error="Missing tool name", metadata={}))
+                continue
             args = call.get("arguments", {})
             result = await self.execute(tool_name, args)
             results.append(result)

@@ -35,11 +35,13 @@ class KnowledgeResolver(BaseModel):
         
         reasoning = self._generate_reasoning(intent, pattern_results, violations)
         
+        confidence = self._compute_confidence(entities, pattern_results, violations)
+        
         return ResolutionResult(
             query=query,
             intent=QueryIntent(
                 primary=intent,
-                confidence=0.8,
+                confidence=confidence,
                 entities=entities,
             ),
             patterns_matched=pattern_results,
@@ -49,6 +51,18 @@ class KnowledgeResolver(BaseModel):
             reasoning=reasoning,
             can_proceed=len([v for v in violations if v.severity == "error"]) == 0,
         )
+    
+    def _compute_confidence(
+        self,
+        entities: List[ExtractedEntity],
+        patterns: List[PatternMatch],
+        violations: List[Any],
+    ) -> float:
+        base_confidence = 0.5
+        entity_score = min(len(entities) * 0.1, 0.2)
+        pattern_score = min(len(patterns) * 0.1, 0.2)
+        violation_penalty = min(len([v for v in violations if v.severity == "error"]) * 0.1, 0.3)
+        return min(max(base_confidence + entity_score + pattern_score - violation_penalty, 0.0), 1.0)
 
     def _detect_intent(self, query: str) -> IntentType:
         if any(kw in query for kw in ["create", "build", "design", "new", "implement"]):

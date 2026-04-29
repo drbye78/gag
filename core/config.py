@@ -156,6 +156,8 @@ class Settings(BaseSettings):
     graphrag_entity_types: str = Field(default="PERSON,ORGANIZATION,CONCEPT,EVENT,LOCATION,PRODUCT,TECHNOLOGY,DOCUMENT,PROCESS", validation_alias="GRAPH_RAG_ENTITY_TYPES")
     graphrag_relationship_types: str = Field(default="RELATED_TO,PART_OF,WORKS_FOR,LOCATED_AT,USES,DEPENDS_ON,CREATED_BY,DEFINED_IN,REFERENCES,CONTAINS,IMPLEMENTS,MANAGES", validation_alias="GRAPH_RAG_RELATIONSHIP_TYPES")
 
+    codegraph_enabled: bool = Field(default=False, validation_alias="CODEGRAPH_ENABLED")
+
     chunking_chunker_type: str = "semantic"
     chunking_semantic_threshold: float = 0.5
     chunking_semantic_embed_model: str = "BAAI/bge-small-en-v1.5"

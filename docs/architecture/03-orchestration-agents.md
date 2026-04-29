@@ -268,11 +268,17 @@ Knowledge-first pipeline that resolves intent first, then transforms to platform
 
 ## MCP Tools Available
 
-The agent system has access to 30+ MCP tools:
+The agent system has access to 30+ MCP tools via JSON-RPC 2.0 protocol:
 
 | Category | Tools |
 |----------|-------|
 | Code Analysis | find_callers, find_callees, dead_code, complexity |
-| Infrastructure | search_kubernetes, search_helm, search_dockerfile |
-| Reasoning | chain_of_thoughts, tree_of_thoughts |
+| Infrastructure | search_kubernetes, search_helm, search_dockerfile, search_istio |
+| Reasoning | chain_of_thoughts, tree_of_thoughts, iterative_reasoning |
 | Validation | architecture_evaluate, security_validate, cost_estimate |
+| Search | search, hybrid_search, colpal_search, ui_sketch_search |
+| Document | parse_document_advanced, analyze_visual |
+| Session | session/get, session/set, notifications/listen |
+
+**Session Management**: MCP supports stateful sessions with get/set methods.
+**Rate Limiting**: 100 calls/minute per client with sliding window.

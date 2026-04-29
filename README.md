@@ -206,6 +206,14 @@ pip install -e ".[prod]"                     # Production
 | `/codegraph/complex` | GET | Most complex functions |
 | `/codegraph/dead-code` | GET | Unused functions |
 | `/codegraph/visualize` | POST | Visualize code graph |
+| `/codegraph/index/git` | POST | Index git repository |
+| `/codegraph/index/zip` | POST | Index ZIP archive |
+| `/codegraph/index/url` | POST | Index from URL |
+| `/codegraph/index/markdown` | POST | Index markdown content |
+| `/codegraph/index/confluence` | POST | Index Confluence page |
+| `/codegraph/index/confluence/space` | POST | Sync Confluence space |
+| `/codegraph/index/confluence/tree` | POST | Index page with tree |
+| `/codegraph/index/confluence/page` | POST | Index page with options |
 | `/search/colpal` | POST | ColPali visual search |
 | `/search/ui-sketch` | POST | UI sketch search |
 | `/ingestion/ingest` | POST | Ingest a single document |

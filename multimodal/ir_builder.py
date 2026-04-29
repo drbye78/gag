@@ -59,6 +59,7 @@ class IRBuilder:
     def __init__(self):
         self._nodes: List[IRNode] = []
         self._seen_ids: set = set()
+        self._background_tasks: List[asyncio.Task] = []
 
     def _generate_id(self, content: str, prefix: str = "ir") -> str:
         hash_str = hashlib.sha256(content.encode()).hexdigest()[:12]
@@ -113,7 +114,6 @@ class IRBuilder:
         )
         if self._deduplicate(node):
             self._nodes.append(node)
-            # Graph-first: build graph nodes if extraction result available
             if "extraction_result" in kwargs:
                 try:
                     from ui.graph_builder import UIGraphBuilder
@@ -122,7 +122,8 @@ class IRBuilder:
                     er = kwargs["extraction_result"]
                     try:
                         loop = asyncio.get_running_loop()
-                        loop.create_task(builder.build(er))
+                        task = loop.create_task(builder.build(er))
+                        self._background_tasks.append(task)
                     except RuntimeError:
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)

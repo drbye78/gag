@@ -36,7 +36,7 @@ jobs:
         run: uv run ruff check .
 
       - name: Run unit tests
-        run: uv run pytest tests/test_core.py tests/test_agents.py -v
+        run: uv run pytest tests/ -v
 
   test-integration:
     runs-on: ubuntu-latest
@@ -66,9 +66,9 @@ jobs:
       - name: Run security audit
         run: |
           pip install pip-audit
-          pip-audit -r requirements.txt || true
+          pip-audit -r requirements.txt
 
       - name: Run bandit
         run: |
           pip install bandit
-          bandit -r . -x ./tests,./docs || true
+          bandit -r . -x ./tests,./docs

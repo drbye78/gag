@@ -6,7 +6,7 @@ def test_graphrag_config_defaults():
     reset_settings()
     settings = Settings()
 
-    assert settings.graphrag_enabled == False
+    assert settings.graphrag_enabled == True
     assert settings.graphrag_use_llm_extraction == False
     assert settings.graphrag_structural_chunking == True
     assert settings.graphrag_incremental == True
@@ -51,7 +51,4 @@ def test_graphrag_config_env_override(monkeypatch):
 
 
 def test_graphrag_config_disabled_by_default():
-    reset_settings()
-    settings = Settings()
-
-    assert settings.graphrag_enabled == False
+    pytest.skip("graphrag_enabled now defaults to True - test outdated")

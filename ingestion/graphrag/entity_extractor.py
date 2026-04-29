@@ -2,6 +2,9 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 from enum import Enum
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class EntityType(str, Enum):
@@ -147,6 +150,7 @@ Return JSON:"""
             return entities
 
         except json.JSONDecodeError:
+            logger.warning("Failed to parse LLM response as JSON, returning empty entities")
             return []
 
     def _merge_entities(self, entities: List[ExtractedEntity]) -> List[ExtractedEntity]:
