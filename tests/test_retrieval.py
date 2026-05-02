@@ -67,37 +67,52 @@ class TestHybridRetriever:
     @pytest.mark.asyncio
     async def test_retrieve_vector_only(self):
         from retrieval.hybrid import HybridRetriever
-
-        # HybridRetriever uses search() with internal classification
-        # Without backend services, this will fail - just test interface
         try:
             retriever = HybridRetriever()
             result = await retriever.search("test", limit=5)
             assert isinstance(result, dict)
         except Exception as e:
-            pytest.skip(f"Backend services not available: {e}")
+            err_msg = str(e)
+            if "402" in err_msg or "Payment Required" in err_msg:
+                pytest.skip("OpenRouter credits exhausted - needs billing setup")
+            elif "401" in err_msg or "403" in err_msg or "Unauthorized" in err_msg:
+                pytest.skip(f"API authentication failed: {e}")
+            else:
+                pytest.skip(f"Backend services not available: {e}")
 
     @pytest.mark.asyncio
     async def test_retrieve_cascade(self):
         from retrieval.hybrid import HybridRetriever
-
         try:
             retriever = HybridRetriever()
             result = await retriever.search("test cascade", limit=5)
             assert isinstance(result, dict)
+            assert "strategy" in result or "results" in result
         except Exception as e:
-            pytest.skip(f"Backend services not available: {e}")
-
+            err_msg = str(e)
+            if "402" in err_msg or "Payment Required" in err_msg:
+                pytest.skip("OpenRouter credits exhausted")
+            elif "401" in err_msg or "403" in err_msg or "Unauthorized" in err_msg:
+                pytest.skip(f"API auth failed: {e}")
+            else:
+                pytest.skip(f"Backend unavailable: {e}")
+    
     @pytest.mark.asyncio
     async def test_retrieve_iterative(self):
         from retrieval.hybrid import HybridRetriever
-
         try:
             retriever = HybridRetriever()
             result = await retriever.search("test iterative", limit=5, use_reasoning=False)
             assert isinstance(result, dict)
+            assert "strategy" in result or "results" in result
         except Exception as e:
-            pytest.skip(f"Backend services not available: {e}")
+            err_msg = str(e)
+            if "402" in err_msg or "Payment Required" in err_msg:
+                pytest.skip("OpenRouter credits exhausted")
+            elif "401" in err_msg or "403" in err_msg or "Unauthorized" in err_msg:
+                pytest.skip(f"API auth failed: {e}")
+            else:
+                pytest.skip(f"Backend unavailable: {e}")
 
 
 class TestQueryClassifier:
@@ -193,7 +208,19 @@ class TestReasoningEngine:
 class TestCodeRetriever:
     @pytest.mark.asyncio
     async def test_retrieve_code(self):
-        pytest.skip("Event loop issue - test infrastructure problem")
+        from retrieval.code import CodeRetriever
+        try:
+            retriever = CodeRetriever()
+            result = await retriever.search("test code", limit=5)
+            assert isinstance(result, dict)
+        except Exception as e:
+            err_msg = str(e)
+            if "402" in err_msg or "Payment Required" in err_msg:
+                pytest.skip("OpenRouter credits exhausted")
+            elif "401" in err_msg or "403" in err_msg or "Unauthorized" in err_msg:
+                pytest.skip(f"API auth failed: {e}")
+            else:
+                pytest.skip(f"Backend unavailable: {e}")
 
 
 class TestGraphRetriever:

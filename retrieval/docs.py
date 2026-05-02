@@ -61,7 +61,7 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         self.api_key = api_key or os.getenv("OPENAI_API_KEY", "")
         self.model = model
         self._client = None
-
+    
     def _get_client(self) -> httpx.AsyncClient:
         if self._client is None:
             self._client = httpx.AsyncClient(
@@ -87,6 +87,50 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         except Exception as e:
             logger.error("OpenAI embed_batch failed: %s", e)
             raise RuntimeError(f"OpenAI embedding failed: {e}") from e
+
+
+class OpenRouterEmbeddingProvider(EmbeddingProvider):
+    def __init__(
+        self, api_key: Optional[str] = None, model: str = "openai/text-embedding-3-small"
+    ):
+        from core.config import get_settings
+        settings = get_settings()
+        self.api_key = api_key or settings.llm_api_key or os.getenv("OPENROUTER_API_KEY", "")
+        self.model = model
+        self._client = None
+    
+    def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None:
+            self._client = httpx.AsyncClient(
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                timeout=60.0,
+            )
+        return self._client
+
+    async def embed(self, text: str) -> List[float]:
+        results = await self.embed_batch([text])
+        if not results:
+            raise RuntimeError("OpenRouter embed failed: no results returned")
+        return results[0]
+
+    async def embed_batch(self, texts: List[str]) -> List[List[float]]:
+        try:
+            resp = await self._get_client().post(
+                "https://openrouter.ai/api/v1/embeddings",
+                json={
+                    "input": texts,
+                    "model": self.model,
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return [d["embedding"] for d in data.get("data", [])]
+        except Exception as e:
+            logger.error("OpenRouter embed_batch failed: %s", e)
+            raise RuntimeError(f"OpenRouter embedding failed: {e}") from e
 
 
 class DocsBackend(ABC):
@@ -124,8 +168,10 @@ class QdrantDocsBackend(DocsBackend):
         provider_type = os.getenv("EMBEDDING_PROVIDER", "").lower()
         if provider_type == "openai":
             return OpenAIEmbeddingProvider()
+        elif provider_type == "openrouter":
+            return OpenRouterEmbeddingProvider()
         else:
-            return QdrantEmbeddingProvider()
+            return OpenRouterEmbeddingProvider()
 
     async def search(
         self,

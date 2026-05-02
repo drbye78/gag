@@ -192,19 +192,25 @@ class TestHealth:
 
 class TestMetrics:
     def test_observe_request(self):
-        from core.metrics import observe_request
-        pytest.skip("MetricsCollector API changed - needs update")
+        from core.observability import get_metrics_collector
+        mc = get_metrics_collector()
+        mc.record_latency("request", 150.0)
+        assert mc.get_metrics()["latencies"]["request"]["count"] == 1
 
     def test_observe_retrieval(self):
-        from core.metrics import observe_retrieval
-        pytest.skip("MetricsCollector API changed - needs update")
+        from core.observability import get_metrics_collector
+        mc = get_metrics_collector()
+        mc.record_latency("retrieval", 50.0)
+        assert mc.get_metrics()["latencies"]["retrieval"]["count"] == 1
 
     def test_observe_llm(self):
-        from core.metrics import observe_llm
-        pytest.skip("MetricsCollector API changed - needs update")
-
-        result = observe_llm(1500, "qwen-max", 100)
-        assert result is None
+        from core.observability import get_metrics_collector
+        mc = get_metrics_collector()
+        mc.record_latency("llm", 100.0)
+        mc.increment("llm.calls")
+        metrics = mc.get_metrics()
+        assert metrics["latencies"]["llm"]["count"] == 1
+        assert metrics["counters"]["llm.calls"] == 1
 
 
 class TestMiddleware:

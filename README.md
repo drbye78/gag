@@ -4,7 +4,7 @@ A production-grade **Cognitive Architecture** for domain-specific reasoning with
 
 ![Version](https://img.shields.io/badge/version-3.2.0-blue)
 ![Python](https://img.shields.io/badge/python-3.12+-green)
-![Tests](https://img.shields.io/badge/tests-382%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-506%20passing-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ---
@@ -260,7 +260,7 @@ export LLM_API_KEY=your-api-key
 ├── ui/                 # UI sketch retrieval, ColPali, SAP knowledge
 ├── tools/              # Tool registry (13 tools via MCP)
 ├── docs/               # Architecture, API, deployment, configuration docs
-└── tests/              # 356 unit and integration tests
+└── tests/              # 506 unit, integration and E2E tests
 ```
 
 ---

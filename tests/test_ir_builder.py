@@ -23,4 +23,7 @@ class TestIRBuilderAddUI:
         assert r2 is None
 
     def test_add_ui_with_extraction_result(self):
-        pytest.skip("Test mocking issue - graph_node_id not populated")
+        from multimodal.ir_builder import IRBuilder
+        builder = IRBuilder()
+        result = builder.add_ui("test content", graph_node_id="test-123")
+        assert result is not None

@@ -10,4 +10,12 @@ from multimodal.diagram_ir import (
 )
 from multimodal.diagram_registry import DiagramRegistry, DiagramSearchResult
 from multimodal.ir_builder import ArchitectureIR, IRBuilder, UIIR
-from multimodal.vlm import OpenAIVisionProvider, QwenVLProvider, VLMProcessor, get_vlm_processor
+from multimodal.vlm import (
+    OpenAIVisionProvider,
+    OpenRouterVLMProvider,
+    QwenVLProvider,
+    VLMProcessor,
+    VLMProvider,
+    get_vlm_processor,
+    get_vlm_provider,
+)

@@ -48,7 +48,3 @@ def test_graphrag_config_env_override(monkeypatch):
     assert settings.graphrag_max_entities == 500
     assert settings.graphrag_default_hops == 5
     assert settings.graphrag_entity_types == "PERSON,TECHNOLOGY,DOCUMENT"
-
-
-def test_graphrag_config_disabled_by_default():
-    pytest.skip("graphrag_enabled now defaults to True - test outdated")

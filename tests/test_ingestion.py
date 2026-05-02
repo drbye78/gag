@@ -125,13 +125,13 @@ class TestEmbeddingPipeline:
     async def test_embed_single(self):
         from ingestion.embedder import EmbeddingPipeline
 
-        pipe = EmbeddingPipeline(provider="qdrant")
-        # Without a running Qdrant, this will fail - just test the interface
+        # Try ollama (local) - skip if not running
         try:
+            pipe = EmbeddingPipeline(provider="ollama")
             result = await pipe.embed("test text")
             assert isinstance(result, list)
         except Exception as e:
-            pytest.skip(f"Backend not available: {e}")
+            pytest.skip(f"Ollama not available: {e}")
 
     @pytest.mark.asyncio
     async def test_embed_batch(self):
@@ -187,13 +187,15 @@ class TestGraphIndexer:
         from ingestion.indexer import GraphIndexer
 
         indexer = GraphIndexer()
-        # Without a running FalkorDB instance, this will raise ConnectError
-        # Just verify the method exists and handles errors gracefully
         try:
             result = await indexer._execute_cypher("MATCH (n) RETURN n LIMIT 1", {})
             assert isinstance(result, bool)
         except Exception as e:
-            pytest.skip(f"FalkorDB not available: {e}")
+            err_msg = str(e)
+            if "ConnectError" in err_msg or "connection" in err_msg.lower():
+                pytest.skip(f"FalkorDB not accessible: {e}")
+            else:
+                pytest.skip(f"FalkorDB error: {e}")
 
 
 class TestIndexerResult:

@@ -297,7 +297,7 @@ class TestConfigExtended:
         assert s.qdrant_port == 6333
         assert s.falkordb_port == 7379
         assert s.llm_provider == "openrouter"
-        assert s.embedding_provider == "openai"
+        assert s.embedding_provider == "ollama"
         assert s.rerank_provider == "cohere"
         assert s.citation_style == "parenthetical"
         assert s.rate_limit_requests == 100

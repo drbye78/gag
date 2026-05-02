@@ -25,6 +25,19 @@ import os
 os.environ.setdefault("DEBUG", "true")
 os.environ.setdefault("LOG_LEVEL", "DEBUG")
 os.environ.setdefault("JWT_SECRET", "test-secret-key-for-testing-ignore-security-warning")
+os.environ.setdefault("CREDENTIAL_ENCRYPT_KEY", "12345678")
+
+# Local service endpoints
+os.environ.setdefault("QDRANT_HOST", "http://localhost:6333")
+os.environ.setdefault("FALKORDB_URL", "http://localhost:6379")
+os.environ.setdefault("OLLAMA_HOST", "http://localhost:11434")
+
+os.environ.setdefault("LLM_API_KEY", "")
+os.environ.setdefault("VLM_PROVIDER", "openrouter")
+os.environ.setdefault("VLM_MODEL", "google/gemma-4-31b-it:free")
+
+# Embeddings: Use local Ollama with BGE-M3
+os.environ.setdefault("EMBEDDING_PROVIDER", "ollama")
 
 import asyncio
 import os

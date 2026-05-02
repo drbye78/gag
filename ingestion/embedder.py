@@ -34,7 +34,7 @@ class EmbedderProvider(str, Enum):
 class EmbeddingPipeline:
     def __init__(
         self,
-        provider: str = "openai",
+        provider: str = None,
         model: Optional[str] = None,
         batch_size: int = 100,
         max_concurrent: int = 5,
@@ -42,7 +42,8 @@ class EmbeddingPipeline:
         cache_capacity: int = 10_000,
         cache_ttl: int = 86400,  # 24 hours
     ):
-        self.provider = provider.lower()
+        # Default to openrouter if not specified
+        self.provider = (provider or os.getenv("EMBEDDING_PROVIDER", "openrouter")).lower()
         self.dimensions = dimensions
         self.batch_size = batch_size
         self.max_concurrent = max_concurrent
@@ -65,8 +66,8 @@ class EmbeddingPipeline:
             self.model = model or "text-embedding-v3"
             self.dimensions = 1024
         elif self.provider == "ollama":
-            self.model = model or "nomic-embed-text"
-            self.dimensions = 768
+            self.model = model or "bge-m3:latest"
+            self.dimensions = 1024
         else:
             self.model = model or "default"
             self.dimensions = dimensions
@@ -160,8 +161,10 @@ class EmbeddingPipeline:
                 fresh_embeddings = await self._embed_qwen(to_embed)
             elif self.provider == "ollama":
                 fresh_embeddings = await self._embed_ollama(to_embed)
+            elif self.provider in ("openrouter", "or", "google"):
+                fresh_embeddings = await self._embed_openrouter(to_embed)
             else:
-                fresh_embeddings = await self._embed_qdrant(to_embed)
+                raise RuntimeError(f"Unknown embedding provider: {self.provider}. Use: openai, qwen, ollama, openrouter")
 
             # Cache the fresh embeddings
             for idx, embedding in zip(to_embed_indices, fresh_embeddings):
@@ -255,18 +258,33 @@ class EmbeddingPipeline:
             results.append(embedding)
         return results
 
-    async def _embed_qdrant(self, texts: List[str]) -> List[List[float]]:
-        base_url = os.getenv("QDRANT_HOST", "http://localhost:6333")
+    async def _embed_openrouter(self, texts: List[str]) -> List[List[float]]:
+        from core.config import get_settings
+        settings = get_settings()
+        api_key = settings.llm_api_key or os.getenv("OPENROUTER_API_KEY", "")
+        if not api_key:
+            raise RuntimeError("OPENROUTER_API_KEY not configured")
+        
+        model = "openai/text-embedding-3-small"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
         client = await self._get_client()
-
-        resp = await client.post(
-            f"{base_url}/collections/embeddings/points/search",
-            json={"vector": texts, "limit": len(texts)},
-            timeout=60.0,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        return data.get("result", [])
+        
+        results = []
+        for text in texts:
+            resp = await client.post(
+                "https://openrouter.ai/api/v1/embeddings",
+                json={"input": text, "model": model},
+                headers=headers,
+                timeout=60.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            embedding = data.get("data", [{}])[0].get("embedding", [])
+            results.append(embedding)
+        return results
 
     async def embed_chunks(self, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if not chunks:

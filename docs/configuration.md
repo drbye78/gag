@@ -52,9 +52,11 @@ All settings are loaded from environment variables. The `Settings` class in `cor
 
 | Variable | Default | Description |
 |---|---|---|
-| `VLM_PROVIDER` | | Vision model provider |
+| `VLM_PROVIDER` | `openrouter` | Vision model provider: `qwen`, `openai`, `openrouter` |
+| `VLM_MODEL` | `google/gemma-4-31b-it:free` | VLM model (OpenRouter) |
 | `QWEN_API_KEY` | | Qwen API key for VLM |
-| `ANTHROPIC_API_KEY` | | Anthropic API key |
+| `OPENAI_API_KEY` | | OpenAI API key (GPT-4V) |
+| `OPENROUTER_API_KEY` | | OpenRouter API key (Gemma 4, etc.) |
 
 ## Reranking
 
