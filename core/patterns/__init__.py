@@ -9,8 +9,8 @@ from core.patterns.schema import (
 from core.patterns.matcher import (
     PatternMatcher,
     PatternScorer,
-    ConstraintViolation,
 )
+from core.constraints.engine import ConstraintViolation
 
 __all__ = [
     "Pattern",

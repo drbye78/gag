@@ -1,6 +1,7 @@
 from typing import Any, Optional
 from pydantic import BaseModel
 from models.ir import IRFeature
+from core.constraints.engine import ConstraintViolation
 from core.patterns.schema import (
     Pattern,
     PatternCondition,
@@ -8,15 +9,6 @@ from core.patterns.schema import (
     PatternLibrary,
     get_pattern_library,
 )
-
-
-class ConstraintViolation(BaseModel):
-    constraint_id: str
-    actual_value: Any
-    expected_value: Any
-    severity: str
-    message: str
-    fix_hint: str
 
 
 class PatternMatcher:

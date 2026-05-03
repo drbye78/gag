@@ -57,7 +57,7 @@ class ColPaliModel(str, Enum):
 
 @dataclass
 class ColPaliEmbedding:
-    embeddings: torch.Tensor
+    embeddings: Any  # torch.Tensor when available
     num_tokens: int
     model_name: str
 
@@ -74,8 +74,8 @@ class ColPaliSearchResult:
 class ColPaliResult:
     query: str
     results: List[ColPaliSearchResult]
-    query_embedding: Optional[torch.Tensor] = None
-    documents_embedding: Optional[torch.Tensor] = None
+    query_embedding: Optional[Any] = None  # torch.Tensor when available
+    documents_embedding: Optional[Any] = None  # torch.Tensor when available
     took_ms: int = 0
     error: Optional[str] = None
 
@@ -85,11 +85,11 @@ class ColPaliClient:
         self,
         model_name: str = ColPaliModel.COLQWEN2.value,
         device: Optional[str] = None,
-        torch_dtype: torch.dtype = torch.bfloat16,
+        torch_dtype: Any = None,
     ):
         self.model_name = model_name
         self.device = device or _get_device()
-        self.torch_dtype = torch_dtype
+        self.torch_dtype = torch_dtype or (torch.bfloat16 if torch else None)
         self._model = None
         self._processor = None
 
@@ -191,9 +191,9 @@ class ColPaliClient:
 
     def score_retrieval(
         self,
-        query_embeddings: torch.Tensor,
-        doc_embeddings: torch.Tensor,
-    ) -> torch.Tensor:
+        query_embeddings: Any,  # torch.Tensor when available
+        doc_embeddings: Any,  # torch.Tensor when available
+    ) -> Any:  # torch.Tensor when available
         processor = self._get_processor()
         scores = processor.score_retrieval(query_embeddings, doc_embeddings)
         return scores
@@ -293,6 +293,8 @@ class ColPaliClient:
 
 
 def _get_device() -> str:
+    if torch is None:
+        return "cpu"
     if torch.cuda.is_available():
         return "cuda"
     elif torch.backends.mps.is_available():

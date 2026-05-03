@@ -13,4 +13,4 @@ resources:
 
 commonLabels:
   app.kubernetes.io/name: eis
-  app.kubernetes.io/version: "3.2.0"
+  app.kubernetes.io/version: "4.0.0"

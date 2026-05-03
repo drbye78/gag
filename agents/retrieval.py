@@ -50,9 +50,10 @@ class RetrievalResult:
 
 
 class RetrievalCache:
-    def __init__(self, ttl_seconds: int = 300):
+    def __init__(self, ttl_seconds: int = 300, max_size: int = 1000):
         self._cache: Dict[str, tuple] = {}
         self._ttl = ttl_seconds
+        self._max_size = max_size
         self._hits = 0
         self._misses = 0
 
@@ -74,6 +75,10 @@ class RetrievalCache:
 
     def set(self, query: str, source: str, result: RetrievalResult):
         key = self._make_key(query, source)
+        if len(self._cache) >= self._max_size:
+            # Evict oldest entry (first key)
+            oldest_key = next(iter(self._cache))
+            del self._cache[oldest_key]
         self._cache[key] = (result, time.time())
 
     def clear(self):

@@ -5,6 +5,7 @@ Provides JWT token management, role-based access control,
 and convenience functions for API-level auth checks.
 """
 
+import logging
 import os
 import hashlib
 import hmac
@@ -62,9 +63,15 @@ class User:
     active: bool = True
 
 
+logger = logging.getLogger(__name__)
+
+
 class RBACManager:
     def __init__(self):
         self._users: Dict[str, User] = {}
+        self._failed_attempts: Dict[str, list] = {}  # email -> [timestamps]
+        self._max_failed_attempts = 5
+        self._lockout_seconds = 300  # 5 minutes
 
     def hash_password(self, password: str) -> str:
         """Hash password with random salt (not jwt_secret)."""
@@ -109,14 +116,29 @@ class RBACManager:
             created_at=time.time(),
         )
         self._users[user_id] = user
+        logger.info("User created: %s (%s) with roles %s", user_id, email, user.roles)
         return user
 
     def authenticate(self, email: str, password: str) -> Optional[User]:
+        # Check lockout
+        now = time.time()
+        attempts = self._failed_attempts.get(email, [])
+        recent = [t for t in attempts if now - t < self._lockout_seconds]
+        if len(recent) >= self._max_failed_attempts:
+            logger.error("Account locked out for %s after %d failed attempts", email, self._max_failed_attempts)
+            return None  # Locked out
+
         for user in self._users.values():
             if user.email == email and user.active:
                 if self.verify_password(password, user.password_hash):
-                    user.last_login = time.time()
+                    user.last_login = now
+                    self._failed_attempts.pop(email, None)
+                    logger.info("Successful authentication for %s", email)
                     return user
+
+        # Track failed attempt
+        self._failed_attempts.setdefault(email, []).append(now)
+        logger.warning("Failed authentication attempt for %s", email)
         return None
 
     def get_user(self, user_id: str) -> Optional[User]:
@@ -140,6 +162,7 @@ class RBACManager:
         user = self._users.get(user_id)
         if user:
             user.roles.append(role.value)
+            logger.info("Role %s granted to user %s", role.value, user_id)
             return True
         return False
 
@@ -147,6 +170,7 @@ class RBACManager:
         user = self._users.get(user_id)
         if user and role.value in user.roles:
             user.roles.remove(role.value)
+            logger.info("Role %s revoked from user %s", role.value, user_id)
             return True
         return False
 
@@ -154,6 +178,7 @@ class RBACManager:
         user = self._users.get(user_id)
         if user:
             user.active = False
+            logger.info("User %s deactivated", user_id)
             return True
         return False
 
@@ -298,24 +323,16 @@ async def create_token(user_id: str, roles: Optional[List[str]] = None) -> str:
 
     if user is None:
         if is_debug:
+            # SECURITY: Debug auto-creation is intentionally restricted to GUEST role only.
+            # This prevents privilege escalation via debug mode.
             user = rbac.create_user(
                 user_id=user_id,
                 email=f"{user_id}@example.com",
                 password=secrets.token_hex(16),
-                roles=roles or [Role.GUEST.value],
+                roles=[Role.GUEST.value],
             )
         else:
             raise ValueError(f"User {user_id} does not exist")
-
-    if roles and is_debug:
-        has_admin_requested = Role.ADMIN.value in roles
-        has_admin_current = any(r == Role.ADMIN.value for r in user.roles)
-
-        if has_admin_requested and not has_admin_current:
-            raise PermissionError(
-                "Cannot grant admin role in DEBUG mode without existing admin privileges"
-            )
-        user.roles = roles
 
     tm = get_token_manager()
     return tm.create_token(user)

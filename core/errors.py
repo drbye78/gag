@@ -12,7 +12,7 @@ T = TypeVar("T")
 class Result(Generic[T]):
     """Type-safe result container for success/error states."""
     
-    __slots__ = ()
+    __slots__ = ("_v", "_e")
     
     def __init__(self, value: Any, error: Optional[str]):
         self._v = value
@@ -53,6 +53,11 @@ class Result(Generic[T]):
     def unwrap_or(self, default: T) -> T:
         return self._v if self.is_ok else default
     
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Result):
+            return NotImplemented
+        return self._v == other._v and self._e == other._e
+
     def __repr__(self) -> str:
         if self.is_ok:
             return f"Ok({self._v!r})"

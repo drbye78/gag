@@ -10,7 +10,7 @@ import time
 from enum import Enum
 from typing import Any, Dict, List, Optional, Set
 
-import httpx
+from core.pool import get_http_pool
 
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -40,6 +40,7 @@ class GraphRetriever:
         self.host = host
         self.port = port
         self.base_url = f"http://{host}:{port}"
+        self._pool = get_http_pool()
 
     async def search(
         self,
@@ -72,18 +73,25 @@ class GraphRetriever:
         if edge_types:
             for et in edge_types:
                 _safe_identifier(et)
-            edge_filter = " OR ".join([f"type(r) = '{_safe_identifier(e)}'" for e in edge_types])
+            # SECURITY: Use parameterized queries for edge type filters instead of
+            # string interpolation. Each edge type is passed as a separate parameter.
+            edge_filter_parts = []
+            for i, e in enumerate(edge_types):
+                param_name = f"edge_type_{i}"
+                edge_filter_parts.append(f"type(r) = ${param_name}")
+                params[param_name] = _safe_identifier(e)
+            edge_filter = " OR ".join(edge_filter_parts)
             cypher = cypher.replace("WHERE", f"WHERE ({edge_filter}) AND")
 
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{self.base_url}/query",
-                    json={"query": cypher, "params": params},
-                    timeout=30.0,
-                )
-                response.raise_for_status()
-                data = response.json()
+            pool = self._pool
+            response = await pool.post(
+                f"{self.base_url}/query",
+                json={"query": cypher, "params": params},
+                timeout=30.0,
+            )
+            response.raise_for_status()
+            data = response.json()
         except Exception as e:
             data = {"results": [], "error": str(e)}
 
@@ -167,17 +175,17 @@ class GraphRetriever:
         params = {"source": source, "target": target, "max_depth": max_depth}
 
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{self.base_url}/query",
-                    json={
-                        "query": cypher,
-                        "params": params,
-                    },
-                    timeout=30.0,
-                )
-                response.raise_for_status()
-                data = response.json()
+            pool = self._pool
+            response = await pool.post(
+                f"{self.base_url}/query",
+                json={
+                    "query": cypher,
+                    "params": params,
+                },
+                timeout=30.0,
+            )
+            response.raise_for_status()
+            data = response.json()
         except Exception as e:
             data = {"results": [], "error": str(e)}
 
@@ -231,14 +239,14 @@ class GraphRetriever:
             params = {"name": name}
 
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{self.base_url}/query",
-                    json={"query": cypher, "params": params},
-                    timeout=30.0,
-                )
-                response.raise_for_status()
-                data = response.json()
+            pool = self._pool
+            response = await pool.post(
+                f"{self.base_url}/query",
+                json={"query": cypher, "params": params},
+                timeout=30.0,
+            )
+            response.raise_for_status()
+            data = response.json()
         except Exception as e:
             data = {"results": [], "error": str(e)}
 
@@ -287,14 +295,14 @@ class GraphRetriever:
         """
 
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{self.base_url}/query",
-                    json={"query": cypher, "params": {"name": node_name}},
-                    timeout=30.0,
-                )
-                response.raise_for_status()
-                data = response.json()
+            pool = self._pool
+            response = await pool.post(
+                f"{self.base_url}/query",
+                json={"query": cypher, "params": {"name": node_name}},
+                timeout=30.0,
+            )
+            response.raise_for_status()
+            data = response.json()
         except Exception as e:
             data = {"results": [], "error": str(e)}
 

@@ -1,5 +1,6 @@
 """Middleware for rate limiting, error handling, and input sanitization."""
 
+import asyncio
 import time
 from typing import Callable, Dict, Optional
 
@@ -17,6 +18,7 @@ class RateLimiter:
         self._clients: Dict[str, list] = {}
         self._last_cleanup = time.time()
         self._cleanup_interval = 300
+        self._lock = asyncio.Lock()
 
     def _get_client_id(self, request: Request) -> str:
         forwarded = request.headers.get("X-Forwarded-For")
@@ -56,18 +58,19 @@ class RateLimiter:
         self._last_cleanup = now
 
     async def check(self, request: Request) -> bool:
-        self._cleanup_stale_clients()
-        client_id = self._get_client_id(request)
-        self._clean_old_requests(client_id)
+        async with self._lock:
+            self._cleanup_stale_clients()
+            client_id = self._get_client_id(request)
+            self._clean_old_requests(client_id)
 
-        if client_id not in self._clients:
-            self._clients[client_id] = []
+            if client_id not in self._clients:
+                self._clients[client_id] = []
 
-        if len(self._clients[client_id]) >= self.requests:
-            return False
+            if len(self._clients[client_id]) >= self.requests:
+                return False
 
-        self._clients[client_id].append(time.time())
-        return True
+            self._clients[client_id].append(time.time())
+            return True
 
     async def __call__(self, request: Request) -> None:
         if not await self.check(request):

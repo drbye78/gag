@@ -71,4 +71,4 @@ EMBEDDER_PROVIDER=openai
 
 ## Version
 
-Current version: **3.2.0**
+Current version: **4.0.0**

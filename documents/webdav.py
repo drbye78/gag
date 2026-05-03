@@ -57,17 +57,26 @@ class WebDAVClient:
     def _get_client(self) -> httpx.AsyncClient:
         if self._client is None:
             auth = (self.username, self.password) if self.username else None
+            # SECURITY: follow_redirects=False to prevent SSRF via redirect chains.
+            # Redirects are validated manually in _safe_request.
             self._client = httpx.AsyncClient(
                 auth=auth,
                 timeout=60.0,
-                follow_redirects=True,
+                follow_redirects=False,
             )
         return self._client
 
     def _build_url(self, path: str) -> str:
         base = self.url.rstrip("/")
         path = path.lstrip("/")
-        return f"{base}/{path}"
+        url = f"{base}/{path}"
+        # SECURITY: Validate the constructed URL for SSRF prevention
+        from core.security import validate_url
+        try:
+            validate_url(url)
+        except ValueError:
+            raise ValueError(f"WebDAV URL validation failed for: {url}")
+        return url
 
     async def list_directory(
         self,

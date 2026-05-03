@@ -17,6 +17,8 @@ from agents.planner import ExecutionPlan, ExecutionStep, PlannerAgent
 from agents.retrieval import RetrievalAgent
 from agents.reasoning import ReasoningAgent
 from agents.executor import ToolExecutor
+from agents.registry import _registry as _agent_registry
+from agents.types import AgentType
 from core.memory import (
     get_memory_system,
     MemoryScope,
@@ -253,10 +255,21 @@ class OrchestrationEngine:
         self.max_retries = max_retries
         self.parallel_execution = parallel_execution
 
-        self.planner = PlannerAgent()
-        self.retriever = RetrievalAgent()
-        self.reasoner = ReasoningAgent()
-        self.executor = ToolExecutor()
+        # Use the agent registry for agent creation; fall back to direct instantiation
+        try:
+            # Ensure built-in agents are registered
+            import agents._register  # noqa: F401
+
+            self.planner = _agent_registry.get_factory(AgentType.PLANNER)()
+            self.retriever = _agent_registry.get_factory(AgentType.RETRIEVAL)()
+            self.reasoner = _agent_registry.get_factory(AgentType.REASONING)()
+            self.executor = _agent_registry.get_factory(AgentType.EXECUTOR)()
+        except (KeyError, ImportError):
+            # Fallback if registry not populated or import fails
+            self.planner = PlannerAgent()
+            self.retriever = RetrievalAgent()
+            self.reasoner = ReasoningAgent()
+            self.executor = ToolExecutor()
 
         self._executors = self._init_executors()
         self._initialize_metrics()

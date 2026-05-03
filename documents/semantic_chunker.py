@@ -13,15 +13,28 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from llama_index.core.node_parser import (
-    SemanticSplitterNodeParser as LISemanticChunker,
-    SentenceSplitter as LISentenceSplitter,
-    JSONNodeParser as LIJSONSplitter,
-    HTMLNodeParser as LIHTMLTagSplitter,
-)
-from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-
 from ingestion.chunker import Chunk, ChunkResult, TextChunker
+
+# LlamaIndex - lazy import (may not be installed)
+LISemanticChunker = None
+LISentenceSplitter = None
+LIJSONSplitter = None
+LIHTMLTagSplitter = None
+HuggingFaceEmbedding = None
+LLAMA_INDEX_AVAILABLE = False
+
+try:
+    from llama_index.core.node_parser import (
+        SemanticSplitterNodeParser as LISemanticChunker,
+        SentenceSplitter as LISentenceSplitter,
+        JSONNodeParser as LIJSONSplitter,
+        HTMLNodeParser as LIHTMLTagSplitter,
+    )
+    from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+    LLAMA_INDEX_AVAILABLE = True
+except ImportError:
+    import logging
+    logging.getLogger(__name__).warning("LlamaIndex not available - semantic chunkers will use fallbacks")
 
 
 @dataclass
@@ -41,16 +54,22 @@ class LlamaIndexSentenceChunker(TextChunker):
     ):
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
-        self._parser = LISentenceSplitter(
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-        )
+        self._parser = None
+        if LLAMA_INDEX_AVAILABLE:
+            self._parser = LISentenceSplitter(
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+            )
 
     @property
     def available(self) -> bool:
-        return True
+        return LLAMA_INDEX_AVAILABLE
 
     def chunk(self, text: str, source_id: str) -> ChunkResult:
+        if not self.available:
+            from ingestion.chunker import DocumentChunker
+            return DocumentChunker(chunk_size=self.chunk_size).chunk(text, source_id)
+
         start = time.time()
         parser = self._parser
 
@@ -87,14 +106,16 @@ class LlamaIndexJSONChunker(TextChunker):
     def __init__(self, depth: int = 2, enablePagination: bool = True):
         self.depth = depth
         self.enablePagination = enablePagination
-        self._parser = LIJSONSplitter(
-            depth=depth,
-            enablePagination=enablePagination,
-        )
+        self._parser = None
+        if LLAMA_INDEX_AVAILABLE:
+            self._parser = LIJSONSplitter(
+                depth=depth,
+                enablePagination=enablePagination,
+            )
 
     @property
     def available(self) -> bool:
-        return True
+        return LLAMA_INDEX_AVAILABLE
 
     def chunk(self, text: str, source_id: str) -> ChunkResult:
         start = time.time()
@@ -135,11 +156,13 @@ class LlamaIndexHTMLChunker(TextChunker):
 
     def __init__(self, tags: Optional[List[str]] = None):
         self.tags = tags or ["p", "div", "section", "article"]
-        self._parser = LIHTMLTagSplitter(tags=self.tags)
+        self._parser = None
+        if LLAMA_INDEX_AVAILABLE:
+            self._parser = LIHTMLTagSplitter(tags=self.tags)
 
     @property
     def available(self) -> bool:
-        return True
+        return LLAMA_INDEX_AVAILABLE
 
     def chunk(self, text: str, source_id: str) -> ChunkResult:
         start = time.time()
@@ -191,10 +214,12 @@ class SemanticTextChunker(TextChunker):
 
     @property
     def available(self) -> bool:
-        return True
+        return LLAMA_INDEX_AVAILABLE
 
     def _get_parser(self):
         if self._parser is None:
+            if not LLAMA_INDEX_AVAILABLE:
+                raise RuntimeError("LlamaIndex not available for semantic chunking")
             embed = HuggingFaceEmbedding(model_name=self.embed_model)
             self._parser = LISemanticChunker(
                 embed_model=embed,

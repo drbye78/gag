@@ -1,12 +1,13 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 from core.knowledge.resolver import get_resolver
 from core.knowledge.graph import get_knowledge_graph, NodeType
 from core.knowledge.taxonomy import get_patterns
 from core.knowledge.constraints import get_rule_engine
+from core.auth import require_authenticated
 
-router = APIRouter(prefix="/knowledge", tags=["Knowledge"])
+router = APIRouter(prefix="/knowledge", tags=["Knowledge"], dependencies=[Depends(require_authenticated)])
 
 
 class KnowledgeQueryRequest(BaseModel):

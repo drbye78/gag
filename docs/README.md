@@ -25,7 +25,7 @@ Comprehensive documentation for the Engineering Intelligence System.
 | Guide | Description |
 |-------|-------------|
 | [MCP Tools](mcp-tools.md) | 30+ MCP tools reference |
-| [Configuration](configuration.md) | Environment variables (70+) |
+| [Configuration](configuration.md) | Environment variables (119) |
 | [Platform Adapter Development](platform-adapter-architecture.md) | Building custom adapters |
 
 ## API Reference
@@ -36,4 +36,4 @@ Comprehensive documentation for the Engineering Intelligence System.
 
 ## Version
 
-Current version: **3.2.0**
+Current version: **4.0.0**

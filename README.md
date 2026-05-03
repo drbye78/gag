@@ -2,9 +2,9 @@
 
 A production-grade **Cognitive Architecture** for domain-specific reasoning within enterprise AI PDLC pipelines. Goes beyond traditional RAG by combining multimodal understanding, hybrid retrieval (vector + graph + runtime), structured reasoning, tool-augmented decision making, and stateful orchestration.
 
-![Version](https://img.shields.io/badge/version-3.2.0-blue)
+![Version](https://img.shields.io/badge/version-4.0.0-blue)
 ![Python](https://img.shields.io/badge/python-3.12+-green)
-![Tests](https://img.shields.io/badge/tests-506%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-560%20passing-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ---
@@ -227,7 +227,7 @@ Full API reference: [docs/api.md](docs/api.md)
 
 ## Configuration
 
-All settings are loaded from environment variables. See [docs/configuration.md](docs/configuration.md) for the complete reference (70+ variables).
+All settings are loaded from environment variables. See [docs/configuration.md](docs/configuration.md) for the complete reference (119 variables).
 
 **Required for production:**
 
@@ -299,7 +299,7 @@ python -m pytest tests/ -v
 ./eis test --keyword Health             # Tests matching keyword
 ```
 
-**382 tests, all passing.**
+**560 tests, all passing.**
 
 ---
 
@@ -318,6 +318,7 @@ python -m pytest tests/ -v
 
 | Version | Highlights |
 |---|---|
+| **v4.0** | Comprehensive architecture audit (15 modules documented), 560 tests, 119 config fields, ~70 MCP tools, GraphRAG pipeline, ColPali, Confluence/WebDAV integration |
 | **v3.2** | Full PDLC coverage (9 phases, 71 MCP tools), PDLC-aware prompts, platform-agnostic architecture, new tool modules (ideation, requirements, testing, deployment, observability, feedback, day2), MarketAnalysis, MutationTester |
 | **v3.1** | Multi-platform adapters (AWS, Azure, GCP), platform-aware retrieval, knowledge graph integration (use cases, ADRs, reference architectures), 382 tests |
 | **v3.0** | Python 3.12+, pyproject.toml, Diagram Qdrant/FalkorDB indexing, UI sketch retrieval, Mermaid parser, ColPali integration, ColBERT support, Diagram citations |

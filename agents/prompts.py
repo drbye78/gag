@@ -226,17 +226,7 @@ Be concise but precise. Avoid vague best practices without context."""
 
 from enum import Enum
 
-
-class PDLCPhase(str, Enum):
-    IDEATION = "ideation"
-    BUSINESS_REQUIREMENTS = "business_requirements"
-    ARCHITECTURE_DESIGN = "architecture_design"
-    CODING = "coding"
-    TESTING = "testing"
-    DEPLOYMENT = "deployment"
-    PRODUCTION_OBSERVABILITY = "production_observability"
-    FEEDBACK_LOOP = "feedback_loop"
-    DAY2_OPERATIONS = "day2_operations"
+from tools.base import PDLCPhase  # noqa: F401 — re-exported for backward compatibility
 
 
 class Intent(str, Enum):

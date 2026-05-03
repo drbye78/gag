@@ -2,40 +2,45 @@ from typing import Any, Dict, List, Optional
 import json
 import logging
 
-from tools.base import BaseTool, ToolInput, ToolOutput
+from tools.base import BaseTool, PDLCBaseTool, ToolInput, ToolOutput
 
 logger = logging.getLogger(__name__)
 
 
-class CICDPipelineGeneratorTool(BaseTool):
+class CICDPipelineGeneratorTool(PDLCBaseTool):
     """Generate CI/CD pipeline configuration for multiple platforms."""
     name = "cicd_pipeline_generate"
     description = "Generate CI/CD pipeline configuration (GitHub Actions, GitLab, Jenkins)"
     
-    async def execute(self, input: ToolInput) -> ToolOutput:
+    async def _llm_execute(self, input: ToolInput) -> ToolOutput:
         platform = input.args.get("platform", "github")
         language = input.args.get("language", "python")
         project_name = input.args.get("project_name", "my-project")
         include_tests = input.args.get("include_tests", True)
         include_deploy = input.args.get("include_deploy", False)
         
-        try:
-            pipeline = await self._generate_pipeline_llm(
-                platform, language, project_name, include_tests, include_deploy
-            )
-            return ToolOutput(
-                result={"platform": platform, "pipeline": pipeline},
-                metadata={"generated": True, "method": "llm"}
-            )
-        except Exception as e:
-            logger.warning(f"LLM pipeline generation failed: {e}, using fallback")
-            pipeline = await self._generate_pipeline_fallback(
-                platform, language, project_name, include_tests, include_deploy
-            )
-            return ToolOutput(
-                result={"platform": platform, "pipeline": pipeline},
-                metadata={"generated": True, "method": "fallback", "error": str(e)}
-            )
+        pipeline = await self._generate_pipeline_llm(
+            platform, language, project_name, include_tests, include_deploy
+        )
+        return ToolOutput(
+            result={"platform": platform, "pipeline": pipeline},
+            metadata={"generated": True, "method": "llm"}
+        )
+    
+    async def _fallback(self, input: ToolInput) -> ToolOutput:
+        platform = input.args.get("platform", "github")
+        language = input.args.get("language", "python")
+        project_name = input.args.get("project_name", "my-project")
+        include_tests = input.args.get("include_tests", True)
+        include_deploy = input.args.get("include_deploy", False)
+        
+        pipeline = await self._generate_pipeline_fallback(
+            platform, language, project_name, include_tests, include_deploy
+        )
+        return ToolOutput(
+            result={"platform": platform, "pipeline": pipeline},
+            metadata={"generated": True, "method": "fallback"}
+        )
     
     async def _generate_pipeline_llm(
         self,
@@ -127,11 +132,11 @@ Use modern best practices: caching, matrix builds, artifact publishing."""
         return "platform" in input
 
 
-class DeploymentGeneratorTool(BaseTool):
+class DeploymentGeneratorTool(PDLCBaseTool):
     name = "deployment_generate"
     description = "Generate Kubernetes deployment manifests with containers, configmaps, secrets"
     
-    async def execute(self, input: ToolInput) -> ToolOutput:
+    async def _llm_execute(self, input: ToolInput) -> ToolOutput:
         name = input.args.get("name", "app")
         replicas = input.args.get("replicas", 3)
         image = input.args.get("image", f"{name}:latest")
@@ -139,23 +144,29 @@ class DeploymentGeneratorTool(BaseTool):
         env = input.args.get("env", {})
         service_type = input.args.get("service_type", "ClusterIP")
         
-        try:
-            manifest = await self._generate_deployment_llm(
-                name, replicas, image, port, env, service_type
-            )
-            return ToolOutput(
-                result={"manifest": manifest},
-                metadata={"generated": True, "method": "llm"}
-            )
-        except Exception as e:
-            logger.warning(f"LLM deployment generation failed: {e}, using fallback")
-            manifest = await self._generate_deployment_fallback(
-                name, replicas, image, port, env, service_type
-            )
-            return ToolOutput(
-                result={"manifest": manifest},
-                metadata={"generated": True, "method": "fallback", "error": str(e)}
-            )
+        manifest = await self._generate_deployment_llm(
+            name, replicas, image, port, env, service_type
+        )
+        return ToolOutput(
+            result={"manifest": manifest},
+            metadata={"generated": True, "method": "llm"}
+        )
+    
+    async def _fallback(self, input: ToolInput) -> ToolOutput:
+        name = input.args.get("name", "app")
+        replicas = input.args.get("replicas", 3)
+        image = input.args.get("image", f"{name}:latest")
+        port = input.args.get("port", 8000)
+        env = input.args.get("env", {})
+        service_type = input.args.get("service_type", "ClusterIP")
+        
+        manifest = await self._generate_deployment_fallback(
+            name, replicas, image, port, env, service_type
+        )
+        return ToolOutput(
+            result={"manifest": manifest},
+            metadata={"generated": True, "method": "fallback"}
+        )
     
     async def _generate_deployment_llm(
         self,
@@ -545,27 +556,29 @@ Use healthchecks, restart policies, proper port mappings."""
         return "services" in input
 
 
-class DeploymentValidatorTool(BaseTool):
+class DeploymentValidatorTool(PDLCBaseTool):
     name = "deployment_validate"
     description = "Validate Kubernetes manifests, Terraform, Docker Compose"
     
-    async def execute(self, input: ToolInput) -> ToolOutput:
+    async def _llm_execute(self, input: ToolInput) -> ToolOutput:
         config = input.args.get("config", {})
         config_type = input.args.get("type", "kubernetes")
         
-        try:
-            validation = await self._validate_deployment_llm(config, config_type)
-            return ToolOutput(
-                result=validation,
-                metadata={"validated": True, "method": "llm"}
-            )
-        except Exception as e:
-            logger.warning(f"LLM validation failed: {e}, using fallback")
-            validation = await self._validate_deployment_fallback(config, config_type)
-            return ToolOutput(
-                result=validation,
-                metadata={"validated": True, "method": "fallback", "error": str(e)}
-            )
+        validation = await self._validate_deployment_llm(config, config_type)
+        return ToolOutput(
+            result=validation,
+            metadata={"validated": True, "method": "llm"}
+        )
+    
+    async def _fallback(self, input: ToolInput) -> ToolOutput:
+        config = input.args.get("config", {})
+        config_type = input.args.get("type", "kubernetes")
+        
+        validation = await self._validate_deployment_fallback(config, config_type)
+        return ToolOutput(
+            result=validation,
+            metadata={"validated": True, "method": "fallback"}
+        )
     
     async def _validate_deployment_llm(
         self,

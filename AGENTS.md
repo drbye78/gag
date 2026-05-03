@@ -52,7 +52,7 @@ uv sync          # or: pip install -e ".[all]"
 ├── ui/              # UI sketch retrieval
 ├── evaluation/      # Evaluation framework
 ├── git/             # Git repository ingestion
-├── tests/          # 382 tests
+├── tests/          # 560 tests
 └── docs/           # API, Architecture, Configuration
 ```
 

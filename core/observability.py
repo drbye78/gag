@@ -110,6 +110,21 @@ class MetricsCollector:
     def gauge(self, metric: str, value: float):
         self._gauges[metric] = value
     
+    def record_request(self, method: str, path: str, status: int, duration: float):
+        """Record HTTP request metrics (thin wrapper around record_latency/increment)."""
+        self.record_latency(f"request.{method}.{path}", duration * 1000)
+        self.increment(f"request.status.{status}")
+    
+    def record_retrieval(self, source: str, duration: float, count: int):
+        """Record retrieval metrics (thin wrapper around record_latency/increment)."""
+        self.record_latency(f"retrieval.{source}", duration * 1000)
+        self.increment(f"retrieval.{source}.count", count)
+    
+    def record_llm(self, duration: float, model: str, tokens: int):
+        """Record LLM call metrics (thin wrapper around record_latency/increment)."""
+        self.record_latency(f"llm.{model}", duration * 1000)
+        self.increment(f"llm.{model}.tokens", tokens)
+    
     def _percentile(self, values: List[float], p: float) -> float:
         if not values:
             return 0.0

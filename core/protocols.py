@@ -2,7 +2,8 @@
 
 from typing import Protocol, Any, Dict, List, Optional
 from datetime import datetime
-from enum import Enum
+
+from models.ir import ArtifactType, ArtifactStatus, Technology
 
 
 class IRFeatureProtocol(Protocol):
@@ -55,49 +56,6 @@ class IRNodeProtocol(Protocol):
     updated_at: datetime
     indexed_at: Optional[datetime]
     metadata: Dict[str, Any]
-
-
-class ArtifactType(str, Enum):
-    ARCHITECTURE = "architecture"
-    UI = "ui"
-    CODE = "code"
-    DOCUMENTATION = "documentation"
-    CONFIG = "config"
-    DEPLOYMENT = "deployment"
-
-
-class ArtifactStatus(str, Enum):
-    RAW = "raw"
-    PROCESSED = "processed"
-    VALIDATED = "validated"
-    INDEXED = "indexed"
-    ENRICHED = "enriched"
-
-
-class Technology(str, Enum):
-    FASTAPI = "fastapi"
-    FLASK = "flask"
-    DJANGO = "django"
-    EXPRESS = "express"
-    SPRING = "spring"
-    QDRANT = "qdrant"
-    FALKORDB = "falkordb"
-    POSTGRESQL = "postgresql"
-    MONGODB = "mongodb"
-    REDIS = "redis"
-    OPENAI = "openai"
-    QWEN = "qwen"
-    GLM = "glm"
-    QWEN_VL = "qwen_vl"
-    DOCKER = "docker"
-    KUBERNETES = "kubernetes"
-    PYTHON = "python"
-    TYPESCRIPT = "typescript"
-    GO = "go"
-    RUST = "rust"
-    JAVA = "java"
-    LANGGRAPH = "langgraph"
-    OPENTELEMETRY = "opentelemetry"
 
 
 class EnrichedIRProtocol(Protocol):

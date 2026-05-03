@@ -8,6 +8,7 @@ Validates:
 - Confidence scoring
 """
 
+import re
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -150,20 +151,29 @@ class ValidatorAgent:
                     )
                 )
 
-        factual_mismatches = []
+        # Use token-level Jaccard similarity instead of naive prefix comparison
+        low_overlap_sources = []
         for ctx in context[:3]:
             ctx_content = ctx.get("content", "").lower()
-            if ctx_content and ctx_content[:100] != response_lower[:100]:
-                if abs(len(ctx_content) - len(response_lower)) > 500:
-                    factual_mismatches.append(ctx.get("source", "unknown"))
+            if not ctx_content:
+                continue
+            ctx_tokens = set(ctx_content.split())
+            resp_tokens = set(response_lower.split())
+            if not ctx_tokens:
+                continue
+            intersection = ctx_tokens & resp_tokens
+            union = ctx_tokens | resp_tokens
+            jaccard = len(intersection) / len(union) if union else 0.0
+            if jaccard < 0.1:
+                low_overlap_sources.append(ctx.get("source", "unknown"))
 
-        if len(factual_mismatches) > 2:
+        if len(low_overlap_sources) > 2:
             issues.append(
                 ValidationIssue(
                     category=ValidationCategory.ACCURACY.value,
                     severity=ValidationSeverity.ERROR.value,
-                    message="Response significantly differs from context",
-                    evidence=factual_mismatches,
+                    message="Response has low token overlap with context",
+                    evidence=low_overlap_sources,
                     suggestion="Verify response against retrieved documents",
                 )
             )
@@ -269,8 +279,6 @@ class ValidatorAgent:
         ]
 
         for pattern, description in dangerous_patterns:
-            import re
-
             if re.search(pattern, response, re.IGNORECASE):
                 issues.append(
                     ValidationIssue(

@@ -58,7 +58,6 @@ class ChatCompletionResponse:
 
 
 class LLMRouter:
-    _client: Optional[httpx.AsyncClient] = None
     _embed_pipeline: Optional[Any] = None
 
     def __init__(
@@ -77,18 +76,17 @@ class LLMRouter:
         self.base_url = base_url or LLM_PROVIDER_URLS.get(self.provider, "")
         self.timeout = httpx.Timeout(timeout)
         self.max_retries = max_retries
+        self._client: Optional[httpx.AsyncClient] = None
 
-    @classmethod
-    def get_client(cls) -> httpx.AsyncClient:
-        if cls._client is None:
-            cls._client = httpx.AsyncClient(timeout=httpx.Timeout(60))
-        return cls._client
+    def get_client(self) -> httpx.AsyncClient:
+        if self._client is None:
+            self._client = httpx.AsyncClient(timeout=httpx.Timeout(60))
+        return self._client
 
-    @classmethod
-    async def close_client(cls):
-        if cls._client is not None:
-            await cls._client.aclose()
-            cls._client = None
+    async def close_client(self):
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
 
     def _build_headers(self) -> Dict[str, str]:
         return {

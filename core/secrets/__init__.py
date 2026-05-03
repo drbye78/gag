@@ -52,7 +52,7 @@ class VaultSecretsProvider(SecretsProvider):
             )
             return secret["data"]["data"].get("value")
         except Exception as e:
-            logger.error(f"Failed to get Vault secret {key}: {e}")
+            logger.error("Failed to get Vault secret %s: %s", key, e)
             return None
     
     async def get_secrets(self, prefix: str = "") -> Dict[str, str]:
@@ -78,7 +78,7 @@ class VaultSecretsProvider(SecretsProvider):
             
             return secrets
         except Exception as e:
-            logger.error(f"Failed to list Vault secrets: {e}")
+            logger.error("Failed to list Vault secrets: %s", e)
             return {}
 
 
@@ -104,7 +104,7 @@ class AWSSecretsManagerProvider(SecretsProvider):
                 return secret_dict.get(key)
             return None
         except Exception as e:
-            logger.error(f"Failed to get AWS secret {key}: {e}")
+            logger.error("Failed to get AWS secret %s: %s", key, e)
             return None
     
     async def get_secrets(self, prefix: str = "") -> Dict[str, str]:
@@ -130,7 +130,7 @@ class AWSSecretsManagerProvider(SecretsProvider):
             
             return secrets
         except Exception as e:
-            logger.error(f"Failed to list AWS secrets: {e}")
+            logger.error("Failed to list AWS secrets: %s", e)
             return {}
 
 
@@ -156,7 +156,7 @@ class AzureKeyVaultProvider(SecretsProvider):
             secret = client.get_secret(key)
             return secret.value
         except Exception as e:
-            logger.error(f"Failed to get Azure secret {key}: {e}")
+            logger.error("Failed to get Azure secret %s: %s", key, e)
             return None
     
     async def get_secrets(self, prefix: str = "") -> Dict[str, str]:
@@ -180,7 +180,7 @@ class AzureKeyVaultProvider(SecretsProvider):
             
             return secrets
         except Exception as e:
-            logger.error(f"Failed to list Azure secrets: {e}")
+            logger.error("Failed to list Azure secrets: %s", e)
             return {}
 
 

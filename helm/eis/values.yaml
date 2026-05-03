@@ -3,7 +3,7 @@ replicaCount: 3
 image:
   repository: eis-api
   pullPolicy: IfNotPresent
-  tag: "3.2.0"
+  tag: "4.0.0"
 
 imagePullSecrets: []
 nameOverride: ""

@@ -337,6 +337,8 @@ def _validate_edge_type(edge_type: str) -> str:
 class GraphIndexer:
     """FalkorDB graph indexer with batched Cypher operations."""
 
+    _MAX_NODE_CACHE_SIZE = 1000
+
     def __init__(
         self,
         host: str = "localhost",
@@ -347,6 +349,13 @@ class GraphIndexer:
         self.base_url = f"http://{host}:{port}"
         self._client: Optional[httpx.AsyncClient] = None
         self._node_cache: Dict[str, Dict[str, Any]] = {}
+
+    def _add_to_node_cache(self, node_id: str, node: Dict[str, Any]) -> None:
+        """Add a node to cache with LRU eviction."""
+        if len(self._node_cache) >= self._MAX_NODE_CACHE_SIZE:
+            oldest_key = next(iter(self._node_cache))
+            del self._node_cache[oldest_key]
+        self._node_cache[node_id] = node
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -434,7 +443,7 @@ class GraphIndexer:
                     for n in batch:
                         nid = n.get("id", "")
                         if nid:
-                            self._node_cache[nid] = n
+                            self._add_to_node_cache(nid, n)
                 else:
                     # Fallback: insert individually
                     for node in batch:
@@ -450,7 +459,7 @@ class GraphIndexer:
                                 {"id": node_id, "props": node.get("properties", {})},
                             )
                             indexed += 1
-                            self._node_cache[node_id] = node
+                            self._add_to_node_cache(node_id, node)
                         except Exception as e:
                             errors.append(f"Node {node_id} error: {e}")
 
@@ -470,7 +479,7 @@ class GraphIndexer:
                             {"id": node_id, "props": node.get("properties", {})},
                         )
                         indexed += 1
-                        self._node_cache[node_id] = node
+                        self._add_to_node_cache(node_id, node)
                     except Exception as e2:
                         errors.append(f"Node {node_id} error: {e2}")
 
@@ -638,7 +647,7 @@ class GraphIndexer:
 
             if source_file:
                 file_node_id = f"file:{source_file}"
-                self._node_cache[file_node_id] = {"type": "file", "path": source_file}
+                self._add_to_node_cache(file_node_id, {"type": "file", "path": source_file})
                 edges.append(
                     {
                         "source_id": node_id,

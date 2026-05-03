@@ -21,7 +21,8 @@ class Constraint(BaseModel):
 
 
 class ConstraintViolation(BaseModel):
-    constraint: Constraint
+    constraint: Optional[Constraint] = None
+    constraint_id: Optional[str] = None
     actual_value: Any
     expected_value: Any
     severity: str

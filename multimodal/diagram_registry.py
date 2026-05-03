@@ -92,31 +92,36 @@ class DiagramRegistry:
     async def _index_falkor(self, ir: "DiagramIR"):
         try:
             async with httpx.AsyncClient() as client:
-                for node in ir.nodes:
-                    await client.post(
-                        f"http://{FALKOR_HOST}:{FALKOR_PORT}/node",
-                        json={
+                # Batch all nodes and edges into a single request to avoid N+1
+                batch_payload = {
+                    "diagram_id": ir.id,
+                    "nodes": [
+                        {
                             "diagram_id": ir.id,
                             "node_id": node.id,
                             "type": node.type.value,
                             "name": node.name,
-                        },
-                        timeout=10,
-                    )
-                for edge in ir.edges:
-                    await client.post(
-                        f"http://{FALKOR_HOST}:{FALKOR_PORT}/edge",
-                        json={
+                        }
+                        for node in ir.nodes
+                    ],
+                    "edges": [
+                        {
                             "diagram_id": ir.id,
                             "source": edge.source,
                             "target": edge.target,
                             "type": edge.type.value,
                             "label": edge.label,
-                        },
-                        timeout=10,
-                    )
+                        }
+                        for edge in ir.edges
+                    ],
+                }
+                await client.post(
+                    f"http://{FALKOR_HOST}:{FALKOR_PORT}/batch",
+                    json=batch_payload,
+                    timeout=30,
+                )
         except Exception as e:
-            logger.debug("FalkorDB indexing failed: %s", e)
+            logger.debug("FalkorDB batch indexing failed: %s", e)
 
     async def search(
         self,

@@ -17,9 +17,16 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-# LlamaIndex - mandatory
-from llama_index.core import SimpleDirectoryReader
-from llama_index.core.readers import StringIterableReader
+# LlamaIndex - lazy import (may not be installed in all environments)
+try:
+    from llama_index.core import SimpleDirectoryReader
+    from llama_index.core.readers import StringIterableReader
+    LLAMA_INDEX_AVAILABLE = True
+except ImportError:
+    SimpleDirectoryReader = None
+    StringIterableReader = None
+    LLAMA_INDEX_AVAILABLE = False
+    logger.warning("LlamaIndex not available - document parsing will use fallbacks")
 
 # Docling v2.x - lazy import (heavy, includes PyTorch)
 try:
@@ -59,7 +66,7 @@ class LlamaIndexParser:
 
     @property
     def available(self) -> bool:
-        return True  # Mandatory
+        return LLAMA_INDEX_AVAILABLE
 
     def _get_reader(self, ext: str):
         if ext in self._readers:
@@ -98,7 +105,11 @@ class LlamaIndexParser:
         if not self.available:
             return ParsedDocumentResult(text="", error="LlamaIndex not available")
 
-        ext = os.path.splitext(filename)[1].lower()
+        # SECURITY: Sanitize filename to prevent path traversal
+        from core.security import sanitize_filename
+        safe_filename = sanitize_filename(filename)
+
+        ext = os.path.splitext(safe_filename)[1].lower()
         reader = self._get_reader(ext)
 
         if not reader:
@@ -133,7 +144,7 @@ class DoclingParser:
 
     @property
     def available(self) -> bool:
-        return True  # Mandatory
+        return DOCLING_AVAILABLE
 
     def _get_converter(self) -> Any:
         if not self.available:
@@ -229,7 +240,11 @@ class FallbackParser:
         content: bytes,
         filename: str,
     ) -> ParsedDocumentResult:
-        ext = os.path.splitext(filename)[1].lower()
+        # SECURITY: Sanitize filename to prevent path traversal
+        from core.security import sanitize_filename
+        safe_filename = sanitize_filename(filename)
+
+        ext = os.path.splitext(safe_filename)[1].lower()
 
         parsers = {
             ".pdf": self._parse_pdf,
@@ -720,7 +735,11 @@ class HybridDocumentParser:
         content: bytes,
         filename: str,
     ) -> ParsedDocumentResult:
-        ext = os.path.splitext(filename)[1].lower()
+        # SECURITY: Sanitize filename to prevent path traversal
+        from core.security import sanitize_filename
+        safe_filename = sanitize_filename(filename)
+
+        ext = os.path.splitext(safe_filename)[1].lower()
 
         if ext == ".pdf" and self.use_docling and self.docling.available:
             result = await self.docling.parse(content)
@@ -728,11 +747,11 @@ class HybridDocumentParser:
                 return result
 
         if self.prefer_llama_index and self.llama.available:
-            result = await self.llama.parse(content, filename)
+            result = await self.llama.parse(content, safe_filename)
             if result.text and not result.error:
                 return result
 
-        return self.fallback.parse(content, filename)
+        return self.fallback.parse(content, safe_filename)
 
     async def parse_file(
         self,
@@ -764,7 +783,9 @@ class HybridDocumentParser:
                 response = await client.get(url)
                 response.raise_for_status()
                 content = response.content
-                filename = url.split("/")[-1] or "document"
+                # SECURITY: Sanitize filename derived from URL
+                from core.security import sanitize_filename
+                filename = sanitize_filename(url.split("/")[-1] or "document")
         except Exception as e:
             return ParsedDocumentResult(text="", error=f"Failed to fetch URL: {e}")
 
@@ -783,8 +804,8 @@ def get_document_parser() -> HybridDocumentParser:
 
 
 def is_llama_index_available() -> bool:
-    return True  # Mandatory
+    return LLAMA_INDEX_AVAILABLE
 
 
 def is_docling_available() -> bool:
-    return True  # Mandatory
+    return DOCLING_AVAILABLE

@@ -1,13 +1,14 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 from core.pipeline import get_knowledge_pipeline, get_explanation_engine
 from core.adapters import get_adapter_registry
 from core.patterns import get_pattern_library
 from core.constraints import get_constraint_engine
+from core.auth import require_authenticated
 from models.ir import IRFeature, PlatformContext
 
-router = APIRouter(prefix="/adapter", tags=["Platform Adapter"])
+router = APIRouter(prefix="/adapter", tags=["Platform Adapter"], dependencies=[Depends(require_authenticated)])
 
 
 class AdapterQueryRequest(BaseModel):

@@ -13,8 +13,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-import httpx
 import logging
+
+from core.pool import get_http_pool
 
 logger = logging.getLogger(__name__)
 
@@ -294,70 +295,70 @@ class LongTermMemory:
             return
 
         try:
-            async with httpx.AsyncClient() as client:
-                await client.put(
-                    f"{self.backend_url}/collections/memory/points",
-                    json={
-                        "points": [
-                            {
-                                "id": entry_id,
-                                "vector": [],
-                                "payload": {
-                                    "tier": entry.tier,
-                                    "scope": entry.scope,
-                                    "key": entry.key,
-                                    "value": json.dumps(entry.value),
-                                    "metadata": entry.metadata,
-                                    "created_at": entry.created_at,
-                                },
-                            }
-                        ]
-                    },
-                    timeout=10.0,
-                )
+            pool = get_http_pool()
+            await pool.put(
+                f"{self.backend_url}/collections/memory/points",
+                json={
+                    "points": [
+                        {
+                            "id": entry_id,
+                            "vector": [],
+                            "payload": {
+                                "tier": entry.tier,
+                                "scope": entry.scope,
+                                "key": entry.key,
+                                "value": json.dumps(entry.value),
+                                "metadata": entry.metadata,
+                                "created_at": entry.created_at,
+                            },
+                        }
+                    ]
+                },
+                timeout=10.0,
+            )
         except Exception as e:
             logger.warning("Error saving to memory backend: %s", e)
 
     async def _fetch_from_backend(self, scope: str, key: str) -> Optional[Any]:
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{self.backend_url}/collections/memory/points/search",
-                    json={
-                        "filter": {
-                            "must": [
-                                {"key": "scope", "match": scope},
-                                {"key": "key", "match": key},
-                            ]
-                        },
-                        "limit": 1,
+            pool = get_http_pool()
+            response = await pool.post(
+                f"{self.backend_url}/collections/memory/points/search",
+                json={
+                    "filter": {
+                        "must": [
+                            {"key": "scope", "match": scope},
+                            {"key": "key", "match": key},
+                        ]
                     },
-                    timeout=10.0,
-                )
-                if response.status_code == 200:
-                    data = response.json()
-                    results = data.get("result", [])
-                    if results:
-                        return json.loads(
-                            results[0].get("payload", {}).get("value", "{}")
-                        )
+                    "limit": 1,
+                },
+                timeout=10.0,
+            )
+            if response.status_code == 200:
+                data = response.json()
+                results = data.get("result", [])
+                if results:
+                    return json.loads(
+                        results[0].get("payload", {}).get("value", "{}")
+                    )
         except Exception as e:
             logger.warning("Error fetching from memory backend: %s", e)
         return None
 
     async def _load_recent(self, scope: str) -> int:
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{self.backend_url}/collections/memory/points/search",
-                    json={
-                        "filter": {"must": [{"key": "scope", "match": scope}]},
-                        "limit": 100,
-                    },
-                    timeout=10.0,
-                )
-                if response.status_code == 200:
-                    return len(response.json().get("result", []))
+            pool = get_http_pool()
+            response = await pool.post(
+                f"{self.backend_url}/collections/memory/points/search",
+                json={
+                    "filter": {"must": [{"key": "scope", "match": scope}]},
+                    "limit": 100,
+                },
+                timeout=10.0,
+            )
+            if response.status_code == 200:
+                return len(response.json().get("result", []))
         except Exception as e:
             logger.warning("Error loading recent from memory backend: %s", e)
         return 0
@@ -462,6 +463,7 @@ class MemorySystem:
 
 _short_term_memory: Optional[ShortTermMemory] = None
 _memory_systems: Dict[str, "MemorySystem"] = {}
+_MAX_MEMORY_SYSTEMS = 100
 
 
 def get_short_term_memory() -> ShortTermMemory:
@@ -479,5 +481,9 @@ def get_memory_system(
 
     global _memory_systems
     if key not in _memory_systems:
+        if len(_memory_systems) >= _MAX_MEMORY_SYSTEMS:
+            # Evict oldest entry (first key)
+            oldest_key = next(iter(_memory_systems))
+            del _memory_systems[oldest_key]
         _memory_systems[key] = MemorySystem(session_id, project)
     return _memory_systems[key]

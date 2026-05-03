@@ -46,7 +46,6 @@ class ReasoningEngine:
         self.use_llm = use_llm
         self.max_steps = 10
         self.max_branches = 3
-        self._steps: Dict[str, ReasoningStep] = {}
         self._llm_router = None
         self._llm_available = False
     
@@ -185,7 +184,7 @@ Provide your reasoning steps and final answer."""
         if self.use_llm and self._llm_available and self._llm_router:
             return await self._llm_chain_reason(query, facts)
         
-        self._steps.clear()
+        steps: Dict[str, ReasoningStep] = {}
 
         current_step = ReasoningStep(
             step_id="0",
@@ -193,7 +192,7 @@ Provide your reasoning steps and final answer."""
             action="analyze",
             observation=f"Query requires understanding of {len(facts)} facts",
         )
-        self._steps["0"] = current_step
+        steps["0"] = current_step
 
         for i, fact in enumerate(facts[: self.max_steps], 1):
             step = ReasoningStep(
@@ -204,7 +203,7 @@ Provide your reasoning steps and final answer."""
                 score=fact.get("score", 0.0),
                 parent_id=str(i - 1),
             )
-            self._steps[str(i)] = step
+            steps[str(i)] = step
 
         answer = self._build_chain_answer(facts, query)
 
@@ -212,7 +211,7 @@ Provide your reasoning steps and final answer."""
             "query": query,
             "answer": answer,
             "reasoning_mode": self.mode.value,
-            "steps": list(self._steps.values()),
+            "steps": list(steps.values()),
             "confidence": sum(f.get("score", 0) for f in facts) / max(len(facts), 1),
             "sources": [f.get("source", "") for f in facts[:3]],
         }
@@ -222,14 +221,14 @@ Provide your reasoning steps and final answer."""
         query: str,
         facts: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
-        self._steps.clear()
+        steps: Dict[str, ReasoningStep] = {}
         root = ReasoningStep(
             step_id="root",
             thought=f"Query: {query}",
             action="decompose",
             observation=f"Exploring {len(facts)} facts across branches",
         )
-        self._steps["root"] = root
+        steps["root"] = root
 
         branch_paths = [["root"] for _ in range(min(self.max_branches, len(facts)))]
 
@@ -243,7 +242,7 @@ Provide your reasoning steps and final answer."""
                 score=fact.get("score", 0.0),
                 parent_id="root",
             )
-            self._steps[step.step_id] = step
+            steps[step.step_id] = step
             branch_paths[branch_idx].append(step.step_id)
 
         best_path = max(
@@ -255,7 +254,7 @@ Provide your reasoning steps and final answer."""
             "query": query,
             "answer": answer,
             "reasoning_mode": self.mode.value,
-            "steps": list(self._steps.values()),
+            "steps": list(steps.values()),
             "confidence": self._calculate_path_score(best_path, facts),
             "sources": [f.get("source", "") for f in facts[:3]],
             "explored_paths": len(branch_paths),
@@ -266,7 +265,7 @@ Provide your reasoning steps and final answer."""
         query: str,
         facts: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
-        self._steps.clear()
+        steps: Dict[str, ReasoningStep] = {}
 
         analyze_step = ReasoningStep(
             step_id="0",
@@ -274,7 +273,7 @@ Provide your reasoning steps and final answer."""
             action="analyze",
             observation=f"Found {len(facts)} potentially relevant facts",
         )
-        self._steps["0"] = analyze_step
+        steps["0"] = analyze_step
 
         critique_step = ReasoningStep(
             step_id="1",
@@ -283,7 +282,7 @@ Provide your reasoning steps and final answer."""
             observation="Evaluating fact quality",
             parent_id="0",
         )
-        self._steps["1"] = critique_step
+        steps["1"] = critique_step
 
         valid_facts = [f for f in facts if f.get("score", 0) > 0.3]
 
@@ -294,7 +293,7 @@ Provide your reasoning steps and final answer."""
             observation=f"Using {len(valid_facts)} high-quality facts",
             parent_id="1",
         )
-        self._steps["2"] = refine_step
+        steps["2"] = refine_step
 
         answer = self._build_chain_answer(valid_facts if valid_facts else facts, query)
 
@@ -302,7 +301,7 @@ Provide your reasoning steps and final answer."""
             "query": query,
             "answer": answer,
             "reasoning_mode": self.mode.value,
-            "steps": list(self._steps.values()),
+            "steps": list(steps.values()),
             "confidence": sum(f.get("score", 0) for f in valid_facts)
             / max(len(valid_facts), 1),
             "sources": [f.get("source", "") for f in (valid_facts or facts)[:3]],
@@ -313,7 +312,7 @@ Provide your reasoning steps and final answer."""
         query: str,
         facts: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
-        self._steps.clear()
+        steps: Dict[str, ReasoningStep] = {}
 
         claim_step = ReasoningStep(
             step_id="0",
@@ -321,7 +320,7 @@ Provide your reasoning steps and final answer."""
             action="claim",
             observation=f"Formed claim from {len(facts)} facts",
         )
-        self._steps["0"] = claim_step
+        steps["0"] = claim_step
 
         critique_facts = []
         for fact in facts:
@@ -342,13 +341,13 @@ Provide your reasoning steps and final answer."""
             score=sum(f.get("score", 0) for f in critique_facts) / len(critique_facts),
             parent_id="0",
         )
-        self._steps["1"] = step
+        steps["1"] = step
 
         return {
             "query": query,
             "answer": answer,
             "reasoning_mode": self.mode.value,
-            "steps": list(self._steps.values()),
+            "steps": list(steps.values()),
             "confidence": step.score,
             "sources": [f.get("source", "") for f in facts[:3]],
         }

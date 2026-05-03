@@ -34,7 +34,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Engineering Intelligence System API",
     description="Production-grade engineering intelligence system with multi-RAG, multimodal diagrams, and multilingual support",
-    version="3.2.0",
+    version="4.0.0",
     lifespan=lifespan,
 )
 
@@ -279,7 +279,7 @@ async def health():
 
     return HealthResponse(
         status=status_info["status"],
-        version="3.2.0",
+        version="4.0.0",
     )
 
 
@@ -287,7 +287,7 @@ async def health():
 async def root():
     return {
         "service": "Engineering Intelligence System",
-        "version": "3.2.0",
+        "version": "4.0.0",
         "endpoints": [
             "/health",
             "/query",
@@ -564,7 +564,8 @@ class CodeGraphDeadCodeRequest(BaseModel):
 
 
 class CodeGraphVisualizeRequest(BaseModel):
-    cypher_query: str
+    query_type: str  # "show_all_nodes" or "show_relationships"
+    node_name: Optional[str] = None  # Required when query_type == "show_relationships"
 
 
 class CodeGraphIndexGitRequest(BaseModel):
@@ -898,17 +899,38 @@ async def codegraph_dead_code(request: CodeGraphDeadCodeRequest = CodeGraphDeadC
 
 @app.post("/codegraph/visualize", dependencies=[Depends(require_authenticated)])
 async def codegraph_visualize(request: CodeGraphVisualizeRequest):
+    from graph.cypher_builder import CypherBuilder
     from retrieval.code_graph import CodeGraphRetriever
-    
-    query = request.cypher_query.upper()
-    forbidden = ["DETACH DELETE", "DELETE (", "DROP ", "MERGE (n)", "REMOVE ", "SET n=", "FOREACH "]
-    if any(block in query for block in forbidden):
-        return {"error": "Query contains forbidden operations", "url": None}
-    
-    retriever = CodeGraphRetriever()
-    result = await retriever.visualize(request.cypher_query)
 
-    return {"url": result.get("url"), "cypher_query": request.cypher_query}
+    # SECURITY: Only allow pre-defined visualization queries — raw Cypher is not supported
+    allowed_query_types = {"show_all_nodes", "show_relationships"}
+    if request.query_type not in allowed_query_types:
+        return {"error": f"Unsupported query_type '{request.query_type}'. Allowed: {allowed_query_types}", "url": None}
+
+    retriever = CodeGraphRetriever()
+
+    if request.query_type == "show_all_nodes":
+        builder = CypherBuilder(allowed_types={"Component", "Service", "Function", "Class", "Module", "File", "Entity"})
+        builder.match_node(["Entity"], {})
+        builder.return_clause("n")
+        builder.limit_clause(100)
+        cypher, params = builder.build()
+    elif request.query_type == "show_relationships":
+        if not request.node_name:
+            return {"error": "node_name is required for show_relationships query", "url": None}
+        from core.security import sanitize_filename
+        safe_name = sanitize_filename(request.node_name)
+        builder = CypherBuilder(allowed_types={"Component", "Service", "Function", "Class", "Module", "File", "Entity"})
+        builder.match_node(["Entity"], {"name": safe_name})
+        builder.return_clause("n")
+        builder.limit_clause(100)
+        cypher, params = builder.build()
+    else:
+        return {"error": "Raw Cypher queries are not supported for security reasons", "url": None}
+
+    result = await retriever.visualize(cypher)
+
+    return {"url": result.get("url"), "query_type": request.query_type}
 
 
 # ---------------------------------------------------------------------------

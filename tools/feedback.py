@@ -2,32 +2,34 @@ from typing import Any, Dict, List, Optional
 import json
 import logging
 
-from tools.base import BaseTool, ToolInput, ToolOutput
+from tools.base import BaseTool, PDLCBaseTool, ToolInput, ToolOutput
 
 logger = logging.getLogger(__name__)
 
 
-class UserFeedbackIngestTool(BaseTool):
+class UserFeedbackIngestTool(PDLCBaseTool):
     name = "feedback_ingest"
     description = "Ingest user feedback from email, survey, support tickets, app reviews"
     
-    async def execute(self, input: ToolInput) -> ToolOutput:
+    async def _llm_execute(self, input: ToolInput) -> ToolOutput:
         source = input.args.get("source", "email")
         feedback = input.args.get("feedback", "")
         
-        try:
-            result = await self._ingest_feedback_llm(source, feedback)
-            return ToolOutput(
-                result=result,
-                metadata={"ingested": True, "method": "llm"}
-            )
-        except Exception as e:
-            logger.warning(f"LLM feedback ingestion failed: {e}, using fallback")
-            result = await self._ingest_feedback_fallback(source, feedback)
-            return ToolOutput(
-                result=result,
-                metadata={"ingested": True, "method": "fallback", "error": str(e)}
-            )
+        result = await self._ingest_feedback_llm(source, feedback)
+        return ToolOutput(
+            result=result,
+            metadata={"ingested": True, "method": "llm"}
+        )
+    
+    async def _fallback(self, input: ToolInput) -> ToolOutput:
+        source = input.args.get("source", "email")
+        feedback = input.args.get("feedback", "")
+        
+        result = await self._ingest_feedback_fallback(source, feedback)
+        return ToolOutput(
+            result=result,
+            metadata={"ingested": True, "method": "fallback"}
+        )
     
     async def _ingest_feedback_llm(
         self,
@@ -83,26 +85,27 @@ Be specific about what user wants."""
         return "feedback" in input
 
 
-class SentimentAnalyzerTool(BaseTool):
+class SentimentAnalyzerTool(PDLCBaseTool):
     name = "sentiment_analyze"
     description = "Analyze feedback sentiment using NLP"
     
-    async def execute(self, input: ToolInput) -> ToolOutput:
+    async def _llm_execute(self, input: ToolInput) -> ToolOutput:
         texts = input.args.get("texts", [])
         
-        try:
-            analysis = await self._analyze_sentiment_llm(texts)
-            return ToolOutput(
-                result={"analysis": analysis},
-                metadata={"analyzed": True, "method": "llm"}
-            )
-        except Exception as e:
-            logger.warning(f"LLM sentiment analysis failed: {e}, using fallback")
-            analysis = await self._analyze_sentiment_fallback(texts)
-            return ToolOutput(
-                result={"analysis": analysis},
-                metadata={"analyzed": True, "method": "fallback", "error": str(e)}
-            )
+        analysis = await self._analyze_sentiment_llm(texts)
+        return ToolOutput(
+            result={"analysis": analysis},
+            metadata={"analyzed": True, "method": "llm"}
+        )
+    
+    async def _fallback(self, input: ToolInput) -> ToolOutput:
+        texts = input.args.get("texts", [])
+        
+        analysis = await self._analyze_sentiment_fallback(texts)
+        return ToolOutput(
+            result={"analysis": analysis},
+            metadata={"analyzed": True, "method": "fallback"}
+        )
     
     async def _analyze_sentiment_llm(
         self,
@@ -325,26 +328,27 @@ Assign realistic priority based on request content."""
         return "request" in input or "action" in input
 
 
-class ChurnPredictorTool(BaseTool):
+class ChurnPredictorTool(PDLCBaseTool):
     name = "churn_predict"
     description = "Predict customer churn using ML models"
     
-    async def execute(self, input: ToolInput) -> ToolOutput:
+    async def _llm_execute(self, input: ToolInput) -> ToolOutput:
         customer_id = input.args.get("customer_id", "")
         
-        try:
-            prediction = await self._predict_churn_llm(customer_id)
-            return ToolOutput(
-                result={"prediction": prediction},
-                metadata={"predicted": True, "method": "llm"}
-            )
-        except Exception as e:
-            logger.warning(f"LLM churn prediction failed: {e}, using fallback")
-            prediction = await self._predict_churn_fallback(customer_id)
-            return ToolOutput(
-                result={"prediction": prediction},
-                metadata={"predicted": True, "method": "fallback", "error": str(e)}
-            )
+        prediction = await self._predict_churn_llm(customer_id)
+        return ToolOutput(
+            result={"prediction": prediction},
+            metadata={"predicted": True, "method": "llm"}
+        )
+    
+    async def _fallback(self, input: ToolInput) -> ToolOutput:
+        customer_id = input.args.get("customer_id", "")
+        
+        prediction = await self._predict_churn_fallback(customer_id)
+        return ToolOutput(
+            result={"prediction": prediction},
+            metadata={"predicted": True, "method": "fallback"}
+        )
     
     async def _predict_churn_llm(self, customer_id: str) -> Dict[str, Any]:
         try:

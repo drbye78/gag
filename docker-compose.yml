@@ -36,7 +36,7 @@ services:
   falkordb:
     image: falkordb/falkordb:v4.18.0
     ports:
-      - "6379:6379"
+      - "7379:6379"
       - "3000:3000"
     volumes:
       - falkordb-data:/data

@@ -1,8 +1,11 @@
+import logging
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 from enum import Enum
 
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 
 class PDLCPhase(str, Enum):
@@ -52,6 +55,33 @@ class BaseTool(ABC):
     @abstractmethod
     def validate_input(self, input: Dict[str, Any]) -> bool:
         pass
+
+
+class PDLCBaseTool(BaseTool):
+    """Base class for PDLC tools with template method pattern.
+    
+    Implements the try-LLM-fallback pattern common to all PDLC tools.
+    Subclasses override _llm_execute() and _fallback() instead of execute().
+    """
+
+    async def execute(self, input: ToolInput) -> ToolOutput:
+        """Template method: try LLM, fall back on failure."""
+        try:
+            return await self._llm_execute(input)
+        except Exception as e:
+            logger.warning("LLM execution failed for %s: %s", self.__class__.__name__, e)
+            return await self._fallback(input)
+
+    async def _llm_execute(self, input: ToolInput) -> ToolOutput:
+        """Override in subclass: LLM-based implementation."""
+        raise NotImplementedError
+
+    async def _fallback(self, input: ToolInput) -> ToolOutput:
+        """Override in subclass: fallback implementation when LLM fails."""
+        return ToolOutput(
+            result={"error": "No fallback implementation", "tool": self.__class__.__name__},
+            metadata={},
+        )
 
 
 class ArchitectureEvaluator(BaseTool):
@@ -887,8 +917,8 @@ class ToolRegistry:
             register_observability_tools(self)
             register_feedback_tools(self)
             register_day2_tools(self)
-        except ImportError:
-            pass
+        except ImportError as e:
+            logger.warning("Failed to import PDLC tool module: %s", e)
 
     def register(self, tool: BaseTool):
         self._tools[tool.name] = tool

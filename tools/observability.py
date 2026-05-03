@@ -3,33 +3,36 @@ import json
 import logging
 import time
 
-from tools.base import BaseTool, ToolInput, ToolOutput
+from tools.base import BaseTool, PDLCBaseTool, ToolInput, ToolOutput
 
 logger = logging.getLogger(__name__)
 
 
-class MetricsCollectorTool(BaseTool):
+class MetricsCollectorTool(PDLCBaseTool):
     name = "metrics_collect"
     description = "Collect and aggregate metrics from Prometheus, InfluxDB, CloudWatch"
     
-    async def execute(self, input: ToolInput) -> ToolOutput:
+    async def _llm_execute(self, input: ToolInput) -> ToolOutput:
         source = input.args.get("source", "prometheus")
         query = input.args.get("query", "")
         time_range = input.args.get("time_range", "1h")
         
-        try:
-            metrics = await self._collect_metrics_llm(source, query, time_range)
-            return ToolOutput(
-                result={"metrics": metrics},
-                metadata={"collected": True, "method": "llm"}
-            )
-        except Exception as e:
-            logger.warning(f"LLM metrics collection failed: {e}, using fallback")
-            metrics = await self._collect_metrics_fallback(source, query, time_range)
-            return ToolOutput(
-                result={"metrics": metrics},
-                metadata={"collected": True, "method": "fallback", "error": str(e)}
-            )
+        metrics = await self._collect_metrics_llm(source, query, time_range)
+        return ToolOutput(
+            result={"metrics": metrics},
+            metadata={"collected": True, "method": "llm"}
+        )
+    
+    async def _fallback(self, input: ToolInput) -> ToolOutput:
+        source = input.args.get("source", "prometheus")
+        query = input.args.get("query", "")
+        time_range = input.args.get("time_range", "1h")
+        
+        metrics = await self._collect_metrics_fallback(source, query, time_range)
+        return ToolOutput(
+            result={"metrics": metrics},
+            metadata={"collected": True, "method": "fallback"}
+        )
     
     async def _collect_metrics_llm(
         self,
@@ -168,27 +171,29 @@ Generate 10 realistic log entries."""
         return "sources" in input
 
 
-class AlertManagerTool(BaseTool):
+class AlertManagerTool(PDLCBaseTool):
     name = "alert_manager"
     description = "Create and manage Prometheus/Grafana alerts"
     
-    async def execute(self, input: ToolInput) -> ToolOutput:
+    async def _llm_execute(self, input: ToolInput) -> ToolOutput:
         alert = input.args.get("alert", {})
         action = input.args.get("action", "create")
         
-        try:
-            result = await self._manage_alert_llm(alert, action)
-            return ToolOutput(
-                result=result,
-                metadata={"managed": True, "method": "llm"}
-            )
-        except Exception as e:
-            logger.warning(f"LLM alert management failed: {e}, using fallback")
-            result = await self._manage_alert_fallback(alert, action)
-            return ToolOutput(
-                result=result,
-                metadata={"managed": True, "method": "fallback", "error": str(e)}
-            )
+        result = await self._manage_alert_llm(alert, action)
+        return ToolOutput(
+            result=result,
+            metadata={"managed": True, "method": "llm"}
+        )
+    
+    async def _fallback(self, input: ToolInput) -> ToolOutput:
+        alert = input.args.get("alert", {})
+        action = input.args.get("action", "create")
+        
+        result = await self._manage_alert_fallback(alert, action)
+        return ToolOutput(
+            result=result,
+            metadata={"managed": True, "method": "fallback"}
+        )
     
     async def _manage_alert_llm(
         self,
@@ -239,28 +244,31 @@ Generate production-quality alert rules."""
         return "alert" in input or "action" in input
 
 
-class DashboardGeneratorTool(BaseTool):
+class DashboardGeneratorTool(PDLCBaseTool):
     name = "dashboard_generate"
     description = "Generate Grafana/JSON monitoring dashboards"
     
-    async def execute(self, input: ToolInput) -> ToolOutput:
+    async def _llm_execute(self, input: ToolInput) -> ToolOutput:
         metrics = input.args.get("metrics", [])
         format = input.args.get("format", "grafana")
         title = input.args.get("title", "Monitoring Dashboard")
         
-        try:
-            dashboard = await self._generate_dashboard_llm(metrics, format, title)
-            return ToolOutput(
-                result={"dashboard": dashboard},
-                metadata={"generated": True, "method": "llm"}
-            )
-        except Exception as e:
-            logger.warning(f"LLM dashboard generation failed: {e}, using fallback")
-            dashboard = await self._generate_dashboard_fallback(metrics, format, title)
-            return ToolOutput(
-                result={"dashboard": dashboard},
-                metadata={"generated": True, "method": "fallback", "error": str(e)}
-            )
+        dashboard = await self._generate_dashboard_llm(metrics, format, title)
+        return ToolOutput(
+            result={"dashboard": dashboard},
+            metadata={"generated": True, "method": "llm"}
+        )
+    
+    async def _fallback(self, input: ToolInput) -> ToolOutput:
+        metrics = input.args.get("metrics", [])
+        format = input.args.get("format", "grafana")
+        title = input.args.get("title", "Monitoring Dashboard")
+        
+        dashboard = await self._generate_dashboard_fallback(metrics, format, title)
+        return ToolOutput(
+            result={"dashboard": dashboard},
+            metadata={"generated": True, "method": "fallback"}
+        )
     
     async def _generate_dashboard_llm(
         self,

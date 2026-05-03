@@ -58,15 +58,12 @@ class AppContainer:
         with self._singletons_lock:
             if cls in self._singletons:
                 return self._singletons[cls]
-        
-        with self._factories_lock:
-            if cls in self._factories:
-                instance = self._factories[cls]()
-                with self._singletons_lock:
-                    self._singletons[cls] = instance
-                return instance
-        
-        raise KeyError(f"No singleton or factory registered for {cls}")
+            factory = self._factories.get(cls)
+            if factory is None:
+                raise KeyError(f"No singleton or factory registered for {cls}")
+            instance = factory()
+            self._singletons[cls] = instance
+            return instance
 
     def register_override(self, cls: Type, instance: Any) -> None:
         """Register override for testing - thread-safe."""

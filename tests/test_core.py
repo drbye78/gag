@@ -112,32 +112,40 @@ class TestMemorySystem:
 class TestRBAC:
     @pytest.mark.asyncio
     async def test_check_permission(self):
-        from core.auth import check_permission, create_token
+        from core.auth import check_permission, create_token, get_rbac_manager, Role
 
-        await create_token("testuser", ["developer"])
-        has_perm = await check_permission("testuser", "read")
+        # Explicitly create user with engineer role for permission testing
+        rbac = get_rbac_manager()
+        rbac.create_user("testuser_dev", "dev@test.com", "password123", roles=[Role.ENGINEER.value])
+        await create_token("testuser_dev")
+        has_perm = await check_permission("testuser_dev", "read")
         assert isinstance(has_perm, bool)
-        has_write = await check_permission("testuser", "write")
+        has_write = await check_permission("testuser_dev", "write")
         assert isinstance(has_write, bool)
-        has_admin = await check_permission("testuser", "admin")
-        assert isinstance(has_admin, bool)
 
     @pytest.mark.asyncio
     async def test_check_role(self):
-        from core.auth import check_role, create_token
+        from core.auth import check_role, create_token, get_rbac_manager, Role
 
-        await create_token("admin", ["admin"])
-        is_admin = await check_role("admin", "admin")
+        # Explicitly create user with admin role
+        rbac = get_rbac_manager()
+        rbac.create_user("admin_test", "admin@test.com", "password123", roles=[Role.ADMIN.value])
+        await create_token("admin_test")
+        is_admin = await check_role("admin_test", "admin")
         assert is_admin is True
 
     @pytest.mark.asyncio
     async def test_role_permissions_distinct(self):
-        from core.auth import check_permission, create_token
+        from core.auth import check_permission, create_token, get_rbac_manager, Role
 
-        await create_token("viewer", ["viewer"])
-        can_read = await check_permission("viewer", "read")
-        cannot_write = await check_permission("viewer", "write") if can_read else True
-        assert isinstance(can_read, bool)
+        # Explicitly create user with viewer role
+        rbac = get_rbac_manager()
+        rbac.create_user("viewer_test", "viewer@test.com", "password123", roles=[Role.VIEWER.value])
+        await create_token("viewer_test")
+        can_read = await check_permission("viewer_test", "read")
+        assert can_read is True
+        cannot_write = await check_permission("viewer_test", "write")
+        assert cannot_write is False
 
 
 class TestCache:

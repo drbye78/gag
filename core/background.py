@@ -23,8 +23,17 @@ class BackgroundTask:
 class BackgroundTaskRunner:
     def __init__(self, max_concurrent: int = 10):
         self.max_concurrent = max_concurrent
+        self._max_concurrent = max_concurrent
         self._tasks: Dict[str, BackgroundTask] = {}
-        self._semaphore = asyncio.Semaphore(max_concurrent)
+        self._semaphore: Optional[asyncio.Semaphore] = None
+
+    def _get_semaphore(self) -> asyncio.Semaphore:
+        if self._semaphore is None:
+            self._semaphore = asyncio.Semaphore(self._max_concurrent)
+        return self._semaphore
+
+    def _prune_completed_tasks(self):
+        self._tasks = {tid: t for tid, t in self._tasks.items() if not t.done()}
 
     async def submit(
         self,
@@ -32,6 +41,7 @@ class BackgroundTaskRunner:
         name: str,
         coro: Awaitable[Any],
     ) -> str:
+        self._prune_completed_tasks()
         task = BackgroundTask(
             id=task_id,
             name=name,
@@ -45,7 +55,7 @@ class BackgroundTaskRunner:
         return task_id
 
     async def _run_task(self, task_id: str, coro: Awaitable[Any]) -> None:
-        async with self._semaphore:
+        async with self._get_semaphore():
             task = self._tasks.get(task_id)
             if not task:
                 return

@@ -7,6 +7,7 @@ Uses persistent httpx clients for connection pooling.
 Includes per-text SHA-256 caching to skip repeated embeddings.
 """
 
+import asyncio
 import hashlib
 import logging
 import os
@@ -222,8 +223,7 @@ class EmbeddingPipeline:
         headers = {"Authorization": f"Bearer {api_key}"}
         client = await self._get_client()
 
-        results = []
-        for text in texts:
+        async def _embed_one(text: str) -> List[float]:
             resp = await client.post(
                 base_url,
                 json={
@@ -235,18 +235,27 @@ class EmbeddingPipeline:
             )
             resp.raise_for_status()
             data = resp.json()
-            embedding = (
+            return (
                 data.get("output", {}).get("embeddings", [{}])[0].get("embedding", [])
             )
-            results.append(embedding)
-        return results
+
+        results = await asyncio.gather(
+            *[_embed_one(t) for t in texts],
+            return_exceptions=True,
+        )
+        # Raise the first exception if any; otherwise return embeddings
+        embeddings: List[List[float]] = []
+        for r in results:
+            if isinstance(r, Exception):
+                raise r
+            embeddings.append(r)
+        return embeddings
 
     async def _embed_ollama(self, texts: List[str]) -> List[List[float]]:
         base_url = os.getenv("OLLAMA_HOST", "http://localhost:11434")
         client = await self._get_client()
 
-        results = []
-        for text in texts:
+        async def _embed_one(text: str) -> List[float]:
             resp = await client.post(
                 f"{base_url}/api/embeddings",
                 json={"model": self.model, "prompt": text},
@@ -254,9 +263,18 @@ class EmbeddingPipeline:
             )
             resp.raise_for_status()
             data = resp.json()
-            embedding = data.get("embedding", [])
-            results.append(embedding)
-        return results
+            return data.get("embedding", [])
+
+        results = await asyncio.gather(
+            *[_embed_one(t) for t in texts],
+            return_exceptions=True,
+        )
+        embeddings: List[List[float]] = []
+        for r in results:
+            if isinstance(r, Exception):
+                raise r
+            embeddings.append(r)
+        return embeddings
 
     async def _embed_openrouter(self, texts: List[str]) -> List[List[float]]:
         from core.config import get_settings
@@ -272,8 +290,7 @@ class EmbeddingPipeline:
         }
         client = await self._get_client()
         
-        results = []
-        for text in texts:
+        async def _embed_one(text: str) -> List[float]:
             resp = await client.post(
                 "https://openrouter.ai/api/v1/embeddings",
                 json={"input": text, "model": model},
@@ -282,9 +299,18 @@ class EmbeddingPipeline:
             )
             resp.raise_for_status()
             data = resp.json()
-            embedding = data.get("data", [{}])[0].get("embedding", [])
-            results.append(embedding)
-        return results
+            return data.get("data", [{}])[0].get("embedding", [])
+
+        results = await asyncio.gather(
+            *[_embed_one(t) for t in texts],
+            return_exceptions=True,
+        )
+        embeddings: List[List[float]] = []
+        for r in results:
+            if isinstance(r, Exception):
+                raise r
+            embeddings.append(r)
+        return embeddings
 
     async def embed_chunks(self, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if not chunks:

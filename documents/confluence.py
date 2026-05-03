@@ -4,6 +4,7 @@ Confluence Client - Atlassian Confluence API client.
 Provides space and page sync with children support, attachments, and recursive fetching.
 """
 
+import asyncio
 import os
 import socket
 import xml.etree.ElementTree as ET
@@ -226,27 +227,35 @@ class ConfluenceClient:
             data = resp.json()
             results = data.get("results", [])
 
-            for item in results:
+            # Fetch all child pages and bodies in parallel to avoid N+1
+            async def _fetch_child(item: dict) -> Optional[ConfluencePage]:
                 child_id = item.get("id")
-                child_page = await self.get_page(child_id)
-
-                if child_page:
-                    body = await self.get_page_body(child_id)
-
-                    child = ConfluencePage(
-                        page_id=child_id,
-                        title=child_page.get("title", ""),
-                        space_key=child_page.get("spaceId", ""),
-                        content=body or "",
-                        version=child_page.get("version", {}).get("number", 1),
+                child_page, body = await asyncio.gather(
+                    self.get_page(child_id),
+                    self.get_page_body(child_id),
+                )
+                if not child_page:
+                    return None
+                child = ConfluencePage(
+                    page_id=child_id,
+                    title=child_page.get("title", ""),
+                    space_key=child_page.get("spaceId", ""),
+                    content=body or "",
+                    version=child_page.get("version", {}).get("number", 1),
+                )
+                if depth > 1:
+                    child.children = await self.get_page_children(
+                        child_id, depth - 1
                     )
+                return child
 
-                    if depth > 1:
-                        child.children = await self.get_page_children(
-                            child_id, depth - 1
-                        )
-
-                    children.append(child)
+            child_results = await asyncio.gather(
+                *[_fetch_child(item) for item in results],
+                return_exceptions=True,
+            )
+            for cr in child_results:
+                if isinstance(cr, ConfluencePage):
+                    children.append(cr)
 
         return children
 
@@ -389,28 +398,36 @@ class ConfluenceClient:
             data = resp.json()
             results = data.get("results", [])
 
-            for item in results:
+            # Fetch all child pages and bodies in parallel to avoid N+1
+            async def _fetch_child(item: dict) -> Optional[ConfluencePage]:
                 child_id = item.get("id")
-                child_page = await self.get_page(child_id)
-
-                if child_page:
-                    body = await self.get_page_body(child_id)
-
-                    children.append(
-                        ConfluencePage(
-                            page_id=child_id,
-                            title=child_page.get("title", ""),
-                            space_key=child_page.get("spaceId", ""),
-                            content=body or "",
-                            version=child_page.get("version", {}).get("number", 1),
-                        )
+                child_page, body = await asyncio.gather(
+                    self.get_page(child_id),
+                    self.get_page_body(child_id),
+                )
+                if not child_page:
+                    return None
+                child = ConfluencePage(
+                    page_id=child_id,
+                    title=child_page.get("title", ""),
+                    space_key=child_page.get("spaceId", ""),
+                    content=body or "",
+                    version=child_page.get("version", {}).get("number", 1),
+                )
+                if depth > 1:
+                    grandchildren = await self.get_page_children(
+                        child_id, depth - 1
                     )
+                    child.children = grandchildren
+                return child
 
-                    if depth > 1:
-                        grandchildren = await self.get_page_children(
-                            child_id, depth - 1
-                        )
-                        children[-1].children = grandchildren
+            child_results = await asyncio.gather(
+                *[_fetch_child(item) for item in results],
+                return_exceptions=True,
+            )
+            for cr in child_results:
+                if isinstance(cr, ConfluencePage):
+                    children.append(cr)
 
         return children
 
