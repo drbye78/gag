@@ -148,6 +148,16 @@ except ImportError as e:
 
     logging.getLogger(__name__).warning("Knowledge API not available: %s", e)
 
+# Unified Ingestion API
+try:
+    from unified_ingestion.api import router as unified_ingestion_router
+
+    app.include_router(unified_ingestion_router)
+except ImportError as e:
+    import logging
+
+    logging.getLogger(__name__).warning("Unified Ingestion API not available: %s", e)
+
 # Configure middleware
 setup_middleware(app)
 
@@ -558,6 +568,10 @@ class CodeGraphComplexRequest(BaseModel):
     repo_path: Optional[str] = None
 
 
+class CodeGraphRequest(BaseModel):
+    repo_path: Optional[str] = None
+
+
 class CodeGraphDeadCodeRequest(BaseModel):
     exclude_decorated_with: Optional[List[str]] = []
     repo_path: Optional[str] = None
@@ -875,6 +889,66 @@ async def codegraph_complex(request: CodeGraphComplexRequest = CodeGraphComplexR
         results=result.get("results", []),
         method="complexity",
         count=result.get("total", 0),
+    )
+
+
+@app.get("/codegraph/complexity/{function_name}", response_model=CodeGraphResponse, dependencies=[Depends(require_authenticated)])
+async def codegraph_complexity(function_name: str, request: CodeGraphRequest = CodeGraphRequest()):
+    from retrieval.code_graph import CodeGraphRetriever
+
+    retriever = CodeGraphRetriever(repo_path=request.repo_path)
+    result = await retriever.get_complexity(function_name)
+
+    return CodeGraphResponse(
+        query=f"complexity:{function_name}",
+        results=[{"function": function_name, "complexity": result.get("complexity", 0)}],
+        method="complexity",
+        count=1,
+    )
+
+
+@app.get("/codegraph/callers/{function_name}", response_model=CodeGraphResponse, dependencies=[Depends(require_authenticated)])
+async def codegraph_callers(function_name: str, request: CodeGraphRequest = CodeGraphRequest()):
+    from retrieval.code_graph import CodeGraphRetriever
+
+    retriever = CodeGraphRetriever(repo_path=request.repo_path)
+    result = await retriever.find_callers(function_name)
+
+    return CodeGraphResponse(
+        query=f"callers:{function_name}",
+        results=result.get("results", []),
+        method="callers",
+        count=result.get("total", 0),
+    )
+
+
+@app.get("/codegraph/callees/{function_name}", response_model=CodeGraphResponse, dependencies=[Depends(require_authenticated)])
+async def codegraph_callees(function_name: str, request: CodeGraphRequest = CodeGraphRequest()):
+    from retrieval.code_graph import CodeGraphRetriever
+
+    retriever = CodeGraphRetriever(repo_path=request.repo_path)
+    result = await retriever.find_callees(function_name)
+
+    return CodeGraphResponse(
+        query=f"callees:{function_name}",
+        results=result.get("results", []),
+        method="callees",
+        count=result.get("total", 0),
+    )
+
+
+@app.get("/codegraph/deps/{module_name}", response_model=CodeGraphResponse, dependencies=[Depends(require_authenticated)])
+async def codegraph_deps(module_name: str, request: CodeGraphRequest = CodeGraphRequest()):
+    from retrieval.code_graph import CodeGraphRetriever
+
+    retriever = CodeGraphRetriever(repo_path=request.repo_path)
+    result = await retriever.get_module_deps(module_name)
+
+    return CodeGraphResponse(
+        query=f"deps:{module_name}",
+        results=result.get("dependencies", []),
+        method="deps",
+        count=len(result.get("dependencies", [])),
     )
 
 

@@ -41,6 +41,7 @@ uv sync          # or: pip install -e ".[all]"
 │   ├── knowledge/   # Graph, ontology, taxonomy, constraints, usecases, ADRs
 │   ├── patterns/    # Platform patterns (12+)
 │   └── constraints/  # Platform constraints
+├── unified_ingestion/ # Unified artifact ingestion (24 handlers, 33 artifact types)
 ├── retrieval/        # Hybrid retriever (11 sources), reranking, citations
 ├── documents/       # Document parsing, chunking
 ├── ingestion/       # Ingestion pipelines
@@ -105,10 +106,11 @@ docker-compose up -d  # Full stack: API + Qdrant + FalkorDB + Redis
 
 ## CodeGraphContext (retrieval/code_graph.py)
 
-- MCP-first: tries `CodeGraphContext_*` imports
-- CLI fallback: uses `cgc` CLI when MCP unavailable
-- Output parsing: stderr contains table output
+- CLI-only: uses `cgc` CLI subprocess calls
+- No MCP imports - direct CLI invocation via subprocess.run()
+- Output parsing: JSON or table format from stdout/stderr
 - Index: `cgc index .` to index codebase
+- Availability check: `_is_cgc_available()` lazy initialization
 
 ## Documentation
 

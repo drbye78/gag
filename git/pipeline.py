@@ -5,6 +5,7 @@ Coordinates clone → parse → index pipeline
 with job tracking and per-repo credentials.
 """
 
+import logging
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -13,7 +14,23 @@ from typing import Any, Dict, List, Optional
 
 from git.credentials import GitCredentialManager, get_credential_manager
 from git.repo import GitRepoManager, GitRepo, RepoSource, RepoStatus, get_repo_manager
-from git.parser import CodeParser, CodeEntity, get_code_parser
+from git.parser import CodeParser, CodeEntity, EntityType, get_code_parser
+
+# CodeGraphContext integration (optional)
+try:
+    from retrieval.code_graph import (
+        add_code_to_graph,
+        find_code,
+        calculate_cyclomatic_complexity,
+        find_dead_code,
+        find_most_complex_functions,
+        analyze_code_relationships,
+        switch_context,
+        _is_cgc_available,
+    )
+    CODEGRAPH_AVAILABLE = _is_cgc_available()
+except ImportError:
+    CODEGRAPH_AVAILABLE = False
 
 
 class GitJobStatus(str, Enum):
@@ -99,29 +116,69 @@ class GitIngestionPipeline:
                 return job
 
             job.status = GitJobStatus.PARSING
+            repo_local_path = repo.local_path
 
-            files = await self.repo_manager.list_files(
-                repo.repo_id, extensions=extensions
-            )
-            job.total_files = len(files)
+            # Use CodeGraphContext if available
+            if CODEGRAPH_AVAILABLE and parse_code and repo_local_path:
+                try:
+                    # Index entire repository with CodeGraphContext
+                    index_result = await add_code_to_graph(path=repo_local_path, is_dependency=False)
+                    
+                    if index_result.get("success"):
+                        job.metadata["codegraph_indexed"] = True
+                        job.metadata["job_id"] = index_result.get("job_id", "")
+                        
+                        # Query entities from indexed code graph
+                        funcs = await find_code(query="function", repo_path=repo_local_path)
+                        classes = await find_code(query="class", repo_path=repo_local_path)
+                        
+                        # Build entities from CodeGraphContext results
+                        all_entities = []
+                        for item in funcs.get("results", []) + classes.get("results", []):
+                            all_entities.append(CodeEntity(
+                                entity_id=item.get("id", ""),
+                                name=item.get("name", ""),
+                                entity_type=EntityType.FUNCTION if "def " in str(item) else EntityType.CLASS,
+                                file_path=item.get("path", ""),
+                                start_line=item.get("start_line", 0),
+                                end_line=item.get("end_line", 0),
+                                content="",
+                                language=item.get("language", ""),
+                            ))
+                        
+                        job.total_entities = len(all_entities)
+                        job.entities = all_entities
+                        job.indexed_count = len(all_entities)
+                    else:
+                        job.metadata["codegraph_fallback"] = True
+                        raise RuntimeError("CodeGraphContext indexing failed")
+                except Exception:
+                    logger.warning("CodeGraphContext unavailable, using regex parser")
+                    CODEGRAPH_AVAILABLE = False
 
-            files = files[:500]
+            # Fall back to regex parser if CodeGraphContext not available
+            if not CODEGRAPH_AVAILABLE or not parse_code:
+                files = await self.repo_manager.list_files(
+                    repo.repo_id, extensions=extensions
+                )
+                job.total_files = len(files)
+                files = files[:500]
 
-            all_entities = []
+                all_entities = []
 
-            for file_path in files:
-                file = await self.repo_manager.read_file(repo.repo_id, file_path)
-                if not file:
-                    continue
+                for file_path in files:
+                    file = await self.repo_manager.read_file(repo.repo_id, file_path)
+                    if not file:
+                        continue
 
-                if parse_code:
-                    parsed = self.parser.parse(file.content, file_path)
-                    all_entities.extend(parsed.entities)
+                    if parse_code:
+                        parsed = self.parser.parse(file.content, file_path)
+                        all_entities.extend(parsed.entities)
 
-                    entities_to_index = [
-                        {
-                            "id": e.entity_id,
-                            "node_type": e.entity_type.value,
+                        entities_to_index = [
+                            {
+                                "id": e.entity_id,
+                                "node_type": e.entity_type.value,
                             "properties": {
                                 "name": e.name,
                                 "file_path": e.file_path,

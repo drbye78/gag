@@ -1,0 +1,53 @@
+"""
+Unified Ingestion - Type definitions.
+
+Defines artifact types and statuses for the ingestion pipeline.
+"""
+
+from enum import Enum
+
+
+class ArtifactType(str, Enum):
+    DOCUMENT = "document"
+    MARKDOWN = "markdown"
+    SOURCE_CODE = "source_code"
+    CONFIG = "config"
+    TEXT = "text"
+    CSV = "csv"
+    TSV = "tsv"
+    JSON = "json"
+    YAML = "yaml"
+    TOML = "toml"
+    ENV = "env"
+    K8S = "k8s"
+    DIAGRAM = "diagram"
+    BPMN = "bpmn"
+    API_SPEC = "api_spec"
+    GRAPHQL = "graphql"
+    IMAGE = "image"
+    HTML = "html"
+    XML = "xml"
+    PLAINTEXT = "plaintext"
+    REStructuredText = "rst"
+    ASCIIDOC = "asciidoc"
+    PROPERTIES = "properties"
+    INI = "ini"
+    DOCKERFILE = "dockerfile"
+    HELM = "helm"
+    ISTIO = "istio"
+    GRPC_PROTO = "grpc_proto"
+    OPENAPI = "openapi"
+    SWAGGER = "swagger"
+    PLANTUML = "plantuml"
+    MERMAID = "mermaid"
+    C4 = "c4"
+
+
+class ArtifactStatus(str, Enum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    CHUNKING = "chunking"
+    EMBEDDING = "embedding"
+    INDEXING = "indexing"
+    COMPLETED = "completed"
+    FAILED = "failed"

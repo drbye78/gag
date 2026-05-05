@@ -9,7 +9,6 @@ from documents.models import Document, DocumentVersion, DocumentSource
 from documents.parse import (
     LlamaIndexParser,
     DoclingParser,
-    FallbackParser,
     HybridDocumentParser,
     ParsedDocumentResult,
 )
@@ -117,7 +116,6 @@ __all__ = [
     "DocumentSource",
     "LlamaIndexParser",
     "DoclingParser",
-    "FallbackParser",
     "HybridDocumentParser",
     "ParsedDocumentResult",
     "ConfluenceClient",

@@ -172,7 +172,7 @@ Specialized chunkers for infrastructure-as-code:
 
 ### CodeGraphRetriever
 
-MCP-compatible wrapper for CodeGraphContext with CLI fallback:
+CLI-only wrapper for CodeGraphContext:
 
 | Query Type | Method | Description |
 |------------|--------|-------------|
@@ -187,25 +187,24 @@ MCP-compatible wrapper for CodeGraphContext with CLI fallback:
 | execute_cypher | `execute_cypher()` | Raw graph queries (read-only) |
 | visualize | `visualize()` | Generate Mermaid from Cypher |
 
-#### MCP + CLI Fallback
+#### CLI-Only Implementation
 
-The retriever tries MCP imports first, falls back to `cgc` CLI:
+The retriever uses `cgc` CLI directly via subprocess.run():
 
 ```python
-# Try MCP first
-try:
-    from CodeGraphContext_find_code import find_code
-    CODEGRAPH_AVAILABLE = True
-except ImportError:
-    # CLI fallback
-    CODEGRAPH_AVAILABLE = _check_cgc_available()
-    # Uses: subprocess.run(["cgc", "find", "pattern", query])
+# Uses subprocess to call cgc CLI
+result = subprocess.run(
+    ["cgc", "find", "pattern", query],
+    capture_output=True,
+    text=True,
+    timeout=30,
+)
 ```
 
 **CLI Notes:**
-- Table output goes to stderr, parse with combined streams
+- Output parsing: JSON or table format from stdout/stderr
 - Index: `cgc index .` to index codebase
-- MCP unavailable when `codegraphcontext` package not installed
+- Availability: `_is_cgc_available()` checks for `cgc` CLI
 
 ## MCP Tool Integration
 

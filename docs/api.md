@@ -603,7 +603,7 @@ Search Istio configurations.
 
 ## CodeGraph
 
-Code analysis via CodeGraphContext MCP - find code relationships, complexity, and visualize call graphs.
+Code analysis via CodeGraphContext CLI - find code relationships, complexity, and visualize call graphs.
 
 ### `POST /codegraph/find`
 Find code snippets matching a query.
