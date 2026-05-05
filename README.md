@@ -290,15 +290,14 @@ export LLM_API_KEY=your-api-key
 python -m pytest tests/ -v
 
 # Using the CLI
-./eis test
-
-# Run specific test categories
-./eis test --file test_core.py          # Core infrastructure
-./eis test --file test_agents.py        # Agent system
-./eis test --file test_ingestion.py    # Ingestion pipeline
-./eis test --file test_retrieval.py     # Retrieval layer
-./eis test --unit                       # Unit tests only
-./eis test --keyword Health             # Tests matching keyword
+./eis.py api                    # Start API
+./eis.py test                   # Run tests
+./eis.py test --file test_core.py          # Core infrastructure
+./eis.py test --file test_agents.py        # Agent system
+./eis.py test --file test_ingestion.py    # Ingestion pipeline
+./eis.py test --file test_retrieval.py     # Retrieval layer
+./eis.py test --unit                       # Unit tests only
+./eis.py test --keyword Health             # Tests matching keyword
 ```
 
 **560 tests, all passing.**

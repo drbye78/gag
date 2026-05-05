@@ -51,9 +51,9 @@ Comprehensive technical documentation for the Engineering Intelligence System.
 ### Commands
 
 ```bash
-./eis api                    # Start API
-./eis test                   # Run tests
-./eis check                  # Lint + type check
+./eis.py api                    # Start API
+./eis.py test                   # Run tests
+./eis.py check                  # Lint + type check
 docker-compose up -d         # Full stack
 ```
 

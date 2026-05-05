@@ -128,7 +128,7 @@ def cmd_check(args):
 def main():
     parser = argparse.ArgumentParser(
         description="Engineering Intelligence System CLI",
-        prog="eis"
+        prog="eis.py"
     )
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
