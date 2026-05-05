@@ -14,6 +14,7 @@ Comprehensive documentation for the Engineering Intelligence System.
 | Document | Description |
 |---------|-------------|
 | [Ingestion Pipeline](architecture/01-ingestion-pipeline.md) | Data collection, parsing, chunking, embedding |
+| [Unified Ingestion](architecture/unified_ingestion.md) | Unified artifact ingestion, platform extensions |
 | [Retrieval Pipeline](architecture/02-retrieval-pipeline.md) | Multi-source retrieval, hybrid strategies |
 | [Orchestration Agents](architecture/03-orchestration-agents.md) | Planner, Retriever, Reasoner, Validator |
 | [Code Understanding](architecture/04-code-understanding.md) | Code graph, entity extraction |
@@ -26,7 +27,8 @@ Comprehensive documentation for the Engineering Intelligence System.
 |-------|-------------|
 | [MCP Tools](mcp-tools.md) | 30+ MCP tools reference |
 | [Configuration](configuration.md) | Environment variables (119) |
-| [Platform Adapter Development](platform-adapter-architecture.md) | Building custom adapters |
+| [Platform Adapter Architecture](platform-adapter-architecture.md) | Platform adapter patterns |
+| [Platform Adapter Development Guide](architecture/platform-adapter-development.md) | Creating complete platform adapters |
 
 ## API Reference
 

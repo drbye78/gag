@@ -293,3 +293,5 @@ print(result.explanation)       # "Recommended: Serverless | Blocking issues: 1"
 3. **Validated**: Constraint engine prevents invalid architectures
 4. **Traceable**: Full reasoning from query to output
 5. **Generative**: Produces deployable configs, not just recommendations
+6. **Unified Ingestion**: Platform-specific artifacts (MTA, CDS, CAP, xs-security) parsed via unified_ingestion handlers
+7. **Artifact Type System**: 33 artifact types with platform detection

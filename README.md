@@ -121,6 +121,8 @@ This system answers complex engineering questions by reasoning over your codebas
 - Code chunking with entity extraction (Python, JavaScript, TypeScript, Go, Rust, Java, Kotlin)
 - Structural and hierarchical chunking for markdown
 - **Tooling chunkers**: Kubernetes manifests, Helm charts, Dockerfiles, GraphQL schemas
+- **Unified Ingestion**: 33 artifact types, 24 handlers, platform extension architecture
+- **Platform Adapters**: SAP BTP (MTA, CDS, CAP, XSUAA), Power Platform, AWS, Azure
 
 ### 🔧 Tool System (MCP)
 - **30+ tools** exposed via Model Context Protocol

@@ -1122,11 +1122,38 @@ async def codegraph_index_confluence_space(request: CodeGraphIndexConfluenceSpac
     if request.include_attachments:
         for page in pages:
             try:
+                from unified_ingestion.handlers.confluence import ConfluenceAttachmentHandler
+                handler = ConfluenceAttachmentHandler()
                 attachments = await client.get_page_attachments(page.page_id)
                 for att in attachments:
                     binary = await client.download_attachment(page.page_id, att.attachment_id)
                     if binary:
-                        attachments_indexed += 1
+                        result = await handler.handle(
+                            content=binary,
+                            path=att.title,
+                            metadata={
+                                "mime_type": att.mime_type,
+                                "title": att.title,
+                                "attachment_id": att.attachment_id,
+                                "page_id": page.page_id,
+                            },
+                        )
+                        if result.chunks:
+                            from ingestion.indexer import VectorIndexer
+                            indexer = VectorIndexer()
+                            for chunk in result.chunks:
+                                await indexer.index(
+                                    collection="confluence_attachments",
+                                    text=chunk.content,
+                                    metadata={
+                                        "source": "confluence_attachment",
+                                        "page_id": page.page_id,
+                                        "attachment_id": att.attachment_id,
+                                        "handler_type": result.metadata.get("handler_type"),
+                                        "title": att.title,
+                                    },
+                                )
+                            attachments_indexed += 1
             except Exception:
                 pass
     
@@ -1169,11 +1196,38 @@ async def codegraph_index_confluence_tree(request: CodeGraphIndexConfluenceTreeR
     
     attachments_indexed = 0
     if request.include_attachments:
+        from unified_ingestion.handlers.confluence import ConfluenceAttachmentHandler
+        handler = ConfluenceAttachmentHandler()
         attachments = await client.get_page_attachments(request.page_id)
         for att in attachments:
             binary = await client.download_attachment(request.page_id, att.attachment_id)
             if binary:
-                attachments_indexed += 1
+                result = await handler.handle(
+                    content=binary,
+                    path=att.title,
+                    metadata={
+                        "mime_type": att.mime_type,
+                        "title": att.title,
+                        "attachment_id": att.attachment_id,
+                        "page_id": request.page_id,
+                    },
+                )
+                if result.chunks:
+                    from ingestion.indexer import VectorIndexer
+                    indexer = VectorIndexer()
+                    for chunk in result.chunks:
+                        await indexer.index(
+                            collection="confluence_attachments",
+                            text=chunk.content,
+                            metadata={
+                                "source": "confluence_attachment",
+                                "page_id": request.page_id,
+                                "attachment_id": att.attachment_id,
+                                "handler_type": result.metadata.get("handler_type"),
+                                "title": att.title,
+                            },
+                        )
+                    attachments_indexed += 1
     
     return CodeGraphIndexConfluenceTreeResponse(
         source="confluence",
@@ -1339,6 +1393,106 @@ async def visualize_diagram(diagram_id: str):
         raise HTTPException(status_code=404, detail="Diagram not found")
 
     return {"graph": graph}
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# CONFLUENCE ATTACHMENT INDEXING WITH UNIFIED INGESTION
+# ═══════════════════════════════════════════════════════════════
+
+
+async def index_confluence_attachments(
+    page_id: str,
+    client: Any,
+    index_to_vector: bool = True,
+    index_to_graph: bool = True,
+) -> Dict[str, Any]:
+    """Index Confluence page attachments using unified_ingestion.
+    
+    Handles:
+    - Images (PNG, JPG, SVG) → VLM for diagram extraction
+    - PDF/DOCX/PPTX → Document parsing
+    - draw.io diagrams → Diagram extraction
+    - PlantUML/Mermaid → UML entities
+    - Config files (JSON, YAML, XML) → Structured data
+    - Source code → Entity extraction
+    """
+    from unified_ingestion.handlers.confluence import ConfluenceAttachmentHandler
+    
+    handler = ConfluenceAttachmentHandler()
+    
+    # Get all attachments
+    attachments = await client.get_page_attachments(page_id)
+    if not attachments:
+        return {"indexed": 0, "errors": []}
+    
+    stats = {"indexed": 0, "by_type": {}, "errors": []}
+    
+    for att in attachments:
+        try:
+            # Download binary content
+            binary = await client.download_attachment(page_id, att.attachment_id)
+            if not binary:
+                stats["errors"].append(f"Download failed: {att.title}")
+                continue
+            
+            # Process through handler
+            result = await handler.handle(
+                content=binary,
+                path=att.title,
+                metadata={
+                    "mime_type": att.mime_type,
+                    "title": att.title,
+                    "attachment_id": att.attachment_id,
+                    "page_id": page_id,
+                },
+            )
+            
+            if result.error:
+                stats["errors"].append(f"{att.title}: {result.error}")
+                continue
+            
+            # Index chunks to Qdrant
+            if index_to_vector and result.chunks:
+                from ingestion.indexer import VectorIndexer
+                indexer = VectorIndexer()
+                for chunk in result.chunks:
+                    await indexer.index(
+                        collection="confluence_attachments",
+                        text=chunk.content,
+                        metadata={
+                            "source": "confluence_attachment",
+                            "page_id": page_id,
+                            "attachment_id": att.attachment_id,
+                            "handler_type": result.metadata.get("handler_type"),
+                            "title": att.title,
+                        },
+                    )
+            
+            # Index entities to FalkorDB
+            if index_to_graph and result.metadata.get("entities"):
+                from graph.falkor_db import FalkorDB
+                db = FalkorDB()
+                for entity in result.metadata.get("entities", []):
+                    await db.add_entity(
+                        entity_type=entity.get("type"),
+                        name=entity.get("name"),
+                        properties={
+                            "source": "confluence_attachment",
+                            "page_id": page_id,
+                            "attachment_id": att.attachment_id,
+                            "title": att.title,
+                        },
+                    )
+            
+            # Update stats
+            stats["indexed"] += 1
+            handler_type = result.metadata.get("handler_type", "unknown")
+            stats["by_type"][handler_type] = stats["by_type"].get(handler_type, 0) + 1
+            
+        except Exception as e:
+            stats["errors"].append(f"{att.title}: {str(e)}")
+    
+    return stats
 
 
 if __name__ == "__main__":
