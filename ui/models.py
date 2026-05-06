@@ -94,8 +94,8 @@ class UIExtractionResult:
     """Unified result of multimodal UI extraction."""
 
     sketch: UISketch
-    layout: UILayout
-    elements: List[UIElement]
+    layout: Optional[UILayout] = None
+    elements: List[UIElement] = field(default_factory=list)
     actions: List[UserAction] = field(default_factory=list)
     visual_embedding: Optional[List[float]] = None
     ocr_text: Optional[str] = None

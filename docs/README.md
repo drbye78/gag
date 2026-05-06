@@ -2,6 +2,15 @@
 
 Comprehensive documentation for the Engineering Intelligence System.
 
+## CLI Commands
+
+```bash
+./eis.py start                   # Start API server
+./eis.py setup                  # Initialize configuration
+./eis.py test                   # Run tests
+./eis.py check                 # Lint + type check
+```
+
 ## User Guides
 
 | Guide | Description |

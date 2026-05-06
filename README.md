@@ -170,7 +170,7 @@ pip install -e ".[all]"
 uvicorn api.main:app --host 0.0.0.0 --port 8000
 
 # Or use the CLI
-./eis api
+./eis.py start
 ```
 
 **Install extras individually:**
@@ -290,7 +290,8 @@ export LLM_API_KEY=your-api-key
 python -m pytest tests/ -v
 
 # Using the CLI
-./eis.py api                    # Start API
+./eis.py start                   # Start API server
+./eis.py setup                  # Initialize configuration
 ./eis.py test                   # Run tests
 ./eis.py test --file test_core.py          # Core infrastructure
 ./eis.py test --file test_agents.py        # Agent system
@@ -298,6 +299,7 @@ python -m pytest tests/ -v
 ./eis.py test --file test_retrieval.py     # Retrieval layer
 ./eis.py test --unit                       # Unit tests only
 ./eis.py test --keyword Health             # Tests matching keyword
+./eis.py check                 # Lint + type check
 ```
 
 **560 tests, all passing.**

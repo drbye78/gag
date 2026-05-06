@@ -4,7 +4,8 @@
 
 ```bash
 # CLI (preferred - no 'uv run' needed)
-./eis.py api                    # Start API server
+./eis.py start                   # Start API server
+./eis.py setup                  # Initialize configuration
 ./eis.py test                   # Run all tests
 ./eis.py test --file test_core.py # Run specific test
 ./eis.py test --unit           # Run unit tests only

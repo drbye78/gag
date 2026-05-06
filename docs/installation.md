@@ -30,7 +30,7 @@ pip install -e .
 # Start API server
 uvicorn api.main:app --host 0.0.0.0 --port 8000
 # Or use CLI
-./eis.py api
+./eis.py start
 ```
 
 ### 2. Local Development (Full)
