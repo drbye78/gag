@@ -118,6 +118,7 @@ All settings are loaded from environment variables. The `Settings` class in `cor
 | `JWT_EXPIRY_MINUTES` | `60` | Token expiry |
 | `RATE_LIMIT_REQUESTS` | `100` | Max requests per window |
 | `RATE_LIMIT_WINDOW` | `60` | Rate limit window in seconds |
+| `USER_STORE_BACKEND` | `sqlite` | User store backend: `sqlite`, `memory` (SQLite for persistence)
 
 ## Jira
 

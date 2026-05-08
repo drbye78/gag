@@ -2,8 +2,8 @@ apiVersion: v2
 name: eis
 description: Engineering Intelligence System Helm Chart
 type: application
-version: 4.0.0
-appVersion: "4.0.0"
+version: 4.1.0
+appVersion: "4.1.0"
 keywords:
   - engineering
   - intelligence

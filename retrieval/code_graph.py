@@ -1471,3 +1471,8 @@ def get_code_graph_retriever(repo_path: str | None = None) -> CodeGraphRetriever
     if _code_graph_retriever is None:
         _code_graph_retriever = CodeGraphRetriever(repo_path=repo_path)
     return _code_graph_retriever
+
+
+from retrieval.registry import get_registry
+registry = get_registry()
+registry.register("code_graph", get_code_graph_retriever, "retrieval.code_graph")

@@ -301,3 +301,8 @@ class TicketRetriever:
 
 def get_ticket_retriever() -> TicketRetriever:
     return TicketRetriever()
+
+
+from retrieval.registry import get_registry
+registry = get_registry()
+registry.register("ticket", get_ticket_retriever, "retrieval.ticket")

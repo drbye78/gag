@@ -124,7 +124,7 @@ class MCPHandler:
                 },
                 "server_info": {
                     "name": "Engineering Intelligence System",
-                    "version": "4.0.0",
+                    "version": "4.1.0",
                 },
                 "tool_count": len(tools),
                 "resource_count": len(resources),

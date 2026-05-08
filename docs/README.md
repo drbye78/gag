@@ -38,6 +38,10 @@ Comprehensive documentation for the Engineering Intelligence System.
 | [Configuration](configuration.md) | Environment variables (119) |
 | [Platform Adapter Architecture](platform-adapter-architecture.md) | Platform adapter patterns |
 | [Platform Adapter Development Guide](architecture/platform-adapter-development.md) | Creating complete platform adapters |
+| [User Store](user-store.md) | SQLite user persistence |
+| [Prometheus Metrics](prometheus-metrics.md) | Metrics collection |
+| [Retrievers](retrievers.md) | Retrieval components |
+| [FalkorDB Client](falkordb-client.md) | Graph DB client |
 
 ## API Reference
 
@@ -47,4 +51,4 @@ Comprehensive documentation for the Engineering Intelligence System.
 
 ## Version
 
-Current version: **4.0.0**
+Current version: **4.1.0**

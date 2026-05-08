@@ -220,10 +220,13 @@ async def ingest_zip(request: ZipIngestRequest):
 
     try:
         with zipfile.ZipFile(io.BytesIO(request.zip_content)) as zf:
+            max_size = 50 * 1024 * 1024
             for name in zf.namelist():
                 if name.endswith("/"):
                     continue
-
+                info = zf.getinfo(name)
+                if info.file_size > max_size:
+                    raise HTTPException(400, f"File {name} exceeds {max_size//1024//1024}MB")
                 content = zf.read(name)
                 artifact_type = request.artifact_type
 

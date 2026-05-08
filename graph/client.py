@@ -25,7 +25,7 @@ ALLOWED_EDGE_TYPES = frozenset({
 })
 
 MAX_DEPTH = 10
-MAX_LIMIT = 10000
+MAX_LIMIT = 1000
 
 
 def _safe_identifier(value: str, allowed: frozenset, default: str = "Entity") -> str:

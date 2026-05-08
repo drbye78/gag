@@ -693,3 +693,8 @@ def get_colbert_search_client(
         max_length=max_length,
         top_k=top_k,
     )
+
+
+from retrieval.registry import get_registry
+registry = get_registry()
+registry.register("colbert", get_colbert_search_client, "retrieval.colbert")

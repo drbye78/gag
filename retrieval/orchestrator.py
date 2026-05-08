@@ -6,24 +6,50 @@ graph, tickets, and telemetry sources.
 """
 
 import asyncio
+import logging
 import time
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+from core.config import Settings
 from core.text_utils import detect_language, normalize_text, TextLanguage
-from retrieval.docs import get_docs_retriever
-from retrieval.code import get_code_retriever
-from retrieval.graph import get_graph_retriever
-from retrieval.code_graph import get_code_graph_retriever
-from retrieval.ticket import get_ticket_retriever
-from retrieval.telemetry import get_telemetry_retriever
-from retrieval.hybrid import get_hybrid_retriever
 from retrieval.classifier import get_query_classifier
-from retrieval.diagram import get_diagram_retriever
+from retrieval.code import get_code_retriever
+from retrieval.code_graph import get_code_graph_retriever
 from retrieval.colbert import get_colbert_search_client
+from retrieval.diagram import get_diagram_retriever
+from retrieval.docs import get_docs_retriever
+from retrieval.graph import get_graph_retriever
+from retrieval.hybrid import get_hybrid_retriever
 from retrieval.knowledge import get_knowledge_retriever
+from retrieval.registry import initialize_registry, get_registry
+from retrieval.telemetry import get_telemetry_retriever
+from retrieval.ticket import get_ticket_retriever
 from core.adapters import get_adapter_registry
 from models.retrieval import RetrievalSource
+from retrieval.classifier import get_query_classifier
+from retrieval.code import get_code_retriever
+from retrieval.code_graph import get_code_graph_retriever
+from retrieval.colbert import get_colbert_search_client
+from retrieval.diagram import get_diagram_retriever
+from retrieval.docs import get_docs_retriever
+from retrieval.graph import get_graph_retriever
+from retrieval.hybrid import get_hybrid_retriever
+from retrieval.knowledge import get_knowledge_retriever
+from retrieval.registry import get_registry, initialize_registry
+from retrieval.telemetry import get_telemetry_retriever
+from retrieval.ticket import get_ticket_retriever
+
+logger = logging.getLogger(__name__)
+
+
+class BackpressureError(Exception):
+    """Raised when request is rejected due to backpressure (429)."""
+
+    def __init__(self, message: str = "Too many requests", retry_after: int = 60):
+        self.message = message
+        self.retry_after = retry_after
+        super().__init__(self.message)
 
 
 class RetrievalMode(str, Enum):
@@ -35,6 +61,8 @@ class RetrievalMode(str, Enum):
 
 class RetrievalOrchestrator:
     def __init__(self):
+        initialize_registry()
+        self._registry = get_registry()
         self.docs_retriever = get_docs_retriever()
         self.code_retriever = get_code_retriever()
         self.graph_retriever = get_graph_retriever()
@@ -50,12 +78,89 @@ class RetrievalOrchestrator:
         self.knowledge_retriever = get_knowledge_retriever()
         self.adapter_registry = get_adapter_registry()
 
+        settings = Settings()
+        self._semaphore = asyncio.Semaphore(settings.retrieval_max_concurrent)
+        self._request_queue: asyncio.Queue = asyncio.Queue(
+            maxsize=settings.retrieval_queue_size
+        )
+        self._timeout = settings.retrieval_request_timeout
+        self._max_concurrent = settings.retrieval_max_concurrent
+        self._queue_size = settings.retrieval_queue_size
+
     async def retrieve(
         self,
         query: str,
-        sources: Optional[List[RetrievalSource]] = None,
+        sources: List[RetrievalSource] | None = None,
         limit: int = 10,
-        filters: Optional[Dict[str, Any]] = None,
+        filters: Dict[str, Any] | None = None,
+    ) -> Dict[str, Any]:
+        try:
+            async with asyncio.timeout(self._timeout):
+                return await self._retrieve_internal(query, sources, limit, filters)
+        except TimeoutError:
+            logger.warning(f"Retrieval timed out after {self._timeout}s")
+            return {
+                "query": query,
+                "results": [],
+                "total_results": 0,
+                "took_ms": self._timeout * 1000,
+                "errors": [{"error": "Request timed out", "type": "TimeoutError"}],
+                "success": False,
+                "timeout": True,
+            }
+        except BackpressureError as e:
+            logger.warning(f"Backpressure rejection: {e.message}")
+            return {
+                "query": query,
+                "results": [],
+                "total_results": 0,
+                "took_ms": 0,
+                "errors": [{"error": e.message, "type": "BackpressureError"}],
+                "success": False,
+                "backpressure": True,
+                "retry_after": e.retry_after,
+            }
+
+    async def _retrieve_internal(
+        self,
+        query: str,
+        sources: List[RetrievalSource] | None = None,
+        limit: int = 10,
+        filters: Dict[str, Any] | None = None,
+    ) -> Dict[str, Any]:
+        try:
+            await asyncio.wait_for(self._request_queue.put(True), timeout=0.0)
+        except asyncio.QueueFull:
+            logger.warning(f"Request queue full (max size: {self._queue_size})")
+            raise BackpressureError(
+                message="Request queue is full, please retry later",
+                retry_after=60,
+            )
+
+        try:
+            await self._semaphore.acquire()
+        except Exception:
+            self._request_queue.get_nowait()
+            raise BackpressureError(
+                message=f"Concurrent request limit reached ({self._max_concurrent})",
+                retry_after=30,
+            )
+
+        try:
+            return await self._execute_retrieval(query, sources, limit, filters)
+        finally:
+            self._semaphore.release()
+            try:
+                self._request_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                pass
+
+    async def _execute_retrieval(
+        self,
+        query: str,
+        sources: List[RetrievalSource] | None = None,
+        limit: int = 10,
+        filters: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         start = int(time.time() * 1000)
 
@@ -113,7 +218,7 @@ class RetrievalOrchestrator:
         }
 
     async def _retrieve_docs(
-        self, query: str, limit: int, filters: Optional[Dict]
+        self, query: str, limit: int, filters: Dict | None
     ) -> Dict:
         try:
             return await self.docs_retriever.search(query, limit, filters=filters)
@@ -123,7 +228,7 @@ class RetrievalOrchestrator:
             return {"source": "docs", "results": [], "total": 0, "took_ms": 0}
 
     async def _retrieve_code(
-        self, query: str, limit: int, filters: Optional[Dict]
+        self, query: str, limit: int, filters: Dict | None
     ) -> Dict:
         try:
             return await self.code_retriever.search(query, limit, filters=filters)
@@ -133,7 +238,7 @@ class RetrievalOrchestrator:
             return {"source": "code", "results": [], "total": 0, "took_ms": 0}
 
     async def _retrieve_graph(
-        self, query: str, limit: int, filters: Optional[Dict]
+        self, query: str, limit: int, filters: Dict | None
     ) -> Dict:
         try:
             return await self.graph_retriever.search(query, limit=limit)
@@ -143,7 +248,7 @@ class RetrievalOrchestrator:
             return {"source": "graph", "results": [], "total": 0, "took_ms": 0}
 
     async def _retrieve_code_graph(
-        self, query: str, limit: int, filters: Optional[Dict]
+        self, query: str, limit: int, filters: Dict | None
     ) -> Dict:
         try:
             return await self.code_graph_retriever.search(query, limit=limit)
@@ -153,7 +258,7 @@ class RetrievalOrchestrator:
             return {"source": "code_graph", "results": [], "total": 0, "took_ms": 0}
 
     async def _retrieve_tickets(
-        self, query: str, limit: int, filters: Optional[Dict]
+        self, query: str, limit: int, filters: Dict | None
     ) -> Dict:
         try:
             return await self.ticket_retriever.search(query, limit=limit)
@@ -163,7 +268,7 @@ class RetrievalOrchestrator:
             return {"source": "tickets", "results": [], "total": 0, "took_ms": 0}
 
     async def _retrieve_telemetry(
-        self, query: str, limit: int, filters: Optional[Dict]
+        self, query: str, limit: int, filters: Dict | None
     ) -> Dict:
         try:
             return await self.telemetry_retriever.search_events(query, limit=limit)
@@ -173,7 +278,7 @@ class RetrievalOrchestrator:
             return {"source": "telemetry", "results": [], "total": 0, "took_ms": 0}
 
     async def _retrieve_diagram(
-        self, query: str, limit: int, filters: Optional[Dict]
+        self, query: str, limit: int, filters: Dict | None
     ) -> Dict:
         try:
             return await self.diagram_retriever.search_diagrams(query, limit=limit)
@@ -182,7 +287,7 @@ class RetrievalOrchestrator:
             logging.getLogger(__name__).error(f"diagram retrieval failed: {e}")
             return {"source": "diagram", "results": [], "total": 0, "took_ms": 0}
 
-    async def _retrieve_ui(self, query: str, limit: int, filters: Optional[Dict]) -> Dict:
+    async def _retrieve_ui(self, query: str, limit: int, filters: Dict | None) -> Dict:
         try:
             results = await self.ui_retriever.search_combined(
                 element_types=[query.lower()], limit=limit
@@ -193,7 +298,7 @@ class RetrievalOrchestrator:
             logging.getLogger(__name__).error(f"ui_sketch retrieval failed: {e}")
             return {"source": "ui_sketch", "results": [], "total": 0, "took_ms": 0}
 
-    async def _retrieve_colbert(self, query: str, limit: int, filters: Optional[Dict]) -> Dict:
+    async def _retrieve_colbert(self, query: str, limit: int, filters: Dict | None) -> Dict:
         try:
             if self.colbert_retriever:
                 result = await self.colbert_retriever.search(query, limit=limit)
@@ -205,7 +310,7 @@ class RetrievalOrchestrator:
             logging.getLogger(__name__).error(f"colbert retrieval failed: {e}")
             return {"source": "colbert", "results": [], "total": 0, "took_ms": 0}
 
-    async def _retrieve_knowledge(self, query: str, limit: int, filters: Optional[Dict]) -> Dict:
+    async def _retrieve_knowledge(self, query: str, limit: int, filters: Dict | None) -> Dict:
         try:
             result = await self.knowledge_retriever.search(query, limit=limit, filters=filters)
             return result
@@ -252,6 +357,14 @@ class RetrievalOrchestrator:
             limit=limit,
         )
 
+    def get_retriever(self, name: str) -> Any:
+        """Get a retriever by name from the registry."""
+        return self._registry.get_retriever(name)
+
+    def list_retrievers(self) -> List[str]:
+        """List all registered retriever names."""
+        return self._registry.list_retrievers()
+
 
 class RetrievalRouter:
     def __init__(self):
@@ -288,11 +401,11 @@ class RetrievalRouter:
     async def route(
         self,
         query: str,
-        sources: Optional[List[RetrievalSource]] = None,
+        sources: List[RetrievalSource] | None = None,
         parallel: bool = True,
         merge: bool = True,
         limit: int = 10,
-        filters: Optional[Dict[str, Any]] = None,
+        filters: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         if not sources:
             sources = self.default_sources
@@ -318,8 +431,8 @@ class RetrievalRouter:
         return [s.value for s in self.default_sources]
 
 
-_orchestrator: Optional[RetrievalOrchestrator] = None
-_router: Optional[RetrievalRouter] = None
+_orchestrator: RetrievalOrchestrator | None = None
+_router: RetrievalRouter | None = None
 
 
 def get_retrieval_orchestrator() -> RetrievalOrchestrator:

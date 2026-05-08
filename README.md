@@ -2,7 +2,7 @@
 
 A production-grade **Cognitive Architecture** for domain-specific reasoning within enterprise AI PDLC pipelines. Goes beyond traditional RAG by combining multimodal understanding, hybrid retrieval (vector + graph + runtime), structured reasoning, tool-augmented decision making, and stateful orchestration.
 
-![Version](https://img.shields.io/badge/version-4.0.0-blue)
+![Version](https://img.shields.io/badge/version-4.1.0-blue)
 ![Python](https://img.shields.io/badge/python-3.12+-green)
 ![Tests](https://img.shields.io/badge/tests-560%20passing-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
@@ -132,7 +132,8 @@ This system answers complex engineering questions by reasoning over your codebas
 
 ### 📊 Observability
 - **Trace Logging**: JSONL format with trace_id per request
-- **Metrics Collection**: Latency (p50/p95/p99), errors, counters
+- **Metrics Collection**: Latency (p50/p95/p99), errors, counters, token usage (per model/provider)
+- **Token Tracking**: `record_llm()` in LLM router tracks prompt/completion/total tokens
 - **Execution State**: Step-by-step tracking with reasoning traces
 
 ---

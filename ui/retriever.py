@@ -123,3 +123,8 @@ def get_ui_retriever() -> UIRetriever:
     if _retriever is None:
         _retriever = UIRetriever()
     return _retriever
+
+
+from retrieval.registry import get_registry
+registry = get_registry()
+registry.register("ui", get_ui_retriever, "ui.retriever")

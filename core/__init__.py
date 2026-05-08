@@ -2,7 +2,7 @@
 from core.config import get_settings, setup_logging, get_logger
 from core.health import get_health_checker
 from core.auth import get_rbac_manager, get_token_manager
-from core.cache import get_cache, get_cache_wrapper
+from core.cache_legacy import get_cache, get_cache_wrapper
 from core.middleware import (
     get_rate_limiter,
     sanitize_input,

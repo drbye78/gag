@@ -229,3 +229,106 @@ class TestMiddleware:
         app = FastAPI()
         setup_middleware(app)
         assert app.state.middleware_configured is True
+
+
+class TestPrometheusMetrics:
+    def test_get_metrics_returns_bytes(self):
+        from core.prometheus_metrics import get_metrics
+
+        metrics = get_metrics()
+        assert isinstance(metrics, bytes)
+        assert len(metrics) > 0
+
+    def test_get_metrics_contains_prometheus_format(self):
+        from core.prometheus_metrics import get_metrics
+
+        metrics = get_metrics().decode("utf-8")
+        assert "# HELP" in metrics
+        assert "# TYPE" in metrics
+
+    def test_get_content_type(self):
+        from core.prometheus_metrics import get_content_type
+
+        content_type = get_content_type()
+        assert content_type == "text/plain; version=0.0.4; charset=utf-8"
+
+    def test_record_request_updates_metrics(self):
+        from core.prometheus_metrics import get_metrics, REQUESTS_TOTAL
+
+        initial_metrics = get_metrics()
+        REQUESTS_TOTAL.labels(method="GET", path="/test", status="200").inc()
+        updated_metrics = get_metrics()
+        assert updated_metrics != initial_metrics
+
+    def test_record_error_updates_metrics(self):
+        from core.prometheus_metrics import get_metrics, ERRORS_TOTAL
+
+        initial_metrics = get_metrics()
+        ERRORS_TOTAL.labels(method="GET", path="/test", error_type="timeout").inc()
+        updated_metrics = get_metrics()
+        assert updated_metrics != initial_metrics
+
+    def test_record_retrieval_updates_metrics(self):
+        from core.prometheus_metrics import get_metrics, RETRIEVAL_COUNT
+
+        initial_metrics = get_metrics()
+        RETRIEVAL_COUNT.labels(source="vector").inc()
+        updated_metrics = get_metrics()
+        assert updated_metrics != initial_metrics
+
+    def test_record_llm_updates_metrics(self):
+        from core.prometheus_metrics import get_metrics, LLM_CALLS_TOTAL
+
+        initial_metrics = get_metrics()
+        LLM_CALLS_TOTAL.labels(model="qwen-max", status="success").inc()
+        updated_metrics = get_metrics()
+        assert updated_metrics != initial_metrics
+
+    def test_metrics_endpoint_returns_prometheus_format(self):
+        from fastapi.testclient import TestClient
+        from unittest.mock import patch
+
+        with patch("core.prometheus_metrics.get_metrics") as mock_get_metrics:
+            mock_get_metrics.return_value = b'# HELP requests_total Total requests\n# TYPE requests_total counter\nrequests_total{method="GET"} 1\n'
+            from api.main import app
+            client = TestClient(app)
+            response = client.get("/metrics")
+            assert response.status_code == 200
+            assert response.headers["content-type"] == "text/plain; version=0.0.4; charset=utf-8"
+            assert "requests_total" in response.text
+
+
+class TestRedisLLMCache:
+    @pytest.mark.asyncio
+    async def test_llm_cache_fallback(self):
+        from core.cache.llm import RedisLLMCache
+
+        cache = RedisLLMCache(redis_url="redis://localhost:6379/0", ttl=60)
+        result = await cache.get("test prompt", "system")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_llm_cache_set_fallback(self):
+        from core.cache.llm import RedisLLMCache
+
+        cache = RedisLLMCache(redis_url="redis://localhost:6379/0", ttl=60)
+        success = await cache.set("test prompt", {"id": "abc", "model": "test", "choices": [], "usage": {}}, "system")
+        assert success is False
+
+
+class TestRedisRetrievalCache:
+    @pytest.mark.asyncio
+    async def test_retrieval_cache_fallback(self):
+        from core.cache.retrieval import RedisRetrievalCache
+
+        cache = RedisRetrievalCache(redis_url="redis://localhost:6379/0", ttl=60)
+        result = await cache.get("test query", limit=10, strategy="hybrid")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_retrieval_cache_set_fallback(self):
+        from core.cache.retrieval import RedisRetrievalCache
+
+        cache = RedisRetrievalCache(redis_url="redis://localhost:6379/0", ttl=60)
+        success = await cache.set("test query", [{"content": "result1", "score": 0.9}], limit=10, strategy="hybrid")
+        assert success is False

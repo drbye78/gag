@@ -9,6 +9,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from core.cache.retrieval import get_retrieval_cache
 from retrieval.classifier import (
     QueryClassifier,
     RetrievalStrategy,
@@ -61,6 +62,7 @@ class HybridRetriever:
         classifier: Optional[QueryClassifier] = None,
         fusion: Optional[ResultFusion] = None,
         reasoning: Any = None,
+        use_cache: bool = True,
     ):
         self.classifier = classifier or get_query_classifier()
         self.fusion = fusion or get_result_fusion(FusionMethod.RRF)
@@ -68,6 +70,8 @@ class HybridRetriever:
             ReasoningMode.CHAIN_OF_THOUGHTS
         )
         self.citation_builder = CitationBuilder()
+        self.use_cache = use_cache
+        self._retrieval_cache = None if not use_cache else get_retrieval_cache()
 
         # Lazy-initialized retrievers — only created when first accessed
         self._docs_retriever: Optional[Any] = None
@@ -274,6 +278,18 @@ class HybridRetriever:
         is_relationship_query = primary_intent in ("relationship", "code_relationship") or requires_graph or force_graphrag
         is_tooling_query = primary_intent == "tooling"
 
+        if self._retrieval_cache and not is_relationship_query and not is_tooling_query:
+            cached = await self._retrieval_cache.get(query, limit, strategy)
+            if cached:
+                return {
+                    "query": query,
+                    "results": cached,
+                    "total": len(cached),
+                    "strategy": strategy,
+                    "took_ms": int(time.time() * 1000) - start,
+                    "cached": True,
+                }
+
         if is_relationship_query:
             return await self._graph_aware_search(query, limit, start, use_reasoning, classification)
 
@@ -281,17 +297,24 @@ class HybridRetriever:
             return await self._tooling_search(query, limit, start, classification)
 
         if strategy == RetrievalStrategy.VECTOR_ONLY.value:
-            return await self._vector_only_search(query, limit, start)
+            result = await self._vector_only_search(query, limit, start)
         elif strategy == RetrievalStrategy.GRAPH_ONLY.value:
-            return await self._graph_only_search(query, limit, start)
+            result = await self._graph_only_search(query, limit, start)
         elif strategy == RetrievalStrategy.MULTI_HOP.value:
-            return await self._multi_hop_search(query, limit, start)
+            result = await self._multi_hop_search(query, limit, start)
         elif strategy == RetrievalStrategy.CASCADE.value:
-            return await self._cascade_search(query, limit, start)
+            result = await self._cascade_search(query, limit, start)
         elif strategy == RetrievalStrategy.ITERATIVE.value:
-            return await self._iterative_search(query, limit, start, use_reasoning)
+            result = await self._iterative_search(query, limit, start, use_reasoning)
         else:
-            return await self._hybrid_search(query, limit, start, use_reasoning)
+            result = await self._hybrid_search(query, limit, start, use_reasoning)
+
+        if self._retrieval_cache and result.get("results"):
+            await self._retrieval_cache.set(
+                query, result["results"], limit, strategy
+            )
+
+        return result
 
     async def _graph_aware_search(
         self,
@@ -1192,3 +1215,8 @@ def get_enhanced_hybrid_retriever() -> EnhancedHybridRetriever:
     if _enhanced_hybrid_retriever is None:
         _enhanced_hybrid_retriever = EnhancedHybridRetriever()
     return _enhanced_hybrid_retriever
+
+
+from retrieval.registry import get_registry
+registry = get_registry()
+registry.register("hybrid", get_hybrid_retriever, "retrieval.hybrid")

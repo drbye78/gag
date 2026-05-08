@@ -170,3 +170,8 @@ def get_knowledge_retriever() -> KnowledgeRetriever:
     if _retriever_instance is None:
         _retriever_instance = KnowledgeRetriever()
     return _retriever_instance
+
+
+from retrieval.registry import get_registry
+registry = get_registry()
+registry.register("knowledge", get_knowledge_retriever, "retrieval.knowledge")

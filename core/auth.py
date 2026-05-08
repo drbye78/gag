@@ -67,11 +67,53 @@ logger = logging.getLogger(__name__)
 
 
 class RBACManager:
-    def __init__(self):
+    def __init__(self, use_sqlite: bool = True):
         self._users: Dict[str, User] = {}
-        self._failed_attempts: Dict[str, list] = {}  # email -> [timestamps]
+        self._failed_attempts: Dict[str, list] = {}
         self._max_failed_attempts = 5
-        self._lockout_seconds = 300  # 5 minutes
+        self._lockout_seconds = 300
+        self._use_sqlite = use_sqlite
+        self._sqlite_store = None
+        if use_sqlite:
+            try:
+                from core.user_store import get_user_store
+                self._sqlite_store = get_user_store()
+                self._load_users_from_sqlite()
+            except Exception as e:
+                logger.warning("SQLite user store unavailable: %s, using in-memory", e)
+                self._use_sqlite = False
+    
+    def _load_users_from_sqlite(self) -> None:
+        if not self._sqlite_store:
+            return
+        for user_dict in self._sqlite_store.list_users():
+            import json
+            user = User(
+                user_id=user_dict["user_id"],
+                email=user_dict["email"],
+                password_hash=user_dict["password_hash"],
+                roles=json.loads(user_dict["roles"]),
+                permissions=json.loads(user_dict["permissions"]),
+                created_at=user_dict["created_at"],
+                last_login=user_dict.get("last_login"),
+                active=bool(user_dict["active"]),
+            )
+            self._users[user.user_id] = user
+    
+    def _save_user_to_sqlite(self, user: User) -> None:
+        if not self._sqlite_store:
+            return
+        import json
+        self._sqlite_store.save({
+            "user_id": user.user_id,
+            "email": user.email,
+            "password_hash": user.password_hash,
+            "roles": json.dumps(user.roles),
+            "permissions": json.dumps(user.permissions),
+            "created_at": user.created_at,
+            "last_login": user.last_login,
+            "active": user.active,
+        })
 
     def hash_password(self, password: str) -> str:
         """Hash password with random salt (not jwt_secret)."""
@@ -116,6 +158,7 @@ class RBACManager:
             created_at=time.time(),
         )
         self._users[user_id] = user
+        self._save_user_to_sqlite(user)
         logger.info("User created: %s (%s) with roles %s", user_id, email, user.roles)
         return user
 

@@ -363,3 +363,8 @@ class TelemetryRetriever:
 
 def get_telemetry_retriever() -> TelemetryRetriever:
     return TelemetryRetriever()
+
+
+from retrieval.registry import get_registry
+registry = get_registry()
+registry.register("telemetry", get_telemetry_retriever, "retrieval.telemetry")

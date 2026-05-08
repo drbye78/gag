@@ -355,3 +355,8 @@ class GraphRetriever:
 
 def get_graph_retriever() -> GraphRetriever:
     return GraphRetriever()
+
+
+from retrieval.registry import get_registry
+registry = get_registry()
+registry.register("graph", get_graph_retriever, "retrieval.graph")

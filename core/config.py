@@ -5,13 +5,12 @@ Provides centralized settings loaded from environment variables with sensible de
 Uses Pydantic Settings for validation and type safety.
 """
 
-import os
 import logging
+import os
 import warnings
-from functools import lru_cache
-from typing import Any, Dict, List, Optional, Union
+from typing import Optional
 
-from pydantic import Field, model_validator, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -78,6 +77,8 @@ class Settings(BaseSettings):
     rate_limit_window: int = 60
     cors_origins: str = "*"
 
+    enable_hsts: bool = False  # Enable HSTS header (Strict-Transport-Security) for production
+
     json_format: bool = True
 
     ticket_backend: str = ""
@@ -97,6 +98,15 @@ class Settings(BaseSettings):
     azure_devops_token: str = ""
 
     credential_encrypt_key: str = ""
+
+    database_url: str = "postgresql://eis:eis@localhost:5432/eis"
+
+    redis_url: str = "redis://localhost:6379/0"
+    redis_ttl: int = 86400
+
+    oidc_authority: str = ""
+    oidc_client_id: str = ""
+    oidc_client_secret: str = ""
 
     confluence_url: str = ""
     confluence_email: str = ""
@@ -178,6 +188,11 @@ class Settings(BaseSettings):
     retrieval_parallel: bool = True
     retrieval_timeout: int = 30
     retrieval_fallback: bool = True
+
+    # Backpressure settings for retrieval orchestrator
+    retrieval_max_concurrent: int = 10
+    retrieval_queue_size: int = 50
+    retrieval_request_timeout: int = 30
 
     diagram_index_enabled: bool = False
     diagram_collection: str = "diagrams"

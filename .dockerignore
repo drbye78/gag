@@ -1,0 +1,59 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+
+# Virtual environments
+.venv
+venv/
+env/
+
+# Testing
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Documentation
+docs/
+*.md
+LICENSE
+README*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# CI/CD
+.github/
+
+# Kubernetes
+k8s/
+helm/
+
+# Docker
+docker-compose*.yml
+Dockerfile*
+
+# Configuration (secrets)
+.env
+.env.*
+*.pem
+*.key
+
+# Cache
+.mypy_cache/
+.ruff_cache/

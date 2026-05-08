@@ -61,3 +61,8 @@ class CodeRetriever:
 
 def get_code_retriever() -> CodeRetriever:
     return CodeRetriever()
+
+
+from retrieval.registry import get_registry
+registry = get_registry()
+registry.register("code", get_code_retriever, "retrieval.code")

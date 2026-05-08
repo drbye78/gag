@@ -376,3 +376,8 @@ def get_query_classifier() -> QueryClassifier:
     if _classifier is None:
         _classifier = QueryClassifier()
     return _classifier
+
+
+from retrieval.registry import get_registry
+registry = get_registry()
+registry.register("classifier", get_query_classifier, "retrieval.classifier")

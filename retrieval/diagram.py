@@ -627,6 +627,11 @@ def get_diagram_retriever() -> DiagramRetriever:
     return _diagram_retriever
 
 
+from retrieval.registry import get_registry
+registry = get_registry()
+registry.register("diagram", get_diagram_retriever, "retrieval.diagram")
+
+
 def get_diagram_qdrant_indexer() -> Optional[DiagramQdrantIndexer]:
     return DiagramQdrantIndexer()
 

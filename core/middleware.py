@@ -16,6 +16,7 @@ class RateLimiter:
         self.window = window
         self.max_clients = max_clients
         self._clients: Dict[str, list] = {}
+        self._tenant_clients: Dict[str, Dict[str, list]] = {}
         self._last_cleanup = time.time()
         self._cleanup_interval = 300
         self._lock = asyncio.Lock()
