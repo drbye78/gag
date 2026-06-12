@@ -22,13 +22,18 @@ class HttpPool:
         self.max_keepalive_connections = max_keepalive_connections
         self.keepalive_expiry = keepalive_expiry
         self._client: Optional[httpx.AsyncClient] = None
-        self._lock = asyncio.Lock()
+        self._lock: Optional[asyncio.Lock] = None
         self._started = False
+
+    def _get_lock(self) -> asyncio.Lock:
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
 
     async def start(self) -> None:
         if self._started:
             return
-        async with self._lock:
+        async with self._get_lock():
             if self._started:
                 return
             self._client = httpx.AsyncClient(

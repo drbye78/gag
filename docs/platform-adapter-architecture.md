@@ -15,10 +15,14 @@ The Platform Adapter architecture enables the Engineering Intelligence System to
 │                                                ▼                    │
 │   ┌─────────────────────────────────────────────────────────────┐  │
 │   │                   PLATFORM ADAPTERS                          │  │
-│   │  ┌──────────────┐ ┌──────────────┐ ┌──────────────────┐   │  │
-│   │  │ SAP BTP     │ │ VMware Tanzu │ │ Power Platform  │   │  │
-│   │  │ Adapter     │ │ Adapter     │ │ Adapter         │   │  │
-│   │  └──────────────┘ └──────────────┘ └──────────────────┘   │  │
+│   │  ┌──────────────┐ ┌──────────────┐ ┌──────────────────┐ ┌──────────────┐   │  │
+│   │  │ SAP BTP     │ │ VMware Tanzu │ │ Power Platform  │ │ Platform V   │   │  │
+│   │  │ Adapter     │ │ Adapter     │ │ Adapter         │ │ Adapter      │   │  │
+│   │  └──────────────┘ └──────────────┘ └──────────────────┘ └──────────────┘   │  │
+│   │  ┌──────────┐ ┌────────────┐ ┌──────────┐                               │  │
+│   │  │   AWS    │ │   Azure    │ │   GCP    │                               │  │
+│   │  │ Adapter  │ │  Adapter   │ │ Adapter  │                               │  │
+│   │  └──────────┘ └────────────┘ └──────────┘                               │  │
 │   └─────────────────────────────────────────────────────────────┘  │
 │                                                │                    │
 │                                                ▼                    │
@@ -34,20 +38,41 @@ Platform-agnostic feature representation:
 
 ```python
 class IRFeature(BaseModel):
-    has_async: bool
-    has_auth: bool
-    has_database: bool
-    has_api: bool
-    has_ui: bool
-    has_microservices: bool
-    has_event_driven: bool
-    has_serverless: bool
-    has_container: bool
-    data_classification: str
-    compliance_requirements: List[str]
-    scalability_required: bool
-    high_availability_required: bool
-    multi_tenant: bool
+    """Extracted features from IR for pattern matching and constraints."""
+
+    # Core capabilities
+    has_async: Optional[bool] = None
+    has_auth: Optional[bool] = None
+    has_database: Optional[bool] = None
+    has_api: Optional[bool] = None
+    has_ui: Optional[bool] = None
+    has_batch: Optional[bool] = None
+
+    # Architecture patterns
+    has_microservices: Optional[bool] = None
+    has_event_driven: Optional[bool] = None
+    has_serverless: Optional[bool] = None
+    has_container: Optional[bool] = None
+
+    # Data & compliance
+    data_classification: str = "internal"
+    compliance_requirements: List[str] = []
+    encryption_required: Optional[bool] = None
+
+    # Operations
+    scalability_required: Optional[bool] = None
+    high_availability_required: Optional[bool] = None
+    multi_region_required: Optional[bool] = None
+
+    # Cost sensitivity
+    cost_sensitive: Optional[bool] = None
+    monthly_budget: Optional[float] = None
+
+    # Extended compliance (Platform V)
+    fstec_level: Optional[str] = None
+    compliance_frameworks: List[str] = []
+    require_gost_crypto: Optional[bool] = None
+    target_region: Optional[str] = None
 ```
 
 ### 2. Pattern Library (`core/patterns/`)
@@ -90,22 +115,41 @@ Each adapter provides:
 ```python
 class PlatformAdapter(ABC):
     @property
-    def platform_id(self) -> str
-    
+    @abstractmethod
+    def platform_id(self) -> str: ...
+
     @property
-    def supported_services(self) -> List[str]
-    
+    def supported_services(self) -> List[str]: ...
+
     @property
-    def patterns(self) -> List[Pattern]
-    
+    def service_catalog(self) -> List[ServiceSpec]:
+        """Rich catalog with cost models, compliance, dependencies per service."""
+        ...
+
     @property
-    def constraints(self) -> ConstraintSet
-    
-    def transform_ir_to_platform(self, input: AdapterInput) -> AdapterOutput
-    
-    def generate_config(self, features: IRFeature) -> Dict[str, str]
-    
-    def generate_code(self, features: IRFeature) -> Dict[str, str]
+    @abstractmethod
+    def patterns(self) -> List[Any]: ...
+
+    @property
+    @abstractmethod
+    def constraints(self) -> Any: ...
+
+    @abstractmethod
+    def transform_ir_to_platform(self, input: AdapterInput) -> AdapterOutput: ...
+
+    @abstractmethod
+    def generate_config(self, features: Any) -> Dict[str, str]: ...
+
+    @abstractmethod
+    def generate_code(self, features: Any) -> Dict[str, str]: ...
+
+    def resolve_dependencies(
+        self, service_names: List[str], transitive: bool = True
+    ) -> List[str]: ...
+
+    def compute_compliance(
+        self, features: Any, selected_service_names: List[str]
+    ) -> List[ComplianceMatrix]: ...
 ```
 
 #### SAP BTP Adapter
@@ -146,9 +190,9 @@ class PlatformAdapter(ABC):
 ## Processing Flow
 
 ```python
-async def process(query: str, platform: str) -> AdapterOutput:
+def process(query: str, platform: str) -> AdapterOutput:
     # 1. Extract features from query
-    features = extract_features(query)
+    features = _extract_features(query)
     
     # 2. Match against patterns
     patterns = pattern_matcher.match(features)
@@ -157,14 +201,15 @@ async def process(query: str, platform: str) -> AdapterOutput:
     violations = constraint_engine.evaluate(features, platform)
     
     # 4. Get platform adapter
-    adapter = registry.get(platform)
+    adapter = get_adapter_registry().get(platform)
     
     # 5. Transform to platform-specific output
-    return adapter.transform(
-        features=features,
-        patterns=patterns,
-        violations=violations
-    )
+    return adapter.transform_ir_to_platform(AdapterInput(
+        ir_features=features,
+        pattern_matches=patterns,
+        constraint_violations=violations,
+        platform_context=PlatformContext(platform=platform),
+    ))
 ```
 
 ## Extending the Platform
@@ -243,13 +288,15 @@ The adapter registry supports automatic platform detection:
 ```python
 registry.auto_detect(features: IRFeature) -> PlatformAdapter
 
-# Detection rules:
-# "sap" → xsuaa, hana, cap, cloudfoundry, kyma
-# "salesforce" → salesforce, lightning, apex
+# Detection uses PLATFORM_DETECT_KEYWORDS (single source of truth):
+# "sap"         → xsuaa, hana, cap, cloudfoundry, kyma
+# "salesforce"  → salesforce, lightning, apex
 # "powerplatform" → powerapps, dataverse, powerautomate
-# "tanzu" → tanzu, spring, knative, pivotal
-# "aws" → lambda, s3, ec2, iam
-# "azure" → azure, function, aks
+# "tanzu"       → tanzu, spring, knative, pivotal
+# "aws"         → lambda, s3, ec2, iam
+# "azure"       → azure, function, aks, cosmos
+# "gcp"         → gcp, gke, firestore, cloudfunctions
+# "platformv"   → platform v, sbertech, dataspace, synape
 ```
 
 ## Output Format
@@ -257,33 +304,44 @@ registry.auto_detect(features: IRFeature) -> PlatformAdapter
 Each adapter produces:
 
 ```python
-class AdapterOutput:
-    recommendations: List[Dict]      # Suggested patterns/approaches
-    architecture_diagram: str         # Optional diagram
-    config_templates: Dict[str, str]  # Platform-specific configs
-    code_snippets: Dict[str, str]      # Code templates
-    deployment_manifests: Dict[str, str] # K8s/helm manifests
-    explanation: str                  # Human-readable explanation
-    confidence: float                 # 0-1 confidence score
-    can_deploy: bool                 # If no hard constraints violated
+class AdapterOutput(BaseModel):
+    recommendations: List[Dict[str, Any]]    # Suggested patterns/approaches
+    architecture_diagram: Optional[str]       # Optional diagram
+    config_templates: Dict[str, str]          # Platform-specific configs
+    code_snippets: Dict[str, str]             # Code templates
+    deployment_manifests: Dict[str, str]      # K8s/helm manifests
+    explanation: str                          # Human-readable explanation
+    confidence: float                         # 0-1 confidence score
+    can_deploy: bool                          # If no hard constraints violated
+    platform: Optional[str] = None            # Platform identifier
+
+    # Enhanced structured fields
+    service_specs: List[ServiceSpec]          # Detailed service specs
+    compliance_matrix: List[ComplianceMatrix] # Compliance framework mapping
+    cost_estimate: Optional[CostEstimate]     # Estimated monthly cost
+    required_dependencies: List[str]          # Transitive dependency closure
+    portfolio_summary: Dict[str, int]         # Service counts per portfolio
 ```
 
 ## Example Usage
 
 ```python
-from models.ir import PlatformContext
-from core.pipeline import get_knowledge_pipeline
+from models.ir import IRFeature, PlatformContext
+from core.adapters.base import AdapterInput
+from core.adapters import get_adapter_registry
 
-pipeline = get_knowledge_pipeline()
+adapter = get_adapter_registry().get("sap")
 
-result = await pipeline.process(
-    query="Build a serverless API with authentication",
-    platform_context=PlatformContext(platform="sap")
-)
+result = adapter.transform_ir_to_platform(AdapterInput(
+    ir_features=IRFeature(has_serverless=True, has_auth=True),
+    pattern_matches=[],
+    constraint_violations=[],
+    platform_context=PlatformContext(platform="sap"),
+))
 
-print(result.config_templates)  # xsuaa.json, mta.yaml
-print(result.can_deploy)       # False if constraints violated
-print(result.explanation)       # "Recommended: Serverless | Blocking issues: 1"
+print(result.config_templates)   # xsuaa.json, mta.yaml
+print(result.can_deploy)         # False if constraints violated
+print(result.explanation)        # "Recommended: Serverless | Blocking issues: 1"
 ```
 
 ## Benefits
@@ -293,5 +351,3 @@ print(result.explanation)       # "Recommended: Serverless | Blocking issues: 1"
 3. **Validated**: Constraint engine prevents invalid architectures
 4. **Traceable**: Full reasoning from query to output
 5. **Generative**: Produces deployable configs, not just recommendations
-6. **Unified Ingestion**: Platform-specific artifacts (MTA, CDS, CAP, xs-security) parsed via unified_ingestion handlers
-7. **Artifact Type System**: 33 artifact types with platform detection

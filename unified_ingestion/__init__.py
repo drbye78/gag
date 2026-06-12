@@ -12,12 +12,12 @@ Architecture:
 - VectorIndexer for Qdrant, GraphIndexer for FalkorDB
 """
 
-from unified_ingestion.core.types import ArtifactType, ArtifactStatus
+from unified_ingestion.api import router as ingestion_router
 from unified_ingestion.core.job import ArtifactJob, JobStatus
 from unified_ingestion.core.registry import JobRegistry, get_job_registry
+from unified_ingestion.core.types import ArtifactStatus, ArtifactType
+from unified_ingestion.handlers.base import Chunk, Handler, HandlerResult
 from unified_ingestion.handlers.registry import HandlerRegistry, get_handler_registry
-from unified_ingestion.handlers.base import Handler, HandlerResult, Chunk
-from unified_ingestion.api import router as ingestion_router
 
 __all__ = [
     "ArtifactType",

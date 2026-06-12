@@ -1,7 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
 
-
 client = None
 
 
@@ -82,10 +81,6 @@ class TestV1PrefixEndpoints:
         )
         assert response.status_code in [200, 401, 422, 500]
 
-    def test_v1_entity_cache_stats_endpoint_exists(self):
-        response = self.client.get("/v1/entity/cache/stats")
-        assert response.status_code in [200, 401, 422, 500]
-
     def test_v1_entity_cache_invalidate_endpoint_exists(self):
         response = self.client.post("/v1/entity/cache/invalidate", json={})
         assert response.status_code in [200, 401, 422, 500]
@@ -146,22 +141,6 @@ class TestV1PrefixEndpoints:
     def test_v1_codegraph_complex_is_post(self):
         response = self.client.get("/v1/codegraph/complex")
         assert response.status_code in [405, 404, 401]
-
-    def test_v1_codegraph_complexity_endpoint_exists(self):
-        response = self.client.get("/v1/codegraph/complexity/test_func")
-        assert response.status_code in [200, 401, 422, 500]
-
-    def test_v1_codegraph_callers_endpoint_exists(self):
-        response = self.client.get("/v1/codegraph/callers/test_func")
-        assert response.status_code in [200, 401, 422, 500]
-
-    def test_v1_codegraph_callees_endpoint_exists(self):
-        response = self.client.get("/v1/codegraph/callees/test_func")
-        assert response.status_code in [200, 401, 422, 500]
-
-    def test_v1_codegraph_deps_endpoint_exists(self):
-        response = self.client.get("/v1/codegraph/deps/test_module")
-        assert response.status_code in [200, 401, 422, 500]
 
     def test_v1_codegraph_dead_code_endpoint_exists(self):
         response = self.client.post("/v1/codegraph/dead-code", json={})

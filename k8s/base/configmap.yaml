@@ -13,8 +13,6 @@ data:
   JSON_FORMAT: "true"
   
   # Service URLs (internal)
-  QDRANT_URL: "http://qdrant:6333"
-  FALKORDB_URL: "http://falkordb:7379"
   REDIS_URL: "redis://redis:6379"
   
   QDRANT_HOST: "qdrant"

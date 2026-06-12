@@ -1,7 +1,6 @@
 """Tests for core/di.py AppContainer."""
 
 import threading
-from typing import Any
 
 import pytest
 
@@ -10,6 +9,7 @@ import pytest
 def _reset_container():
     """Reset the AppContainer singleton between tests."""
     from core.di import AppContainer
+
     AppContainer._instance = None
     yield
     AppContainer._instance = None
@@ -18,17 +18,20 @@ def _reset_container():
 class TestAppContainerSingleton:
     def test_register_singleton(self):
         from core.di import AppContainer
+
         container = AppContainer()
         container.register_singleton(int, 42)
         assert container.singleton(int) == 42
 
     def test_singleton_returns_none_for_unregistered(self):
         from core.di import AppContainer
+
         container = AppContainer()
         assert container.singleton(str) is None
 
     def test_singleton_overwrite(self):
         from core.di import AppContainer
+
         container = AppContainer()
         container.register_singleton(str, "first")
         container.register_singleton(str, "second")
@@ -38,6 +41,7 @@ class TestAppContainerSingleton:
 class TestAppContainerFactory:
     def test_register_factory(self):
         from core.di import AppContainer
+
         container = AppContainer()
         container.register_factory(list, list)
         result = container.get_or_create(list)
@@ -45,6 +49,7 @@ class TestAppContainerFactory:
 
     def test_factory_creates_once(self):
         from core.di import AppContainer
+
         container = AppContainer()
         call_count = 0
 
@@ -63,12 +68,14 @@ class TestAppContainerFactory:
 class TestGetOrCreate:
     def test_raises_keyerror_for_unregistered(self):
         from core.di import AppContainer
+
         container = AppContainer()
         with pytest.raises(KeyError, match="No singleton or factory"):
             container.get_or_create(float)
 
     def test_prefers_existing_singleton_over_factory(self):
         from core.di import AppContainer
+
         container = AppContainer()
         container.register_singleton(str, "cached")
         container.register_factory(str, lambda: "from_factory")
@@ -77,6 +84,7 @@ class TestGetOrCreate:
     def test_thread_safety_basic(self):
         """Basic test that concurrent get_or_create doesn't raise."""
         from core.di import AppContainer
+
         container = AppContainer()
         container.register_factory(list, list)
 
@@ -104,6 +112,7 @@ class TestGetOrCreate:
 class TestClearOverrides:
     def test_clear_overrides(self):
         from core.di import AppContainer
+
         container = AppContainer()
         container.register_singleton(int, 1)
         container.register_factory(str, str)
@@ -116,6 +125,7 @@ class TestClearOverrides:
 class TestAppContainerSingletonPattern:
     def test_app_container_is_singleton(self):
         from core.di import AppContainer
+
         a = AppContainer()
         b = AppContainer()
         assert a is b

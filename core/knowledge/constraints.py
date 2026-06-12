@@ -1,6 +1,7 @@
-from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Callable, Optional
 from enum import Enum
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, Field
 
 
 class RuleType(str, Enum):
@@ -43,44 +44,38 @@ class RuleResult(BaseModel):
 class RuleEngine:
     def __init__(self):
         self.rules: Dict[str, ConstraintRule] = {}
-    
+
     def add_rule(self, rule: ConstraintRule) -> None:
         self.rules[rule.id] = rule
-    
-    def evaluate(
-        self,
-        context: Dict[str, Any],
-        scope: List[str]
-    ) -> List[RuleResult]:
+
+    def evaluate(self, context: Dict[str, Any], scope: List[str]) -> List[RuleResult]:
         results = []
-        
+
         for rule_id, rule in self.rules.items():
             if scope and not any(s in rule.applies_to for s in scope):
                 continue
-            
+
             triggered = self._check_conditions(rule.conditions, context)
-            
+
             if triggered:
-                results.append(RuleResult(
-                    rule=rule,
-                    triggered=True,
-                    message=rule.action.message,
-                    fix=rule.action.fix_suggestion,
-                    severity=rule.severity,
-                ))
-        
+                results.append(
+                    RuleResult(
+                        rule=rule,
+                        triggered=True,
+                        message=rule.action.message,
+                        fix=rule.action.fix_suggestion,
+                        severity=rule.severity,
+                    )
+                )
+
         return results
-    
-    def _check_conditions(
-        self,
-        conditions: List[RuleCondition],
-        context: Dict[str, Any]
-    ) -> bool:
+
+    def _check_conditions(self, conditions: List[RuleCondition], context: Dict[str, Any]) -> bool:
         return all(self._evaluate_condition(c, context) for c in conditions)
-    
+
     def _evaluate_condition(self, cond: RuleCondition, context: Dict[str, Any]) -> bool:
         value = self._get_nested(context, cond.field)
-        
+
         if cond.operator == "eq":
             return value == cond.value
         elif cond.operator == "in":
@@ -91,9 +86,9 @@ class RuleEngine:
             return value is not None and value > cond.value
         elif cond.operator == "lt":
             return value is not None and value < cond.value
-        
+
         return False
-    
+
     def _get_nested(self, d: Dict, path: str) -> Any:
         keys = path.split(".")
         val = d
@@ -105,43 +100,52 @@ class RuleEngine:
         return val
 
 
+_rule_engine: Optional[RuleEngine] = None
+
+
 def get_rule_engine() -> RuleEngine:
-    engine = RuleEngine()
-    _load_default_rules(engine)
-    return engine
+    global _rule_engine
+    if _rule_engine is None:
+        _rule_engine = RuleEngine()
+        _load_default_rules(_rule_engine)
+    return _rule_engine
 
 
 def _load_default_rules(engine: RuleEngine) -> None:
-    engine.add_rule(ConstraintRule(
-        id="sap_xsuaa_required",
-        name="XSUAA Required for SAP BTP",
-        type=RuleType.MANDATORY,
-        conditions=[
-            RuleCondition(field="platform", operator="eq", value="sap"),
-            RuleCondition(field="has_auth", operator="eq", value=False),
-        ],
-        action=RuleAction(
-            type="error",
-            message="SAP BTP requires authentication (XSUAA)",
-            fix_suggestion="Add XSUAA service: cf create-service xsuaa default",
-        ),
-        applies_to=["sap"],
-        severity="error",
-    ))
-    
-    engine.add_rule(ConstraintRule(
-        id="pp_dataverse_required",
-        name="Dataverse Required",
-        type=RuleType.MANDATORY,
-        conditions=[
-            RuleCondition(field="platform", operator="eq", value="powerplatform"),
-            RuleCondition(field="has_database", operator="eq", value=False),
-        ],
-        action=RuleAction(
-            type="error",
-            message="Power Platform requires Dataverse",
-            fix_suggestion="Use Dataverse for data storage",
-        ),
-        applies_to=["powerplatform"],
-        severity="error",
-    ))
+    engine.add_rule(
+        ConstraintRule(
+            id="sap_xsuaa_required",
+            name="XSUAA Required for SAP BTP",
+            type=RuleType.MANDATORY,
+            conditions=[
+                RuleCondition(field="platform", operator="eq", value="sap"),
+                RuleCondition(field="has_auth", operator="eq", value=False),
+            ],
+            action=RuleAction(
+                type="error",
+                message="SAP BTP requires authentication (XSUAA)",
+                fix_suggestion="Add XSUAA service: cf create-service xsuaa default",
+            ),
+            applies_to=["sap"],
+            severity="error",
+        )
+    )
+
+    engine.add_rule(
+        ConstraintRule(
+            id="pp_dataverse_required",
+            name="Dataverse Required",
+            type=RuleType.MANDATORY,
+            conditions=[
+                RuleCondition(field="platform", operator="eq", value="powerplatform"),
+                RuleCondition(field="has_database", operator="eq", value=False),
+            ],
+            action=RuleAction(
+                type="error",
+                message="Power Platform requires Dataverse",
+                fix_suggestion="Use Dataverse for data storage",
+            ),
+            applies_to=["powerplatform"],
+            severity="error",
+        )
+    )

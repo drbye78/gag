@@ -1,10 +1,9 @@
 """Tests for security headers."""
 
-import pytest
 from fastapi.testclient import TestClient
 
 from api.main import app as main_app
-from core.config import get_settings, reset_settings
+from core.config import reset_settings
 
 
 class TestSecurityHeaders:
@@ -57,10 +56,12 @@ class TestSecurityHeaders:
     def test_hsts_header_present_when_enabled(self):
         """HSTS header should be present when enable_hsts is True."""
         import os
+
         os.environ["ENABLE_HSTS"] = "true"
         reset_settings()
 
         from api.main import _cors_settings
+
         _cors_settings.enable_hsts = True
 
         client = TestClient(main_app)

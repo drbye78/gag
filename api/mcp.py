@@ -10,19 +10,14 @@ import time
 import uuid
 from typing import Any, Dict, List, Optional
 
-from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 
+from agents.orchestration import OrchestrationEngine
 from models.mcp import (
     MCPRequest,
     MCPResponse,
-    MCPToolDefinition,
-    MCPToolCall,
-    MCPToolResult,
-    MCP_TOOLS,
 )
-from agents.orchestration import OrchestrationEngine
-from tools.base import ToolRegistry, MCPErrorCode
+from tools.base import MCPErrorCode, ToolRegistry
 
 
 class MCPHandler:
@@ -45,17 +40,32 @@ class MCPHandler:
             self._sessions[session_id] = {"created_at": time.time(), "state": {}}
         return session_id
 
-    def _check_rate_limit(self, client_id: str, max_calls: int = 100, window_seconds: int = 60) -> bool:
+    def _check_rate_limit(
+        self, client_id: str, max_calls: int = 100, window_seconds: int = 60
+    ) -> bool:
         now = time.time()
         if client_id not in self._rate_limits:
             self._rate_limits[client_id] = []
-        self._rate_limits[client_id] = [t for t in self._rate_limits[client_id] if now - t < window_seconds]
+        self._rate_limits[client_id] = [
+            t for t in self._rate_limits[client_id] if now - t < window_seconds
+        ]
         if len(self._rate_limits[client_id]) >= max_calls:
             return False
         self._rate_limits[client_id].append(now)
         return True
 
     async def handle_request(self, request: MCPRequest) -> MCPResponse:
+        # Validate request ID per JSON-RPC 2.0 spec: if present, must be non-empty string
+        if request.id is not None and (not isinstance(request.id, str) or not request.id.strip()):
+            return MCPResponse(
+                jsonrpc="2.0",
+                id=None,
+                error={
+                    "code": -32600,
+                    "message": "Invalid request: id must be a non-empty string if provided",
+                },
+            )
+
         self._request_id = request.id
         method = request.method
         params = request.params or {}
@@ -124,7 +134,7 @@ class MCPHandler:
                 },
                 "server_info": {
                     "name": "Engineering Intelligence System",
-                    "version": "4.1.0",
+                    "version": "3.2.0",
                 },
                 "tool_count": len(tools),
                 "resource_count": len(resources),
@@ -147,6 +157,18 @@ class MCPHandler:
                 error={
                     "code": MCPErrorCode.INVALID_PARAMS,
                     "message": "Missing required parameter: name",
+                },
+            )
+
+        # Validate tool name exists in registry
+        if self.tool_registry.get(name) is None:
+            available = [t["name"] for t in self.tool_registry.list_tools()]
+            return MCPResponse(
+                jsonrpc="2.0",
+                id=self._response_id(),
+                error={
+                    "code": MCPErrorCode.TOOL_NOT_FOUND,
+                    "message": f"Tool '{name}' not found. Available tools: {available}",
                 },
             )
 
@@ -187,17 +209,21 @@ class MCPHandler:
         output = []
         for i, result in enumerate(results):
             if result.error:
-                output.append({
-                    "index": i,
-                    "error": result.error,
-                    "isError": True,
-                })
+                output.append(
+                    {
+                        "index": i,
+                        "error": result.error,
+                        "isError": True,
+                    }
+                )
             else:
-                output.append({
-                    "index": i,
-                    "result": result.result,
-                    "isError": False,
-                })
+                output.append(
+                    {
+                        "index": i,
+                        "result": result.result,
+                        "isError": False,
+                    }
+                )
 
         return MCPResponse(jsonrpc="2.0", id=self._response_id(), result={"results": output})
 
@@ -278,8 +304,14 @@ class MCPHandler:
         if session_id and session_id in self._sessions:
             session = self._sessions[session_id]
             if key:
-                return MCPResponse(jsonrpc="2.0", id=self._response_id(), result={"value": session["state"].get(key)})
-            return MCPResponse(jsonrpc="2.0", id=self._response_id(), result={"state": session["state"]})
+                return MCPResponse(
+                    jsonrpc="2.0",
+                    id=self._response_id(),
+                    result={"value": session["state"].get(key)},
+                )
+            return MCPResponse(
+                jsonrpc="2.0", id=self._response_id(), result={"state": session["state"]}
+            )
         return MCPResponse(
             jsonrpc="2.0",
             id=self._response_id(),
@@ -292,7 +324,9 @@ class MCPHandler:
         value = params.get("value")
         if key:
             self._sessions[session_id]["state"][key] = value
-            return MCPResponse(jsonrpc="2.0", id=self._response_id(), result={"session_id": session_id})
+            return MCPResponse(
+                jsonrpc="2.0", id=self._response_id(), result={"session_id": session_id}
+            )
         return MCPResponse(
             jsonrpc="2.0",
             id=self._response_id(),
@@ -313,9 +347,7 @@ def create_mcp_response(
     return JSONResponse(content=response)
 
 
-def create_error_response(
-    code: int, message: str, id: Optional[str] = None
-) -> JSONResponse:
+def create_error_response(code: int, message: str, id: Optional[str] = None) -> JSONResponse:
     return create_mcp_response(error={"code": code, "message": message}, id=id)
 
 

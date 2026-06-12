@@ -48,7 +48,7 @@ class ReasoningEngine:
         self.max_branches = 3
         self._llm_router = None
         self._llm_available = False
-    
+
     def set_llm_router(self, router: Any) -> None:
         self._llm_router = router
         self._llm_available = True
@@ -89,7 +89,7 @@ class ReasoningEngine:
 
         if self.use_llm and self._llm_available and self._llm_router:
             return await self._llm_reason(query, facts)
-        
+
         top_fact = facts[0]
         answer = top_fact.get("content", "")
 
@@ -101,16 +101,14 @@ class ReasoningEngine:
             "confidence": top_fact.get("score", 0.5),
             "sources": [f.get("source", "") for f in facts[:3]],
         }
-    
+
     async def _llm_reason(
         self,
         query: str,
         facts: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
-        facts_text = "\n".join(
-            f"- {f.get('content', '')[:200]}" for i, f in enumerate(facts[:5])
-        )
-        
+        facts_text = "\n".join(f"- {f.get('content', '')[:200]}" for i, f in enumerate(facts[:5]))
+
         prompt = f"""Based on the following facts, answer the query concisely.
 
 Query: {query}
@@ -119,7 +117,7 @@ Facts:
 {facts_text}
 
 Provide a direct answer in 2-3 sentences."""
-        
+
         try:
             result = await self._llm_router.chat(
                 messages=[{"role": "user", "content": prompt}],
@@ -137,17 +135,16 @@ Provide a direct answer in 2-3 sentences."""
             "confidence": 0.7,
             "sources": [f.get("source", "") for f in facts[:3]],
         }
-    
+
     async def _llm_chain_reason(
         self,
         query: str,
         facts: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
         facts_text = "\n".join(
-            f"{i+1}. {f.get('content', '')[:250]}"
-            for i, f in enumerate(facts[:7])
+            f"{i + 1}. {f.get('content', '')[:250]}" for i, f in enumerate(facts[:7])
         )
-        
+
         prompt = f"""Think step by step about this query. Show your reasoning.
 
 Query: {query}
@@ -156,7 +153,7 @@ Facts:
 {facts_text}
 
 Provide your reasoning steps and final answer."""
-        
+
         try:
             result = await self._llm_router.chat(
                 messages=[{"role": "user", "content": prompt}],
@@ -164,9 +161,8 @@ Provide your reasoning steps and final answer."""
             )
             answer = result.get("content", "").strip()
         except Exception:
-            answer = " | ".join(
-                f.get("content", "")[:100] for f in facts[:2])
-        
+            answer = " | ".join(f.get("content", "")[:100] for f in facts[:2])
+
         return {
             "query": query,
             "answer": answer,
@@ -183,7 +179,7 @@ Provide your reasoning steps and final answer."""
     ) -> Dict[str, Any]:
         if self.use_llm and self._llm_available and self._llm_router:
             return await self._llm_chain_reason(query, facts)
-        
+
         steps: Dict[str, ReasoningStep] = {}
 
         current_step = ReasoningStep(
@@ -245,9 +241,7 @@ Provide your reasoning steps and final answer."""
             steps[step.step_id] = step
             branch_paths[branch_idx].append(step.step_id)
 
-        best_path = max(
-            branch_paths, key=lambda p: self._calculate_path_score(p, facts)
-        )
+        best_path = max(branch_paths, key=lambda p: self._calculate_path_score(p, facts))
         answer = self._build_tree_answer(facts, query)
 
         return {
@@ -302,8 +296,7 @@ Provide your reasoning steps and final answer."""
             "answer": answer,
             "reasoning_mode": self.mode.value,
             "steps": list(steps.values()),
-            "confidence": sum(f.get("score", 0) for f in valid_facts)
-            / max(len(valid_facts), 1),
+            "confidence": sum(f.get("score", 0) for f in valid_facts) / max(len(valid_facts), 1),
             "sources": [f.get("source", "") for f in (valid_facts or facts)[:3]],
         }
 
@@ -391,10 +384,7 @@ def get_reasoning_engine(
     global _reasoning_engine
     if isinstance(mode, str):
         mode = ReasoningMode(mode)
-    needs_new = (
-        _reasoning_engine is None
-        or isinstance(_reasoning_engine.mode, str)
-    )
+    needs_new = _reasoning_engine is None or isinstance(_reasoning_engine.mode, str)
     if not isinstance(mode, ReasoningMode):
         mode = ReasoningMode.CHAIN_OF_THOUGHTS
     if needs_new or _reasoning_engine.mode != mode:

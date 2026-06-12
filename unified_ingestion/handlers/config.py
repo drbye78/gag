@@ -30,7 +30,9 @@ class ConfigHandler(Handler):
         ".env": "env",
     }
 
-    async def handle(self, content: bytes, source_id: str, metadata: Dict[str, Any]) -> HandlerResult:
+    async def handle(
+        self, content: bytes, source_id: str, metadata: Dict[str, Any]
+    ) -> HandlerResult:
         filename = metadata.get("filename", "config")
         ext = os.path.splitext(filename)[1].lower()
 
@@ -52,27 +54,21 @@ class ConfigHandler(Handler):
             logger.error("ConfigHandler failed: %s", e)
             return HandlerResult(success=False, error=str(e))
 
-    async def _parse_json(
-        self, content: bytes, source_id: str, filename: str
-    ) -> HandlerResult:
+    async def _parse_json(self, content: bytes, source_id: str, filename: str) -> HandlerResult:
         try:
             data = json.loads(content.decode("utf-8"))
             return self._config_to_chunks(data, source_id, filename, "json")
         except json.JSONDecodeError as e:
             return HandlerResult(success=False, error=f"JSON parse error: {e}")
 
-    async def _parse_yaml(
-        self, content: bytes, source_id: str, filename: str
-    ) -> HandlerResult:
+    async def _parse_yaml(self, content: bytes, source_id: str, filename: str) -> HandlerResult:
         try:
             data = yaml.safe_load(content.decode("utf-8"))
             return self._config_to_chunks(data, source_id, filename, "yaml")
         except yaml.YAMLError as e:
             return HandlerResult(success=False, error=f"YAML parse error: {e}")
 
-    async def _parse_toml(
-        self, content: bytes, source_id: str, filename: str
-    ) -> HandlerResult:
+    async def _parse_toml(self, content: bytes, source_id: str, filename: str) -> HandlerResult:
         if not TOML_AVAILABLE:
             text = content.decode("utf-8")
             return self._config_to_chunks({"raw": text}, source_id, filename, "toml")
@@ -83,9 +79,7 @@ class ConfigHandler(Handler):
         except toml.TomlDecodeError as e:
             return HandlerResult(success=False, error=f"TOML parse error: {e}")
 
-    async def _parse_env(
-        self, content: bytes, source_id: str, filename: str
-    ) -> HandlerResult:
+    async def _parse_env(self, content: bytes, source_id: str, filename: str) -> HandlerResult:
         lines = content.decode("utf-8").strip().split("\n")
         config = {}
 

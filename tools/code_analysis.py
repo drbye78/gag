@@ -10,12 +10,6 @@ from typing import Any
 
 from retrieval.code_graph import (
     CodeGraphRetriever,
-    calculate_cyclomatic_complexity,
-    find_dead_code,
-    find_most_complex_functions,
-    analyze_code_relationships,
-    CodeGraphQueryType,
-    get_code_graph_retriever,
 )
 
 

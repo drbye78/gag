@@ -1,8 +1,14 @@
-from typing import Any, Dict, List, Optional
 import json
 import logging
+from typing import Any, Dict, List
 
 from tools.base import BaseTool, PDLCBaseTool, ToolInput, ToolOutput
+
+# NOTE: Feedback tools currently perform sentiment analysis via LLM prompts
+# but do not include a dedicated sentiment analysis module. Consider adding:
+# - Dedicated NLP sentiment model (e.g., VADER, TextBlob, or transformer-based)
+# - Emotion detection beyond positive/negative/neutral
+# - Sentiment trend tracking over time
 
 logger = logging.getLogger(__name__)
 
@@ -10,36 +16,27 @@ logger = logging.getLogger(__name__)
 class UserFeedbackIngestTool(PDLCBaseTool):
     name = "feedback_ingest"
     description = "Ingest user feedback from email, survey, support tickets, app reviews"
-    
+
     async def _llm_execute(self, input: ToolInput) -> ToolOutput:
         source = input.args.get("source", "email")
         feedback = input.args.get("feedback", "")
-        
+
         result = await self._ingest_feedback_llm(source, feedback)
-        return ToolOutput(
-            result=result,
-            metadata={"ingested": True, "method": "llm"}
-        )
-    
+        return ToolOutput(result=result, metadata={"ingested": True, "method": "llm"})
+
     async def _fallback(self, input: ToolInput) -> ToolOutput:
-        source = input.args.get("source", "email")
-        feedback = input.args.get("feedback", "")
-        
-        result = await self._ingest_feedback_fallback(source, feedback)
         return ToolOutput(
-            result=result,
-            metadata={"ingested": True, "method": "fallback"}
+            result=None,
+            error="LLM unavailable — feedback analysis requires an LLM provider",
+            metadata={},
         )
-    
-    async def _ingest_feedback_llm(
-        self,
-        source: str,
-        feedback: str
-    ) -> Dict[str, Any]:
+
+    async def _ingest_feedback_llm(self, source: str, feedback: str) -> Dict[str, Any]:
         try:
             from llm.router import get_router
+
             router = get_router()
-            
+
             prompt = f"""Extract actionable insights from user feedback.
 Source: {source}
 Feedback: {feedback}
@@ -54,33 +51,25 @@ Respond ONLY with a JSON object containing:
 - priority: high/medium/low
 
 Be specific about what user wants."""
-            
-            response = await router.chat(
-                prompt=prompt,
-                temperature=0.3,
-                max_tokens=1500
-            )
-            
+
+            response = await router.chat(prompt=prompt, temperature=0.3, max_tokens=1500)
+
             content = response.choices[0]["message"]["content"]
             result = json.loads(content)
             result["processed"] = True
             return result
-            
+
         except Exception as e:
             logger.error(f"LLM feedback ingestion failed: {e}")
             raise
-    
-    async def _ingest_feedback_fallback(
-        self,
-        source: str,
-        feedback: str
-    ) -> Dict[str, Any]:
+
+    async def _ingest_feedback_fallback(self, source: str, feedback: str) -> Dict[str, Any]:
         return {
             "source": source,
             "feedback": feedback,
             "processed": True,
         }
-    
+
     def validate_input(self, input: Dict[str, Any]) -> bool:
         return "feedback" in input
 
@@ -88,33 +77,29 @@ Be specific about what user wants."""
 class SentimentAnalyzerTool(PDLCBaseTool):
     name = "sentiment_analyze"
     description = "Analyze feedback sentiment using NLP"
-    
+
     async def _llm_execute(self, input: ToolInput) -> ToolOutput:
         texts = input.args.get("texts", [])
-        
+
         analysis = await self._analyze_sentiment_llm(texts)
         return ToolOutput(
-            result={"analysis": analysis},
-            metadata={"analyzed": True, "method": "llm"}
+            result={"analysis": analysis}, metadata={"analyzed": True, "method": "llm"}
         )
-    
+
     async def _fallback(self, input: ToolInput) -> ToolOutput:
         texts = input.args.get("texts", [])
-        
+
         analysis = await self._analyze_sentiment_fallback(texts)
         return ToolOutput(
-            result={"analysis": analysis},
-            metadata={"analyzed": True, "method": "fallback"}
+            result={"analysis": analysis}, metadata={"analyzed": True, "method": "fallback"}
         )
-    
-    async def _analyze_sentiment_llm(
-        self,
-        texts: List[str]
-    ) -> List[Dict[str, Any]]:
+
+    async def _analyze_sentiment_llm(self, texts: List[str]) -> List[Dict[str, Any]]:
         try:
             from llm.router import get_router
+
             router = get_router()
-            
+
             prompt = f"""Analyze sentiment for each text.
 Texts: {json.dumps(texts)}
 
@@ -126,33 +111,26 @@ Respond ONLY with a JSON array where each item has:
 - keywords: key terms affecting sentiment
 
 Be nuanced - detect mixed sentiment."""
-            
-            response = await router.chat(
-                prompt=prompt,
-                temperature=0.3,
-                max_tokens=2000
-            )
-            
+
+            response = await router.chat(prompt=prompt, temperature=0.3, max_tokens=2000)
+
             content = response.choices[0]["message"]["content"]
             return json.loads(content)
-            
+
         except Exception as e:
             logger.error(f"LLM sentiment analysis failed: {e}")
             raise
-    
-    async def _analyze_sentiment_fallback(
-        self,
-        texts: List[str]
-    ) -> List[Dict[str, Any]]:
+
+    async def _analyze_sentiment_fallback(self, texts: List[str]) -> List[Dict[str, Any]]:
         positive_words = {"love", "great", "amazing", "excellent", "good", "best", "awesome"}
         negative_words = {"hate", "bad", "terrible", "awful", "worst", "poor", "broken", "slow"}
-        
+
         results = []
         for t in texts:
             t_lower = t.lower()
             pos_count = sum(1 for w in positive_words if w in t_lower)
             neg_count = sum(1 for w in negative_words if w in t_lower)
-            
+
             if pos_count > neg_count:
                 sentiment = "positive"
                 score = min(0.5 + pos_count * 0.15, 0.95)
@@ -162,15 +140,17 @@ Be nuanced - detect mixed sentiment."""
             else:
                 sentiment = "neutral"
                 score = 0.5
-            
-            results.append({
-                "text": t,
-                "sentiment": sentiment,
-                "score": score,
-            })
-        
+
+            results.append(
+                {
+                    "text": t,
+                    "sentiment": sentiment,
+                    "score": score,
+                }
+            )
+
         return results
-    
+
     def validate_input(self, input: Dict[str, Any]) -> bool:
         return "texts" in input
 
@@ -178,34 +158,30 @@ Be nuanced - detect mixed sentiment."""
 class MetricTrendAnalyzerTool(BaseTool):
     name = "trend_analyze"
     description = "Analyze metric trends over time with forecasting"
-    
+
     async def execute(self, input: ToolInput) -> ToolOutput:
         metric = input.args.get("metric", "")
         timeframe = input.args.get("timeframe", "30d")
-        
+
         try:
             trends = await self._analyze_trends_llm(metric, timeframe)
             return ToolOutput(
-                result={"trends": trends},
-                metadata={"analyzed": True, "method": "llm"}
+                result={"trends": trends}, metadata={"analyzed": True, "method": "llm"}
             )
         except Exception as e:
             logger.warning(f"LLM trend analysis failed: {e}, using fallback")
             trends = await self._analyze_trends_fallback(metric, timeframe)
             return ToolOutput(
                 result={"trends": trends},
-                metadata={"analyzed": True, "method": "fallback", "error": str(e)}
+                metadata={"analyzed": True, "method": "fallback", "error": str(e)},
             )
-    
-    async def _analyze_trends_llm(
-        self,
-        metric: str,
-        timeframe: str
-    ) -> Dict[str, Any]:
+
+    async def _analyze_trends_llm(self, metric: str, timeframe: str) -> Dict[str, Any]:
         try:
             from llm.router import get_router
+
             router = get_router()
-            
+
             prompt = f"""Generate trend analysis for {metric}.
 Timeframe: {timeframe}
 
@@ -220,25 +196,17 @@ Respond ONLY with a JSON object containing:
 - seasonality: detected patterns (daily/weekly/monthly/none)
 
 Generate realistic time series data."""
-            
-            response = await router.chat(
-                prompt=prompt,
-                temperature=0.3,
-                max_tokens=2000
-            )
-            
+
+            response = await router.chat(prompt=prompt, temperature=0.3, max_tokens=2000)
+
             content = response.choices[0]["message"]["content"]
             return json.loads(content)
-            
+
         except Exception as e:
             logger.error(f"LLM trend analysis failed: {e}")
             raise
-    
-    async def _analyze_trends_fallback(
-        self,
-        metric: str,
-        timeframe: str
-    ) -> Dict[str, Any]:
+
+    async def _analyze_trends_fallback(self, metric: str, timeframe: str) -> Dict[str, Any]:
         return {
             "metric": metric,
             "timeframe": timeframe,
@@ -247,7 +215,7 @@ Generate realistic time series data."""
             "error": "LLM analysis unavailable",
             "available": False,
         }
-    
+
     def validate_input(self, input: Dict[str, Any]) -> bool:
         return "metric" in input
 
@@ -255,34 +223,28 @@ Generate realistic time series data."""
 class FeatureRequestTrackerTool(BaseTool):
     name = "feature_track"
     description = "Track feature requests with voting and prioritization"
-    
+
     async def execute(self, input: ToolInput) -> ToolOutput:
         request = input.args.get("request", {})
         action = input.args.get("action", "track")
-        
+
         try:
             result = await self._track_feature_llm(request, action)
-            return ToolOutput(
-                result=result,
-                metadata={"tracked": True, "method": "llm"}
-            )
+            return ToolOutput(result=result, metadata={"tracked": True, "method": "llm"})
         except Exception as e:
-            logger.warning(f"LLM feature tracking failed: {e}, using fallback")
-            result = await self._track_feature_fallback(request, action)
+            logger.warning("LLM feature tracking failed: %s", e)
             return ToolOutput(
-                result=result,
-                metadata={"tracked": True, "method": "fallback", "error": str(e)}
+                result=None,
+                error="LLM unavailable — feature tracking requires an LLM provider",
+                metadata={},
             )
-    
-    async def _track_feature_llm(
-        self,
-        request: Dict[str, Any],
-        action: str
-    ) -> Dict[str, Any]:
+
+    async def _track_feature_llm(self, request: Dict[str, Any], action: str) -> Dict[str, Any]:
         try:
             from llm.router import get_router
+
             router = get_router()
-            
+
             prompt = f"""Process a feature request.
 Request: {json.dumps(request)}
 Action: {action} (track/vote/comment/status)
@@ -299,31 +261,24 @@ Respond ONLY with a JSON object containing:
 - dependencies: array of dependent features
 
 Assign realistic priority based on request content."""
-            
-            response = await router.chat(
-                prompt=prompt,
-                temperature=0.3,
-                max_tokens=1500
-            )
-            
+
+            response = await router.chat(prompt=prompt, temperature=0.3, max_tokens=1500)
+
             content = response.choices[0]["message"]["content"]
             return json.loads(content)
-            
+
         except Exception as e:
             logger.error(f"LLM feature tracking failed: {e}")
             raise
-    
-    async def _track_feature_fallback(
-        self,
-        request: Dict[str, Any],
-        action: str
-    ) -> Dict[str, Any]:
+
+    async def _track_feature_fallback(self, request: Dict[str, Any], action: str) -> Dict[str, Any]:
         import time
+
         return {
             "action": action,
             "id": f"FR-{int(time.time())}",
         }
-    
+
     def validate_input(self, input: Dict[str, Any]) -> bool:
         return "request" in input or "action" in input
 
@@ -331,30 +286,29 @@ Assign realistic priority based on request content."""
 class ChurnPredictorTool(PDLCBaseTool):
     name = "churn_predict"
     description = "Predict customer churn using ML models"
-    
+
     async def _llm_execute(self, input: ToolInput) -> ToolOutput:
         customer_id = input.args.get("customer_id", "")
-        
+
         prediction = await self._predict_churn_llm(customer_id)
         return ToolOutput(
-            result={"prediction": prediction},
-            metadata={"predicted": True, "method": "llm"}
+            result={"prediction": prediction}, metadata={"predicted": True, "method": "llm"}
         )
-    
+
     async def _fallback(self, input: ToolInput) -> ToolOutput:
         customer_id = input.args.get("customer_id", "")
-        
+
         prediction = await self._predict_churn_fallback(customer_id)
         return ToolOutput(
-            result={"prediction": prediction},
-            metadata={"predicted": True, "method": "fallback"}
+            result={"prediction": prediction}, metadata={"predicted": True, "method": "fallback"}
         )
-    
+
     async def _predict_churn_llm(self, customer_id: str) -> Dict[str, Any]:
         try:
             from llm.router import get_router
+
             router = get_router()
-            
+
             prompt = f"""Predict customer churn risk.
 Customer ID: {customer_id}
 
@@ -367,20 +321,16 @@ Respond ONLY with a JSON object containing:
 - tenure_months: customer tenure
 
 Generate realistic prediction."""
-            
-            response = await router.chat(
-                prompt=prompt,
-                temperature=0.3,
-                max_tokens=1500
-            )
-            
+
+            response = await router.chat(prompt=prompt, temperature=0.3, max_tokens=1500)
+
             content = response.choices[0]["message"]["content"]
             return json.loads(content)
-            
+
         except Exception as e:
             logger.error(f"LLM churn prediction failed: {e}")
             raise
-    
+
     async def _predict_churn_fallback(self, customer_id: str) -> Dict[str, Any]:
         return {
             "customer_id": customer_id,
@@ -389,7 +339,7 @@ Generate realistic prediction."""
             "error": "LLM prediction unavailable",
             "available": False,
         }
-    
+
     def validate_input(self, input: Dict[str, Any]) -> bool:
         return "customer_id" in input
 

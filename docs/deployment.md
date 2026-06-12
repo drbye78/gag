@@ -217,7 +217,7 @@ spec:
 
 ```bash
 curl http://localhost:8000/health
-# {"status": "healthy", "version": "4.1.0"}
+# {"status": "healthy", "version": "4.2.0"}
 ```
 
 ### Dependency Health

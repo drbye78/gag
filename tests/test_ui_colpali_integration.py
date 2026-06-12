@@ -6,7 +6,8 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-import torch
+
+torch = pytest.importorskip("torch")
 
 
 def _mock_colpali_module(**kwargs):
@@ -31,7 +32,9 @@ def _reset_indexer():
     """Reset the module-level singleton so each test gets a fresh instance."""
     # Reload the module to clear the singleton
     import importlib
+
     import ui.colpali_integration
+
     ui.colpali_integration._indexer = None
     importlib.reload(ui.colpali_integration)
 
@@ -55,9 +58,12 @@ class TestUISketchVisualIndexer:
         _mock_colpali_module(client=mock_client)
         try:
             from ui.colpali_integration import get_ui_visual_indexer
+
             indexer = get_ui_visual_indexer()
             loop = asyncio.new_event_loop()
-            result = loop.run_until_complete(indexer.get_embedding("https://example.com/sketch.png"))
+            result = loop.run_until_complete(
+                indexer.get_embedding("https://example.com/sketch.png")
+            )
             loop.close()
 
             assert result is not None
@@ -76,9 +82,12 @@ class TestUISketchVisualIndexer:
         _mock_colpali_module(client=mock_client)
         try:
             from ui.colpali_integration import get_ui_visual_indexer
+
             indexer = get_ui_visual_indexer()
             loop = asyncio.new_event_loop()
-            result = loop.run_until_complete(indexer.get_embedding("https://example.com/sketch.png"))
+            result = loop.run_until_complete(
+                indexer.get_embedding("https://example.com/sketch.png")
+            )
             loop.close()
 
             assert result is None
@@ -96,9 +105,12 @@ class TestUISketchVisualIndexer:
         _mock_colpali_module(client=mock_client)
         try:
             from ui.colpali_integration import get_ui_visual_indexer
+
             indexer = get_ui_visual_indexer()
             loop = asyncio.new_event_loop()
-            result = loop.run_until_complete(indexer.get_embedding("https://example.com/sketch.png"))
+            result = loop.run_until_complete(
+                indexer.get_embedding("https://example.com/sketch.png")
+            )
             loop.close()
 
             assert result is None
@@ -119,11 +131,10 @@ class TestUISketchVisualIndexer:
         _mock_colpali_module(client=mock_client)
         try:
             from ui.colpali_integration import get_ui_visual_indexer
+
             indexer = get_ui_visual_indexer()
             loop = asyncio.new_event_loop()
-            score = loop.run_until_complete(
-                indexer.compute_similarity(embedding_a, embedding_b)
-            )
+            score = loop.run_until_complete(indexer.compute_similarity(embedding_a, embedding_b))
             loop.close()
 
             assert score == pytest.approx(0.95, abs=1e-5)
@@ -144,11 +155,10 @@ class TestUISketchVisualIndexer:
         _mock_colpali_module(client=mock_client)
         try:
             from ui.colpali_integration import get_ui_visual_indexer
+
             indexer = get_ui_visual_indexer()
             loop = asyncio.new_event_loop()
-            score = loop.run_until_complete(
-                indexer.compute_similarity(embedding_a, embedding_b)
-            )
+            score = loop.run_until_complete(indexer.compute_similarity(embedding_a, embedding_b))
             loop.close()
 
             assert score == 0.0

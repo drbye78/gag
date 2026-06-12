@@ -1,10 +1,10 @@
 from ingestion.knowledge_base.client import (
-    StackOverflowClient,
-    RedditClient,
     ForumClient,
-    get_stackoverflow_client,
-    get_reddit_client,
+    RedditClient,
+    StackOverflowClient,
     get_forum_client,
+    get_reddit_client,
+    get_stackoverflow_client,
 )
 from ingestion.knowledge_base.pipeline import (
     KnowledgeBaseIngestionPipeline,

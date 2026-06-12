@@ -7,7 +7,11 @@ from core.auth import require_authenticated
 router = APIRouter(prefix="/multimodal", tags=["multimodal"])
 
 
-@router.post("/extract", response_model=ImageExtractionResponse, dependencies=[Depends(require_authenticated)])
+@router.post(
+    "/extract",
+    response_model=ImageExtractionResponse,
+    dependencies=[Depends(require_authenticated)],
+)
 async def extract_from_image(request: ImageExtractionRequest):
     from multimodal.vlm import get_vlm_processor
 

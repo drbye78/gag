@@ -2,10 +2,10 @@
 
 import asyncio
 from datetime import datetime
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 from ui.graph_builder import UIGraphBuilder
-from ui.models import UIElement, UILayout, UISketch, UIExtractionResult
+from ui.models import UIElement, UIExtractionResult, UILayout, UISketch
 
 
 def _make_sample_result(

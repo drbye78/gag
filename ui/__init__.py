@@ -1,40 +1,35 @@
 """UI Sketch Understanding — Graph-first approach."""
 
-from ui.models import (
-    UISketch,
-    UIElement,
-    UILayout,
-    UIPattern,
-    UIExtractionResult,
-    UserAction,
-)
-
-from ui.knowledge import (
-    UIComponent,
-    UIService,
-    UIComponentKnowledge,
-    get_ui_knowledge_registry,
-)
-
+import ui.aws_knowledge
+import ui.azure_knowledge
+import ui.sap_knowledge
 from ui.ingestion_job import (
-    UIIngestionJob,
     JobStatus,
+    UIIngestionJob,
     get_ui_job_registry,
 )
-
+from ui.knowledge import (
+    UIComponent,
+    UIComponentKnowledge,
+    UIService,
+    get_ui_knowledge_registry,
+)
+from ui.models import (
+    UIElement,
+    UIExtractionResult,
+    UILayout,
+    UIPattern,
+    UISketch,
+    UserAction,
+)
 from ui.pipeline import (
     UIIngestionPipeline,
     get_ui_ingestion_pipeline,
 )
-
 from ui.quality import (
     QualityMetrics,
     calculate_quality_score,
 )
-
-import ui.sap_knowledge
-import ui.aws_knowledge
-import ui.azure_knowledge
 
 __all__ = [
     "UISketch",

@@ -5,19 +5,21 @@ Supports DIRECT, CHAIN_OF_THOUGHT, TREE_OF_THOUGHTS, REFLECT,
 and CRITIQUE modes. Integrates with multi-source retrieval results.
 """
 
+import logging
 import time
-from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from llm.router import get_router
-from core.middleware import sanitize_prompt_input
 from agents.prompts import (
-    SYSTEM_PERSONA,
-    REASONING_PROTOCOL,
-    TOOL_USAGE,
     OUTPUT_FORMAT,
+    REASONING_PROTOCOL,
+    SYSTEM_PERSONA,
+    TOOL_USAGE,
 )
+from core.middleware import sanitize_prompt_input
+from llm.router import get_router
+
+logger = logging.getLogger(__name__)
 
 
 class ReasonMode(str, Enum):
@@ -26,6 +28,7 @@ class ReasonMode(str, Enum):
     TREE_OF_THOUGHTS = "tot"
     REFLECT = "reflect"
     CRITIQUE = "critique"
+    DOC = "doc"
 
 
 class ReasoningAgent:
@@ -38,7 +41,10 @@ class ReasoningAgent:
         self.router = get_router()
         self.mode = mode
         self.max_retries = max_retries
-        self.temperature = temperature
+        # Clamp temperature to valid range [0.0, 2.0]
+        if temperature < 0.0 or temperature > 2.0:
+            logger.warning("Temperature %.2f out of bounds [0.0, 2.0]; clamping", temperature)
+        self.temperature = max(0.0, min(2.0, temperature))
 
         self.system_prompt = f"""{SYSTEM_PERSONA}
 
@@ -57,7 +63,7 @@ Prefer SAP BTP context over generic best practices."""
             "successful": 0,
             "failed": 0,
             "avg_latency_ms": 0,
-            "total_tokens": 0,
+            "total_char_estimate": 0,
         }
 
     def _build_prompt(
@@ -91,20 +97,20 @@ Then provide the best answer."""
         base_prompt = f"""Query: {sanitize_prompt_input(query)}
 
 Context:
-{self._format_context(context)}
+{sanitize_prompt_input(self._format_context(context))}
 """
 
         if tool_results := context.get("tool_results"):
             base_prompt += f"""
 
 Tool Results:
-{self._format_tool_results(tool_results)}
+{sanitize_prompt_input(self._format_tool_results(tool_results))}
 """
 
         if reasoning_instruction:
             base_prompt += f"\n\n{reasoning_instruction}"
 
-        base_prompt += f"\n\nIntent: {intent}"
+        base_prompt += f"\n\nIntent: {sanitize_prompt_input(str(intent))}"
 
         return base_prompt
 
@@ -131,9 +137,13 @@ Tool Results:
         for result in tool_results:
             tool_name = result.get("tool", "unknown")
             sections.append(f"### {tool_name}")
-            sections.append(
-                f"Result: {result.get('output', {})}:\n{result.get('error', '')}"
-            )
+            output = result.get("output", {})
+            sections.append(f"Result: {output}")
+            error = result.get("error")
+            if error:
+                # Sanitize: only include short error summary, no stack traces
+                sanitized = str(error).split("\n")[0][:200]
+                sections.append(f"Error: {sanitized}")
         return "\n".join(sections)
 
     async def generate_answer(
@@ -167,13 +177,15 @@ Tool Results:
                         .get("message", {})
                         .get("content", "No response generated")
                     )
-                    self._update_metrics(True, len(answer))
+                    # Approximate token count: ~4 chars per token for English
+                    token_estimate = len(answer) // 4
+                    self._update_metrics(True, token_estimate)
                     return answer
 
-            except Exception as e:
+            except Exception:
                 if attempt == self.max_retries:
                     self._update_metrics(False, 0)
-                    return f"Error: {str(e)}"
+                    return f"Error: Reasoning failed after {self.max_retries + 1} attempts"
 
         self._update_metrics(False, 0)
         return "Max retries exceeded"
@@ -184,7 +196,7 @@ Tool Results:
             self._metrics["successful"] += 1
         else:
             self._metrics["failed"] += 1
-        self._metrics["total_tokens"] += response_length
+        self._metrics["total_char_estimate"] += response_length
 
     def get_metrics(self) -> Dict[str, Any]:
         return {

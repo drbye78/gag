@@ -12,7 +12,6 @@ Supports: PlantUML, Mermaid, Draw.io, OpenAPI, BPMN, and images via VLM.
 
 import hashlib
 import logging
-import uuid
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
@@ -108,7 +107,14 @@ class DiagramEdge:
 
 @dataclass
 class DiagramIR:
-    """Unified Intermediate Representation for all diagram types."""
+    """Unified Intermediate Representation for all diagram types.
+
+    NOTE: Serialization via to_dict() does not preserve node insertion order.
+    Python dicts maintain insertion order (3.7+), but consumers should not
+    rely on node ordering being preserved across serialization boundaries
+    (e.g., JSON parsing in JavaScript may not guarantee order). If strict
+    ordering is required, add an explicit `order` field to DiagramNode.
+    """
 
     id: str
     diagram_type: str  # From DiagramType enum
@@ -139,6 +145,39 @@ class DiagramIR:
             if node.id == node_id:
                 return node
         return None
+
+    def validate_edge(self, edge: DiagramEdge) -> bool:
+        """Validate that edge source and target node IDs exist.
+
+        Returns True if both source and target reference existing nodes.
+        Logs a warning and returns False if either reference is missing.
+        """
+        node_ids = {n.id for n in self.nodes}
+        if edge.source not in node_ids:
+            logger.warning(
+                "Edge '%s' references non-existent source node '%s'",
+                edge.id,
+                edge.source,
+            )
+            return False
+        if edge.target not in node_ids:
+            logger.warning(
+                "Edge '%s' references non-existent target node '%s'",
+                edge.id,
+                edge.target,
+            )
+            return False
+        return True
+
+    def add_edge(self, edge: DiagramEdge) -> bool:
+        """Add an edge after validating source and target references.
+
+        Returns True if the edge was added, False if validation failed.
+        """
+        if not self.validate_edge(edge):
+            return False
+        self.edges.append(edge)
+        return True
 
     def get_neighbors(self, node_id: str) -> List[DiagramNode]:
         """Get all nodes connected to given node."""
@@ -249,10 +288,11 @@ class DiagramIRBuilder:
                 )
 
             result = await client.analyze_image(
-                image_url,
-                "Extract all entities and relationships from this architecture diagram."
+                image_url, "Extract all entities and relationships from this architecture diagram."
             )
-            result_text = result.get("output", {}).get("text", "") if isinstance(result, dict) else ""
+            result_text = (
+                result.get("output", {}).get("text", "") if isinstance(result, dict) else ""
+            )
             if not result_text:
                 return DiagramIR(
                     id=self._generate_id(image_url),
@@ -428,7 +468,7 @@ class DiagramIRBuilder:
             router = get_llm_router()
             names = [n.name for n in nodes]
             prompt = f"""For each name, infer its type from: service, database, api, user, component, queue, storage, gateway, external.
-Input: {', '.join(names)}
+Input: {", ".join(names)}
 Output: JSON array of {{name, type}}."""
 
             result = await router.chat(prompt)

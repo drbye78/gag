@@ -1,10 +1,11 @@
 """Tests for CypherBuilder - safe Cypher query construction."""
 
 import pytest
+
 from graph.cypher_builder import (
     CypherBuilder,
-    SafeCypherBuilder,
     CypherInjectionError,
+    SafeCypherBuilder,
 )
 
 
@@ -120,9 +121,7 @@ class TestMatchNode:
 
     def test_match_node_multiple_properties(self):
         builder = CypherBuilder()
-        builder.match_node(
-            ["Person"], {"name": "Alice", "age": 30, "active": True}
-        )
+        builder.match_node(["Person"], {"name": "Alice", "age": 30, "active": True})
         cypher, params = builder.build()
         assert "name: $param" in cypher
         assert "age: $param" in cypher
@@ -377,8 +376,7 @@ class TestMethodChaining:
     def test_method_chaining(self):
         builder = CypherBuilder()
         result = (
-            builder
-            .match_node(["Person"], {"name": "test"})
+            builder.match_node(["Person"], {"name": "test"})
             .where_clause("age", ">", 18)
             .return_clause("n")
             .limit_clause(10)

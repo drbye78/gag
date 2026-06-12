@@ -1,14 +1,12 @@
 """Register all built-in agents with the registry."""
 
+from agents.executor import ToolExecutor
+from agents.orchestration import OrchestrationEngine
+from agents.planner import PlannerAgent
+from agents.reasoning import ReasoningAgent
 from agents.registry import register_agent
-from agents.types import AgentType, AgentMeta
-from agents import (
-    PlannerAgent,
-    RetrievalAgent,
-    ReasoningAgent,
-    ToolExecutor,
-    OrchestrationEngine,
-)
+from agents.retrieval import RetrievalAgent
+from agents.types import AgentMeta, AgentType
 
 
 @register_agent(
@@ -21,7 +19,7 @@ from agents import (
     ),
 )
 def create_planner(**config):
-    return PlannerAgent()
+    return PlannerAgent(**{k: v for k, v in config.items() if k in ("default_sources",)})
 
 
 @register_agent(
@@ -34,7 +32,9 @@ def create_planner(**config):
     ),
 )
 def create_retrieval(**config):
-    return RetrievalAgent()
+    return RetrievalAgent(
+        **{k: v for k, v in config.items() if k in ("max_sources", "default_limit")}
+    )
 
 
 @register_agent(
@@ -47,7 +47,8 @@ def create_retrieval(**config):
     ),
 )
 def create_reasoning(**config):
-    return ReasoningAgent()
+    allowed = {"mode", "max_retries", "temperature"}
+    return ReasoningAgent(**{k: v for k, v in config.items() if k in allowed})
 
 
 @register_agent(
@@ -60,7 +61,8 @@ def create_reasoning(**config):
     ),
 )
 def create_executor(**config):
-    return ToolExecutor()
+    allowed = {"max_concurrent", "default_timeout", "max_retries"}
+    return ToolExecutor(**{k: v for k, v in config.items() if k in allowed})
 
 
 @register_agent(
@@ -73,4 +75,5 @@ def create_executor(**config):
     ),
 )
 def create_orchestration(**config):
-    return OrchestrationEngine()
+    allowed = {"max_iterations", "max_retries", "parallel_execution", "orchestration_mode"}
+    return OrchestrationEngine(**{k: v for k, v in config.items() if k in allowed})

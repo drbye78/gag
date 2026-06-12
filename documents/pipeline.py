@@ -6,19 +6,21 @@ and job tracking.
 """
 
 import time
-import uuid
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from documents.models import Document, DocumentSource, DocumentFormat, DocumentStatus
-from documents.parse import HybridDocumentParser as DocumentParser, get_document_parser
 from documents.confluence import ConfluenceClient, get_confluence_client
-from documents.webdav import WebDAVClient, get_webdav_client
+from documents.models import Document, DocumentFormat, DocumentSource, DocumentStatus
 from documents.multimodal import (
     HybridMultimodalParser as MultimodalParser,
+)
+from documents.multimodal import (
     get_multimodal_parser,
 )
+from documents.parse import HybridDocumentParser as DocumentParser
+from documents.parse import get_document_parser
+from documents.webdav import WebDAVClient, get_webdav_client
 
 
 class DocumentJobStatus(str, Enum):
@@ -193,9 +195,7 @@ class DocumentPipeline:
                 format=self.parser.detect_format(filename, content),
             )
 
-            parsed = self.parser.parse(
-                content, filename, {"document_id": doc.document_id}
-            )
+            parsed = self.parser.parse(content, filename, {"document_id": doc.document_id})
 
             doc.content = parsed.content
             doc.status = DocumentStatus.PROCESSED

@@ -20,19 +20,21 @@ pyjwt>=2.8.0
 # Multipart form-data parsing (FastAPI UploadFile)
 python-multipart>=0.0.9
 
-# Vector DB (Qdrant) — core for retrieval
-qdrant-client>=1.7.0
-
-# Metrics (Prometheus) — core for observability
-prometheus-client>=0.19.0
-
-# LlamaIndex — core for indexing/reranking
-llama-index>=0.10.0
-
 # ────────────────────────────────────────────────────────
 # Optional / feature-gated dependencies
 # Install only if you enable the corresponding feature.
 # ────────────────────────────────────────────────────────
+
+# Vector DB — required for embedding indexing & search
+qdrant-client>=1.7.0
+
+# Graph DB — required for knowledge-graph retrieval
+# (accessed via FalkorDB HTTP API, no Python client needed)
+
+# LLM providers — required for reasoning agents
+# openai>=1.0.0          # OpenAI embeddings + chat
+# cohere>=4.0.0          # Cohere reranking
+# anthropic>=0.18.0      # Claude VLM / chat
 
 # Document parsing — required for ingestion pipelines
 python-docx>=1.1.0     # .docx files
@@ -47,6 +49,9 @@ pillow>=10.0.0        # Image processing for diagrams
 
 # Embeddings — required for local embedding generation
 sentence-transformers>=2.2.0
+
+# LlamaIndex — required for LlamaIndex-based readers & reranking
+llama-index>=0.10.0
 llama-index-embeddings-huggingface>=0.7.0
 
 # Redis — required for distributed caching

@@ -2,37 +2,40 @@
 
 import asyncio
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
-import httpx
+from core.pool import get_http_pool
 
 
 class HealthChecker:
-    def __init__(self):
+    def __init__(self, cache_duration: int = 10):
         self._qdrant_ok = False
         self._falkordb_ok = False
         self._redis_ok = False
         self._last_check = 0.0
         self._last_result: Dict[str, Any] = {}
+        self._cache_duration = cache_duration
 
     async def check_qdrant(self, host: str = "localhost", port: int = 6333) -> bool:
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                resp = await client.get(f"http://{host}:{port}/ready")
-                ok = resp.status_code == 200
-                self._qdrant_ok = ok
-                return ok
+            pool = get_http_pool()
+            await pool.start()
+            resp = await pool.get(f"http://{host}:{port}/ready", timeout=5.0)
+            ok = resp.status_code == 200
+            self._qdrant_ok = ok
+            return ok
         except Exception:
             self._qdrant_ok = False
             return False
 
     async def check_falkordb(self, host: str = "localhost", port: int = 7379) -> bool:
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                resp = await client.get(f"http://{host}:{port}")
-                ok = resp.status_code == 200
-                self._falkordb_ok = ok
-                return ok
+            pool = get_http_pool()
+            await pool.start()
+            resp = await pool.get(f"http://{host}:{port}", timeout=5.0)
+            ok = resp.status_code == 200
+            self._falkordb_ok = ok
+            return ok
         except Exception:
             self._falkordb_ok = False
             return False
@@ -63,8 +66,8 @@ class HealthChecker:
 
     async def check_all(self) -> Dict[str, Any]:
         now = time.time()
-        # Cache results for 10 seconds
-        if now - self._last_check < 10 and self._last_result:
+        # Cache results for configured duration (default 10 seconds)
+        if now - self._last_check < self._cache_duration and self._last_result:
             return self._last_result
 
         results = await asyncio.gather(
@@ -102,7 +105,7 @@ class HealthChecker:
         }
 
 
-_health_checker: HealthChecker = None  # type: ignore[assignment]
+_health_checker: Optional[HealthChecker] = None
 
 
 def get_health_checker() -> HealthChecker:

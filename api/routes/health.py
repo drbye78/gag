@@ -18,16 +18,14 @@ async def health():
 
     return HealthResponse(
         status=status_info["status"],
-        version="4.1.0",
+        version="4.2.0",
     )
 
 
 @router.get("/metrics", tags=["observability"])
 async def metrics():
-    from core.prometheus_metrics import generate_latest, CONTENT_TYPE_LATEST
     from fastapi.responses import Response
-    
-    return Response(
-        content=generate_latest(),
-        media_type=CONTENT_TYPE_LATEST
-    )
+
+    from core.prometheus_metrics import CONTENT_TYPE_LATEST, generate_latest
+
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)

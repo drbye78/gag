@@ -1,8 +1,7 @@
 """Caching layer with in-memory TTL cache and optional Redis backend."""
 
-import json
 import time
-from typing import Any, Callable, Coroutine, Dict, Optional
+from typing import Any, Dict, Optional
 
 
 class _CacheEntry:
@@ -20,6 +19,7 @@ class _CacheEntry:
 class InMemoryCache:
     def __init__(self) -> None:
         import threading
+
         self._store: Dict[str, _CacheEntry] = {}
         self._lock = threading.RLock()
 

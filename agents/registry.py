@@ -1,35 +1,47 @@
 """Centralized agent registry."""
 
-from typing import Dict, Callable, List, Optional
-from agents.types import AgentType, AgentConfig, AgentMeta
+import threading
+from typing import Callable, Dict, List, Optional
+
+from agents.types import AgentConfig, AgentMeta, AgentType
 
 
 class AgentRegistry:
     def __init__(self):
+        self._lock = threading.Lock()
         self._factories: Dict[AgentType, Callable] = {}
         self._metadata: Dict[AgentType, AgentMeta] = {}
 
     def register(self, agent_type: AgentType, factory: Callable, meta: AgentMeta):
-        self._factories[agent_type] = factory
-        self._metadata[agent_type] = meta
+        with self._lock:
+            self._factories[agent_type] = factory
+            self._metadata[agent_type] = meta
 
     def get_factory(self, agent_type: AgentType) -> Callable:
-        if agent_type not in self._factories:
-            raise KeyError(f"No agent registered for type: {agent_type}")
-        return self._factories[agent_type]
+        with self._lock:
+            if agent_type not in self._factories:
+                raise KeyError(f"No agent registered for type: {agent_type}")
+            return self._factories[agent_type]
 
     def create(self, config: AgentConfig):
         factory = self.get_factory(config.agent_type)
         return factory(**config.config)
 
     def list_agents(self) -> List[AgentMeta]:
-        return list(self._metadata.values())
+        with self._lock:
+            return list(self._metadata.values())
 
     def get_meta(self, agent_type: AgentType) -> Optional[AgentMeta]:
-        return self._metadata.get(agent_type)
+        with self._lock:
+            return self._metadata.get(agent_type)
 
 
 _registry = AgentRegistry()
+
+
+def get_registry() -> AgentRegistry:
+    """Return the global AgentRegistry singleton."""
+    return _registry
 
 
 def get_agent(agent_type: AgentType, **kwargs):
@@ -48,4 +60,5 @@ def register_agent(agent_type: AgentType, meta: AgentMeta):
     def decorator(factory: Callable):
         _registry.register(agent_type, factory, meta)
         return factory
+
     return decorator

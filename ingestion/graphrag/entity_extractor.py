@@ -1,8 +1,8 @@
-from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
-from enum import Enum
 import json
 import logging
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -94,9 +94,7 @@ class DocumentEntityExtractor:
 
         return chunks if chunks else [text]
 
-    async def _extract_from_chunk(
-        self, chunk: str, source_id: str
-    ) -> List[ExtractedEntity]:
+    async def _extract_from_chunk(self, chunk: str, source_id: str) -> List[ExtractedEntity]:
         prompt = f"""Extract named entities from the following text. 
 Return a JSON array of objects with fields: name, type, description.
 
@@ -170,13 +168,12 @@ Return JSON:"""
 
 
 class LightweightEntityExtractor:
-    def __init__(self):
-        pass
+    def __init__(self, max_entities: int = 50):
+        self.max_entities = max_entities
 
     def extract(self, text: str, source_id: str) -> EntityExtractionResult:
-        import time
         import re
-        from collections import defaultdict
+        import time
 
         start = time.time()
 
@@ -196,9 +193,7 @@ class LightweightEntityExtractor:
                     mentions=[
                         {
                             "position": match.start(),
-                            "context": text[
-                                max(0, match.start() - 50) : match.end() + 50
-                            ],
+                            "context": text[max(0, match.start() - 50) : match.end() + 50],
                         }
                     ],
                 )
@@ -214,9 +209,7 @@ class LightweightEntityExtractor:
                     mentions=[
                         {
                             "position": match.start(),
-                            "context": text[
-                                max(0, match.start() - 50) : match.end() + 50
-                            ],
+                            "context": text[max(0, match.start() - 50) : match.end() + 50],
                         }
                     ],
                 )
@@ -232,19 +225,18 @@ class LightweightEntityExtractor:
                     mentions=[
                         {
                             "position": match.start(),
-                            "context": text[
-                                max(0, match.start() - 50) : match.end() + 50
-                            ],
+                            "context": text[max(0, match.start() - 50) : match.end() + 50],
                         }
                     ],
                 )
             )
 
         took = int((time.time() - start) * 1000)
+        truncated = entities[: self.max_entities]
         return EntityExtractionResult(
             source_id=source_id,
-            entities=entities[:50],
-            total_entities=len(entities),
+            entities=truncated,
+            total_entities=len(truncated),
             took_ms=took,
         )
 

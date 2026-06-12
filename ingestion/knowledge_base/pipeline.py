@@ -5,13 +5,13 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from ingestion.knowledge_base.client import (
-    StackOverflowClient,
-    RedditClient,
     ForumClient,
     KBEntry,
-    get_stackoverflow_client,
-    get_reddit_client,
+    RedditClient,
+    StackOverflowClient,
     get_forum_client,
+    get_reddit_client,
+    get_stackoverflow_client,
 )
 
 

@@ -10,11 +10,12 @@ class TraceContext:
         self.trace_id = trace_id or self._generate_trace_id()
         self.started_at = datetime.now(timezone.utc)
         self.steps: List[TraceStep] = []
-    
+
     def _generate_trace_id(self) -> str:
         import uuid
+
         return f"trace-{uuid.uuid4().hex[:12]}"
-    
+
     def add_step(
         self,
         name: str,
@@ -23,15 +24,17 @@ class TraceContext:
         latency_ms: int,
         metadata: Optional[Dict[str, Any]] = None,
     ):
-        self.steps.append(TraceStep(
-            trace_id=self.trace_id,
-            step_name=name,
-            input_summary=input_summary,
-            output_summary=output_summary,
-            latency_ms=latency_ms,
-            timestamp=datetime.now(timezone.utc),
-            metadata=metadata or {},
-        ))
+        self.steps.append(
+            TraceStep(
+                trace_id=self.trace_id,
+                step_name=name,
+                input_summary=input_summary,
+                output_summary=output_summary,
+                latency_ms=latency_ms,
+                timestamp=datetime.now(timezone.utc),
+                metadata=metadata or {},
+            )
+        )
 
 
 class TraceStep:
@@ -59,11 +62,11 @@ class TraceLogger:
         self.log_file = log_file
         self.logger = logging.getLogger("trace")
         self.logger.setLevel(logging.INFO)
-        
+
         handler = logging.FileHandler(log_file)
         handler.setFormatter(logging.Formatter("%(message)s"))
         self.logger.addHandler(handler)
-    
+
     def log(self, context: TraceContext):
         entry = {
             "trace_id": context.trace_id,
@@ -81,7 +84,7 @@ class TraceLogger:
                 for s in context.steps
             ],
         }
-        
+
         self.logger.info(json.dumps(entry))
 
 
@@ -89,63 +92,81 @@ class MetricsCollector:
     MAX_SAMPLES_PER_KEY = 10000
 
     def __init__(self):
+        import threading
+
         self._counters: Dict[str, int] = {}
         self._histograms: Dict[str, List[float]] = {}
         self._gauges: Dict[str, float] = {}
-    
+        self._lock = threading.Lock()
+
     def record_latency(self, operation: str, latency_ms: float):
-        if operation not in self._histograms:
-            self._histograms[operation] = []
-        self._histograms[operation].append(latency_ms)
-        if len(self._histograms[operation]) > self.MAX_SAMPLES_PER_KEY:
-            self._histograms[operation] = self._histograms[operation][-self.MAX_SAMPLES_PER_KEY:]
-    
+        with self._lock:
+            if operation not in self._histograms:
+                self._histograms[operation] = []
+            self._histograms[operation].append(latency_ms)
+            if len(self._histograms[operation]) > self.MAX_SAMPLES_PER_KEY:
+                self._histograms[operation] = self._histograms[operation][
+                    -self.MAX_SAMPLES_PER_KEY :
+                ]
+
     def record_error(self, operation: str, error_type: str):
-        key = f"{operation}.{error_type}"
-        self._counters[key] = self._counters.get(key, 0) + 1
-    
+        with self._lock:
+            key = f"{operation}.{error_type}"
+            self._counters[key] = self._counters.get(key, 0) + 1
+
     def increment(self, metric: str, value: int = 1):
-        self._counters[metric] = self._counters.get(metric, 0) + value
-    
+        with self._lock:
+            self._counters[metric] = self._counters.get(metric, 0) + value
+
     def gauge(self, metric: str, value: float):
-        self._gauges[metric] = value
-    
+        with self._lock:
+            self._gauges[metric] = value
+
     def record_request(self, method: str, path: str, status: int, duration: float):
         """Record HTTP request metrics (thin wrapper around record_latency/increment)."""
         self.record_latency(f"request.{method}.{path}", duration * 1000)
         self.increment(f"request.status.{status}")
-    
+
     def record_retrieval(self, source: str, duration: float, count: int):
         """Record retrieval metrics (thin wrapper around record_latency/increment)."""
         self.record_latency(f"retrieval.{source}", duration * 1000)
         self.increment(f"retrieval.{source}.count", count)
-    
+
     def record_llm(self, duration: float, model: str, tokens: int):
         """Record LLM call metrics (thin wrapper around record_latency/increment)."""
         self.record_latency(f"llm.{model}", duration * 1000)
         self.increment(f"llm.{model}.tokens", tokens)
-    
+
     def _percentile(self, values: List[float], p: float) -> float:
+        """Compute the p-th percentile using the nearest-rank method.
+
+        NOTE: This is an approximate, index-based calculation (nearest-rank
+        method) and does NOT use interpolation.  For small sample sizes the
+        result may differ from the true interpolated percentile.  This is
+        acceptable for observability dashboards but should not be used where
+        exact quantiles are required.
+        """
         if not values:
             return 0.0
         sorted_vals = sorted(values)
         idx = int(len(sorted_vals) * p)
         return sorted_vals[min(idx, len(sorted_vals) - 1)]
-    
+
     def get_metrics(self) -> Dict[str, Any]:
-        return {
-            "latencies": {
-                op: {
-                    "p50": self._percentile(vals, 0.5),
-                    "p95": self._percentile(vals, 0.95),
-                    "p99": self._percentile(vals, 0.99),
-                    "count": len(vals),
-                }
-                for op, vals in self._histograms.items()
-            },
-            "counters": self._counters,
-            "gauges": self._gauges,
-        }
+        with self._lock:
+            return {
+                "latencies": {
+                    op: {
+                        "p50": self._percentile(vals, 0.5),
+                        "p95": self._percentile(vals, 0.95),
+                        "p99": self._percentile(vals, 0.99),
+                        "count": len(vals),
+                    }
+                    for op, vals in self._histograms.items()
+                },
+                "counters": dict(self._counters),
+                "gauges": dict(self._gauges),
+            }
 
 
 _trace_logger: Optional[TraceLogger] = None
@@ -158,6 +179,7 @@ def get_trace_logger() -> TraceLogger:
         _trace_logger = TraceLogger()
     return _trace_logger
 
+
 def get_metrics_collector() -> MetricsCollector:
     global _metrics_collector
     if _metrics_collector is None:
@@ -168,12 +190,15 @@ def get_metrics_collector() -> MetricsCollector:
 OTEL_AVAILABLE = False
 try:
     from opentelemetry import trace as _otel_trace
-    from opentelemetry.sdk.trace import TracerProvider as _Tp
-    from opentelemetry.sdk.trace.export import BatchSpanProcessor as _Bsp, ConsoleSpanExporter as _Cse
     from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter as _Otlp
-    from opentelemetry.sdk.resources import Resource as _Res, SERVICE_NAME as _SvcName
-    from opentelemetry.trace import Status as _St, StatusCode as _Sc
-    
+    from opentelemetry.sdk.resources import SERVICE_NAME as _SvcName
+    from opentelemetry.sdk.resources import Resource as _Res
+    from opentelemetry.sdk.trace import TracerProvider as _Tp
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor as _Bsp
+    from opentelemetry.sdk.trace.export import ConsoleSpanExporter as _Cse
+    from opentelemetry.trace import Status as _St
+    from opentelemetry.trace import StatusCode as _Sc
+
     trace = _otel_trace
     TracerProvider = _Tp
     BatchSpanProcessor = _Bsp
@@ -188,7 +213,10 @@ except ImportError:
     pass
 
 _tracer_provider: Optional["TracerProvider"] = None
-_active_span_slot: contextvars.ContextVar[Optional[Any]] = contextvars.ContextVar("active_span", default=None)
+_active_span_slot: contextvars.ContextVar[Optional[Any]] = contextvars.ContextVar(
+    "active_span", default=None
+)
+
 
 def setup_otel_tracing(settings) -> Optional["TracerProvider"]:
     global _tracer_provider
@@ -208,10 +236,12 @@ def setup_otel_tracing(settings) -> Optional["TracerProvider"]:
     _tracer_provider = provider
     return provider
 
+
 def get_tracer(name: str = "eis"):
     if not OTEL_AVAILABLE:
         return None
     return trace.get_tracer(name)
+
 
 def start_span(name: str, attributes: Optional[Dict[str, Any]] = None):
     tracer = get_tracer()
@@ -221,6 +251,7 @@ def start_span(name: str, attributes: Optional[Dict[str, Any]] = None):
     _active_span_slot.set(span)
     return span
 
+
 def end_span(span, error: Optional[Exception] = None):
     if span is None:
         return
@@ -229,10 +260,12 @@ def end_span(span, error: Optional[Exception] = None):
         span.record_exception(error)
     span.end()
 
+
 def with_trace(name: str, attributes: Optional[Dict[str, Any]] = None):
     tracer = get_tracer()
     if tracer is None:
         return lambda f: f
+
     def decorator(func):
         def wrapper(*args, **kwargs):
             with tracer.start_as_current_span(name, attributes=attributes or {}) as span:
@@ -242,12 +275,15 @@ def with_trace(name: str, attributes: Optional[Dict[str, Any]] = None):
                     span.set_status(Status(StatusCode.ERROR, str(e)))
                     span.record_exception(e)
                     raise
+
         return wrapper
+
     return decorator
+
 
 __all__ = [
     "TraceContext",
-    "TraceStep", 
+    "TraceStep",
     "TraceLogger",
     "MetricsCollector",
     "get_trace_logger",

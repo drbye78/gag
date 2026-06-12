@@ -5,7 +5,7 @@ It exposes counters, histograms, and gauges for request latency, retrieval laten
 LLM calls, and token usage.
 """
 
-from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 
 # Request metrics
 REQUEST_LATENCY = Histogram(

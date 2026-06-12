@@ -55,7 +55,11 @@ async def enhanced_search(request: QueryRequest):
     return result
 
 
-@router.get("/entity/cache/stats", response_model=EntityCacheStatsResponse, dependencies=[Depends(require_authenticated)])
+@router.get(
+    "/entity/cache/stats",
+    response_model=EntityCacheStatsResponse,
+    dependencies=[Depends(require_authenticated)],
+)
 async def entity_cache_stats():
     from retrieval.hybrid import get_enhanced_hybrid_retriever
 
@@ -72,7 +76,11 @@ async def entity_cache_stats():
     )
 
 
-@router.post("/entity/cache/invalidate", response_model=EntityCacheInvalidateResponse, dependencies=[Depends(require_authenticated)])
+@router.post(
+    "/entity/cache/invalidate",
+    response_model=EntityCacheInvalidateResponse,
+    dependencies=[Depends(require_authenticated)],
+)
 async def entity_cache_invalidate(request: EntityCacheInvalidateRequest):
     from retrieval.hybrid import get_enhanced_hybrid_retriever
 
@@ -87,7 +95,11 @@ async def entity_cache_invalidate(request: EntityCacheInvalidateRequest):
     )
 
 
-@router.post("/search/kubernetes", response_model=ToolingSearchResponse, dependencies=[Depends(require_authenticated)])
+@router.post(
+    "/search/kubernetes",
+    response_model=ToolingSearchResponse,
+    dependencies=[Depends(require_authenticated)],
+)
 async def search_kubernetes(request: ToolingSearchRequest):
     from retrieval.tooling.kubernetes import KubernetesRetriever
 
@@ -105,7 +117,11 @@ async def search_kubernetes(request: ToolingSearchRequest):
     )
 
 
-@router.post("/search/helm", response_model=ToolingSearchResponse, dependencies=[Depends(require_authenticated)])
+@router.post(
+    "/search/helm",
+    response_model=ToolingSearchResponse,
+    dependencies=[Depends(require_authenticated)],
+)
 async def search_helm(request: ToolingSearchRequest):
     from retrieval.tooling.helm import HelmRetriever
 
@@ -123,7 +139,11 @@ async def search_helm(request: ToolingSearchRequest):
     )
 
 
-@router.post("/search/dockerfile", response_model=ToolingSearchResponse, dependencies=[Depends(require_authenticated)])
+@router.post(
+    "/search/dockerfile",
+    response_model=ToolingSearchResponse,
+    dependencies=[Depends(require_authenticated)],
+)
 async def search_dockerfile(request: ToolingSearchRequest):
     from retrieval.tooling.dockerfile import DockerfileRetriever
 
@@ -141,7 +161,11 @@ async def search_dockerfile(request: ToolingSearchRequest):
     )
 
 
-@router.post("/search/graphql", response_model=ToolingSearchResponse, dependencies=[Depends(require_authenticated)])
+@router.post(
+    "/search/graphql",
+    response_model=ToolingSearchResponse,
+    dependencies=[Depends(require_authenticated)],
+)
 async def search_graphql(request: ToolingSearchRequest):
     from retrieval.tooling.graphql import GraphQLRetriever
 
@@ -159,7 +183,11 @@ async def search_graphql(request: ToolingSearchRequest):
     )
 
 
-@router.post("/search/istio", response_model=ToolingSearchResponse, dependencies=[Depends(require_authenticated)])
+@router.post(
+    "/search/istio",
+    response_model=ToolingSearchResponse,
+    dependencies=[Depends(require_authenticated)],
+)
 async def search_istio(request: ToolingSearchRequest):
     from retrieval.tooling.istio import IstioRetriever
 
@@ -177,7 +205,11 @@ async def search_istio(request: ToolingSearchRequest):
     )
 
 
-@router.post("/codegraph/find", response_model=CodeGraphResponse, dependencies=[Depends(require_authenticated)])
+@router.post(
+    "/codegraph/find",
+    response_model=CodeGraphResponse,
+    dependencies=[Depends(require_authenticated)],
+)
 async def codegraph_find(request: CodeGraphFindRequest):
     from retrieval.code_graph import CodeGraphRetriever
 
@@ -196,7 +228,11 @@ async def codegraph_find(request: CodeGraphFindRequest):
     )
 
 
-@router.post("/codegraph/relationships", response_model=CodeGraphResponse, dependencies=[Depends(require_authenticated)])
+@router.post(
+    "/codegraph/relationships",
+    response_model=CodeGraphResponse,
+    dependencies=[Depends(require_authenticated)],
+)
 async def codegraph_relationships(request: CodeGraphRelationshipRequest):
     from retrieval.code_graph import CodeGraphRetriever
 
@@ -215,7 +251,11 @@ async def codegraph_relationships(request: CodeGraphRelationshipRequest):
     )
 
 
-@router.post("/codegraph/complex", response_model=CodeGraphResponse, dependencies=[Depends(require_authenticated)])
+@router.post(
+    "/codegraph/complex",
+    response_model=CodeGraphResponse,
+    dependencies=[Depends(require_authenticated)],
+)
 async def codegraph_complex(request: CodeGraphComplexRequest = CodeGraphComplexRequest()):
     from retrieval.code_graph import CodeGraphRetriever
 
@@ -234,7 +274,11 @@ async def codegraph_complex(request: CodeGraphComplexRequest = CodeGraphComplexR
     )
 
 
-@router.get("/codegraph/complexity/{function_name}", response_model=CodeGraphResponse, dependencies=[Depends(require_authenticated)])
+@router.get(
+    "/codegraph/complexity/{function_name}",
+    response_model=CodeGraphResponse,
+    dependencies=[Depends(require_authenticated)],
+)
 async def codegraph_complexity(function_name: str, request: CodeGraphRequest = CodeGraphRequest()):
     from retrieval.code_graph import CodeGraphRetriever
 
@@ -249,7 +293,11 @@ async def codegraph_complexity(function_name: str, request: CodeGraphRequest = C
     )
 
 
-@router.get("/codegraph/callers/{function_name}", response_model=CodeGraphResponse, dependencies=[Depends(require_authenticated)])
+@router.get(
+    "/codegraph/callers/{function_name}",
+    response_model=CodeGraphResponse,
+    dependencies=[Depends(require_authenticated)],
+)
 async def codegraph_callers(function_name: str, request: CodeGraphRequest = CodeGraphRequest()):
     from retrieval.code_graph import CodeGraphRetriever
 
@@ -264,7 +312,11 @@ async def codegraph_callers(function_name: str, request: CodeGraphRequest = Code
     )
 
 
-@router.get("/codegraph/callees/{function_name}", response_model=CodeGraphResponse, dependencies=[Depends(require_authenticated)])
+@router.get(
+    "/codegraph/callees/{function_name}",
+    response_model=CodeGraphResponse,
+    dependencies=[Depends(require_authenticated)],
+)
 async def codegraph_callees(function_name: str, request: CodeGraphRequest = CodeGraphRequest()):
     from retrieval.code_graph import CodeGraphRetriever
 
@@ -279,7 +331,11 @@ async def codegraph_callees(function_name: str, request: CodeGraphRequest = Code
     )
 
 
-@router.get("/codegraph/deps/{module_name}", response_model=CodeGraphResponse, dependencies=[Depends(require_authenticated)])
+@router.get(
+    "/codegraph/deps/{module_name}",
+    response_model=CodeGraphResponse,
+    dependencies=[Depends(require_authenticated)],
+)
 async def codegraph_deps(module_name: str, request: CodeGraphRequest = CodeGraphRequest()):
     from retrieval.code_graph import CodeGraphRetriever
 
@@ -294,7 +350,11 @@ async def codegraph_deps(module_name: str, request: CodeGraphRequest = CodeGraph
     )
 
 
-@router.get("/codegraph/dead-code", response_model=CodeGraphResponse, dependencies=[Depends(require_authenticated)])
+@router.get(
+    "/codegraph/dead-code",
+    response_model=CodeGraphResponse,
+    dependencies=[Depends(require_authenticated)],
+)
 async def codegraph_dead_code(request: CodeGraphDeadCodeRequest = CodeGraphDeadCodeRequest()):
     from retrieval.code_graph import CodeGraphRetriever
 
@@ -320,12 +380,17 @@ async def codegraph_visualize(request: CodeGraphVisualizeRequest):
 
     allowed_query_types = {"show_all_nodes", "show_relationships"}
     if request.query_type not in allowed_query_types:
-        return {"error": f"Unsupported query_type '{request.query_type}'. Allowed: {allowed_query_types}", "url": None}
+        return {
+            "error": f"Unsupported query_type '{request.query_type}'. Allowed: {allowed_query_types}",
+            "url": None,
+        }
 
     retriever = CodeGraphRetriever()
 
     if request.query_type == "show_all_nodes":
-        builder = CypherBuilder(allowed_types={"Component", "Service", "Function", "Class", "Module", "File", "Entity"})
+        builder = CypherBuilder(
+            allowed_types={"Component", "Service", "Function", "Class", "Module", "File", "Entity"}
+        )
         builder.match_node(["Entity"], {})
         builder.return_clause("n")
         builder.limit_clause(100)
@@ -334,8 +399,11 @@ async def codegraph_visualize(request: CodeGraphVisualizeRequest):
         if not request.node_name:
             return {"error": "node_name is required for show_relationships query", "url": None}
         from core.security import sanitize_filename
+
         safe_name = sanitize_filename(request.node_name)
-        builder = CypherBuilder(allowed_types={"Component", "Service", "Function", "Class", "Module", "File", "Entity"})
+        builder = CypherBuilder(
+            allowed_types={"Component", "Service", "Function", "Class", "Module", "File", "Entity"}
+        )
         builder.match_node(["Entity"], {"name": safe_name})
         builder.return_clause("n")
         builder.limit_clause(100)
@@ -348,7 +416,11 @@ async def codegraph_visualize(request: CodeGraphVisualizeRequest):
     return {"url": result.get("url"), "query_type": request.query_type}
 
 
-@router.post("/codegraph/index/git", response_model=CodeGraphIndexResponse, dependencies=[Depends(require_authenticated)])
+@router.post(
+    "/codegraph/index/git",
+    response_model=CodeGraphIndexResponse,
+    dependencies=[Depends(require_authenticated)],
+)
 async def codegraph_index_git(request: CodeGraphIndexGitRequest):
     from retrieval.code_graph import index_git_repository
 
@@ -366,7 +438,11 @@ async def codegraph_index_git(request: CodeGraphIndexGitRequest):
     )
 
 
-@router.post("/codegraph/index/zip", response_model=CodeGraphIndexResponse, dependencies=[Depends(require_authenticated)])
+@router.post(
+    "/codegraph/index/zip",
+    response_model=CodeGraphIndexResponse,
+    dependencies=[Depends(require_authenticated)],
+)
 async def codegraph_index_zip(request: CodeGraphIndexZipRequest):
     from retrieval.code_graph import index_zip_archive
 
@@ -380,7 +456,11 @@ async def codegraph_index_zip(request: CodeGraphIndexZipRequest):
     )
 
 
-@router.post("/codegraph/index/url", response_model=CodeGraphIndexResponse, dependencies=[Depends(require_authenticated)])
+@router.post(
+    "/codegraph/index/url",
+    response_model=CodeGraphIndexResponse,
+    dependencies=[Depends(require_authenticated)],
+)
 async def codegraph_index_url(request: CodeGraphIndexURLRequest):
     from retrieval.code_graph import index_from_url
 
@@ -396,7 +476,11 @@ async def codegraph_index_url(request: CodeGraphIndexURLRequest):
     )
 
 
-@router.post("/codegraph/index/markdown", response_model=CodeGraphIndexResponse, dependencies=[Depends(require_authenticated)])
+@router.post(
+    "/codegraph/index/markdown",
+    response_model=CodeGraphIndexResponse,
+    dependencies=[Depends(require_authenticated)],
+)
 async def codegraph_index_markdown(request: CodeGraphIndexMarkdownRequest):
     from retrieval.code_graph import index_markdown_content
 
@@ -412,7 +496,11 @@ async def codegraph_index_markdown(request: CodeGraphIndexMarkdownRequest):
     )
 
 
-@router.post("/codegraph/index/confluence", response_model=CodeGraphIndexResponse, dependencies=[Depends(require_authenticated)])
+@router.post(
+    "/codegraph/index/confluence",
+    response_model=CodeGraphIndexResponse,
+    dependencies=[Depends(require_authenticated)],
+)
 async def codegraph_index_confluence(request: CodeGraphIndexConfluenceRequest):
     from retrieval.code_graph import index_confluence_page
 
@@ -430,12 +518,18 @@ async def codegraph_index_confluence(request: CodeGraphIndexConfluenceRequest):
     )
 
 
-@router.post("/codegraph/index/confluence/space", response_model=CodeGraphIndexConfluenceSpaceResponse, dependencies=[Depends(require_authenticated)])
+@router.post(
+    "/codegraph/index/confluence/space",
+    response_model=CodeGraphIndexConfluenceSpaceResponse,
+    dependencies=[Depends(require_authenticated)],
+)
 async def codegraph_index_confluence_space(request: CodeGraphIndexConfluenceSpaceRequest):
     from documents.confluence import ConfluenceClient
     from retrieval.code_graph import _html_to_markdown, index_markdown_content
 
-    client = ConfluenceClient(url=request.base_url, email=request.email, api_token=request.api_token)
+    client = ConfluenceClient(
+        url=request.base_url, email=request.email, api_token=request.api_token
+    )
 
     pages = await client.sync_space(
         space_key=request.space_key,
@@ -459,6 +553,7 @@ async def codegraph_index_confluence_space(request: CodeGraphIndexConfluenceSpac
         for page in pages:
             try:
                 from unified_ingestion.handlers.confluence import ConfluenceAttachmentHandler
+
                 handler = ConfluenceAttachmentHandler()
                 attachments = await client.get_page_attachments(page.page_id)
                 for att in attachments:
@@ -476,6 +571,7 @@ async def codegraph_index_confluence_space(request: CodeGraphIndexConfluenceSpac
                         )
                         if result.chunks:
                             from ingestion.indexer import VectorIndexer
+
                             indexer = VectorIndexer()
                             for chunk in result.chunks:
                                 await indexer.index(
@@ -502,12 +598,18 @@ async def codegraph_index_confluence_space(request: CodeGraphIndexConfluenceSpac
     )
 
 
-@router.post("/codegraph/index/confluence/tree", response_model=CodeGraphIndexConfluenceTreeResponse, dependencies=[Depends(require_authenticated)])
+@router.post(
+    "/codegraph/index/confluence/tree",
+    response_model=CodeGraphIndexConfluenceTreeResponse,
+    dependencies=[Depends(require_authenticated)],
+)
 async def codegraph_index_confluence_tree(request: CodeGraphIndexConfluenceTreeRequest):
     from documents.confluence import ConfluenceClient
     from retrieval.code_graph import _html_to_markdown, index_markdown_content
 
-    client = ConfluenceClient(url=request.base_url, email=request.email, api_token=request.api_token)
+    client = ConfluenceClient(
+        url=request.base_url, email=request.email, api_token=request.api_token
+    )
 
     page = await client.get_page_tree(
         page_id=request.page_id,
@@ -533,6 +635,7 @@ async def codegraph_index_confluence_tree(request: CodeGraphIndexConfluenceTreeR
     attachments_indexed = 0
     if request.include_attachments:
         from unified_ingestion.handlers.confluence import ConfluenceAttachmentHandler
+
         handler = ConfluenceAttachmentHandler()
         attachments = await client.get_page_attachments(request.page_id)
         for att in attachments:
@@ -550,6 +653,7 @@ async def codegraph_index_confluence_tree(request: CodeGraphIndexConfluenceTreeR
                 )
                 if result.chunks:
                     from ingestion.indexer import VectorIndexer
+
                     indexer = VectorIndexer()
                     for chunk in result.chunks:
                         await indexer.index(
@@ -574,12 +678,18 @@ async def codegraph_index_confluence_tree(request: CodeGraphIndexConfluenceTreeR
     )
 
 
-@router.post("/codegraph/index/confluence/page", response_model=CodeGraphIndexConfluencePageResponse, dependencies=[Depends(require_authenticated)])
+@router.post(
+    "/codegraph/index/confluence/page",
+    response_model=CodeGraphIndexConfluencePageResponse,
+    dependencies=[Depends(require_authenticated)],
+)
 async def codegraph_index_confluence_page(request: CodeGraphIndexConfluencePageRequest):
     from documents.confluence import ConfluenceClient
     from retrieval.code_graph import _html_to_markdown, index_markdown_content
 
-    client = ConfluenceClient(url=request.base_url, email=request.email, api_token=request.api_token)
+    client = ConfluenceClient(
+        url=request.base_url, email=request.email, api_token=request.api_token
+    )
 
     page = await client.get_page(request.page_id)
     if not page:
@@ -621,7 +731,11 @@ async def codegraph_index_confluence_page(request: CodeGraphIndexConfluencePageR
     )
 
 
-@router.post("/search/colpal", response_model=ColPALSearchResponse, dependencies=[Depends(require_authenticated)])
+@router.post(
+    "/search/colpal",
+    response_model=ColPALSearchResponse,
+    dependencies=[Depends(require_authenticated)],
+)
 async def search_colpal(request: ColPALSearchRequest):
     from ui.retriever import get_ui_retriever
 
@@ -638,7 +752,11 @@ async def search_colpal(request: ColPALSearchRequest):
     )
 
 
-@router.post("/search/ui-sketch", response_model=UISketchSearchResponse, dependencies=[Depends(require_authenticated)])
+@router.post(
+    "/search/ui-sketch",
+    response_model=UISketchSearchResponse,
+    dependencies=[Depends(require_authenticated)],
+)
 async def search_ui_sketch(request: UISketchSearchRequest):
     from ui.retriever import get_ui_retriever
 
@@ -654,7 +772,11 @@ async def search_ui_sketch(request: UISketchSearchRequest):
     )
 
 
-@router.post("/diagram/search", response_model=DiagramSearchResponse, dependencies=[Depends(require_authenticated)])
+@router.post(
+    "/diagram/search",
+    response_model=DiagramSearchResponse,
+    dependencies=[Depends(require_authenticated)],
+)
 async def search_diagram(request: DiagramSearchRequest):
     from multimodal.diagram_registry import DiagramRegistry
 

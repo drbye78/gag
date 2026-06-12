@@ -2,11 +2,11 @@
 
 import logging
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import List, Optional
 
-from sqlalchemy import Column, DateTime, String, Boolean, Integer, create_engine
+from sqlalchemy import Boolean, Column, DateTime, String, create_engine
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import sessionmaker
 
 logger = logging.getLogger(__name__)
 Base = declarative_base()

@@ -8,13 +8,10 @@ Validates:
 - Job dependencies are correct
 """
 
-import os
-import re
 from pathlib import Path
 
 import pytest
 import yaml
-
 
 # Path to the CD workflow file
 CD_WORKFLOW_PATH = Path(__file__).parent.parent / ".github" / "workflows" / "cd.yml"
@@ -105,14 +102,8 @@ class TestHealthCheckVerification:
         dev_steps = cd_workflow["jobs"]["smoke-test-dev"]["steps"]
         prod_steps = cd_workflow["jobs"]["smoke-test-prod"]["steps"]
 
-        dev_has_health = any(
-            "health" in step.get("name", "").lower()
-            for step in dev_steps
-        )
-        prod_has_health = any(
-            "health" in step.get("name", "").lower()
-            for step in prod_steps
-        )
+        dev_has_health = any("health" in step.get("name", "").lower() for step in dev_steps)
+        prod_has_health = any("health" in step.get("name", "").lower() for step in prod_steps)
 
         assert dev_has_health, "Dev smoke test should have health check step"
         assert prod_has_health, "Prod smoke test should have health check step"
@@ -122,14 +113,8 @@ class TestHealthCheckVerification:
         dev_steps = cd_workflow["jobs"]["smoke-test-dev"]["steps"]
         prod_steps = cd_workflow["jobs"]["smoke-test-prod"]["steps"]
 
-        dev_has_metrics = any(
-            "metrics" in step.get("name", "").lower()
-            for step in dev_steps
-        )
-        prod_has_metrics = any(
-            "metrics" in step.get("name", "").lower()
-            for step in prod_steps
-        )
+        dev_has_metrics = any("metrics" in step.get("name", "").lower() for step in dev_steps)
+        prod_has_metrics = any("metrics" in step.get("name", "").lower() for step in prod_steps)
 
         assert dev_has_metrics, "Dev smoke test should have metrics check step"
         assert prod_has_metrics, "Prod smoke test should have metrics check step"
@@ -171,12 +156,10 @@ class TestRollbackMechanism:
         prod_job = cd_workflow["jobs"]["smoke-test-prod"]
 
         dev_has_rollback = any(
-            "rollback" in step.get("name", "").lower()
-            for step in dev_job["steps"]
+            "rollback" in step.get("name", "").lower() for step in dev_job["steps"]
         )
         prod_has_rollback = any(
-            "rollback" in step.get("name", "").lower()
-            for step in prod_job["steps"]
+            "rollback" in step.get("name", "").lower() for step in prod_job["steps"]
         )
 
         assert dev_has_rollback, "Dev smoke test should have rollback step"
@@ -218,11 +201,7 @@ class TestDeploymentConfiguration:
         job = cd_workflow["jobs"]["deploy-dev"]
         steps = job["steps"]
 
-        has_kubectl = any(
-            "kubectl" in step.get("run", "")
-            for step in steps
-            if "run" in step
-        )
+        has_kubectl = any("kubectl" in step.get("run", "") for step in steps if "run" in step)
 
         assert has_kubectl, "Deploy dev should use kubectl"
 
@@ -231,11 +210,7 @@ class TestDeploymentConfiguration:
         job = cd_workflow["jobs"]["deploy-prod"]
         steps = job["steps"]
 
-        has_kubectl = any(
-            "kubectl" in step.get("run", "")
-            for step in steps
-            if "run" in step
-        )
+        has_kubectl = any("kubectl" in step.get("run", "") for step in steps if "run" in step)
 
         assert has_kubectl, "Deploy prod should use kubectl"
 
@@ -244,9 +219,7 @@ class TestDeploymentConfiguration:
         dev_job = cd_workflow["jobs"]["deploy-dev"]
 
         has_rollout_status = any(
-            "rollout status" in step.get("run", "")
-            for step in dev_job["steps"]
-            if "run" in step
+            "rollout status" in step.get("run", "") for step in dev_job["steps"] if "run" in step
         )
 
         assert has_rollout_status, "Deploy should wait for rollout status"
@@ -260,10 +233,7 @@ class TestBuildJob:
         job = cd_workflow["jobs"]["build"]
         steps = job["steps"]
 
-        has_buildx = any(
-            "docker/setup-buildx-action" in step.get("uses", "")
-            for step in steps
-        )
+        has_buildx = any("docker/setup-buildx-action" in step.get("uses", "") for step in steps)
 
         assert has_buildx, "Build should use Docker Buildx"
 
@@ -272,10 +242,7 @@ class TestBuildJob:
         job = cd_workflow["jobs"]["build"]
         steps = job["steps"]
 
-        has_login = any(
-            "docker/login-action" in step.get("uses", "")
-            for step in steps
-        )
+        has_login = any("docker/login-action" in step.get("uses", "") for step in steps)
 
         assert has_login, "Build should login to container registry"
 

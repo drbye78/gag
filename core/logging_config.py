@@ -7,11 +7,21 @@ Provides JSON logging with correlation IDs for request tracing.
 import json
 import logging
 import sys
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
-from contextvars import ContextVar
 
 correlation_id: ContextVar[Optional[str]] = ContextVar("correlation_id", default=None)
+
+# Keys whose values should be redacted in log output
+_REDACT_KEYS = {"password", "secret", "token", "api_key", "authorization"}
+
+
+def _redact_value(key: str, value: Any) -> Any:
+    """Redact values for sensitive keys."""
+    if key.lower() in _REDACT_KEYS:
+        return "***REDACTED***"
+    return value
 
 
 class JSONFormatter(logging.Formatter):
@@ -35,7 +45,7 @@ class JSONFormatter(logging.Formatter):
         extra = getattr(record, "extra", {})
         for key, value in extra.items():
             if key not in ("msg", "exc_info"):
-                log_data[key] = value
+                log_data[key] = _redact_value(key, value)
 
         return json.dumps(log_data)
 
@@ -53,6 +63,11 @@ def setup_logging(level: str = "INFO", json_format: bool = False) -> None:
 
     root_logger = logging.getLogger()
     root_logger.setLevel(getattr(logging, level.upper(), logging.INFO))
+
+    # Remove existing handlers to prevent accumulation on repeated calls
+    for existing in root_logger.handlers[:]:
+        root_logger.removeHandler(existing)
+
     root_logger.addHandler(handler)
 
     logging.getLogger("uvicorn").setLevel(logging.WARNING)

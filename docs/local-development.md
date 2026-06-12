@@ -88,10 +88,9 @@ curl http://localhost:8000/
 ## Using the CLI
 
 ```bash
-./eis.py start                   # Start API
-./eis.py setup                 # Initialize configuration
-./eis.py test                   # Run tests
-./eis.py check                 # Lint + type check
+./eis api                    # Start API
+./eis test                   # Run tests
+./eis check                 # Lint + type check
 ```
 
 ## Required Environment Variables

@@ -1,6 +1,7 @@
-import pytest
 import asyncio
 import os
+
+import pytest
 
 os.environ.setdefault("JWT_SECRET", "test")
 os.environ.setdefault("CREDENTIAL_ENCRYPT_KEY", "12345678")
@@ -8,6 +9,7 @@ os.environ.setdefault("LLM_API_KEY", "")
 os.environ.setdefault("VLM_PROVIDER", "openrouter")
 os.environ.setdefault("VLM_MODEL", "google/gemma-4-31b-it:free")
 os.environ.setdefault("OPENAI_API_KEY", "")
+
 
 @pytest.fixture(scope="session")
 def event_loop():
@@ -19,6 +21,7 @@ def event_loop():
 @pytest.fixture(scope="function")
 async def falkordb_pool():
     from core.pool import HttpPool
+
     pool = HttpPool(base_url="http://localhost:6379")
     await pool.start()
     yield pool
@@ -28,12 +31,14 @@ async def falkordb_pool():
 @pytest.fixture(scope="session")
 def qdrant_client():
     from qdrant_client import QdrantClient
+
     return QdrantClient(host="localhost", port=6333)
 
 
 @pytest.fixture(scope="session")
 def ollama_client():
     import httpx
+
     return httpx.Client(base_url="http://localhost:11434")
 
 
@@ -41,11 +46,15 @@ def ollama_client():
 def mock_embeddings():
     def _embed(texts):
         import hashlib
+
         dim = 1024
-        return [list(
-            (int(hashlib.sha256(t.encode()).hexdigest(),) * dim 
-            for t in texts
-        )]
+        results = []
+        for text in texts:
+            h = int(hashlib.sha256(text.encode()).hexdigest(), 16)
+            vec = [float(h % (i + 1)) / float(i + 1) for i in range(dim)]
+            results.append(vec)
+        return results
+
     return _embed
 
 
@@ -62,5 +71,6 @@ def mock_vlm_response():
 @pytest.fixture(autouse=True)
 def reset_settings():
     from core.config import reset_settings
+
     yield
     reset_settings()

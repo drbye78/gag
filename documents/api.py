@@ -5,20 +5,13 @@ Provides upload, version, Confluence, WebDAV,
 multimodal endpoints.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from pydantic import BaseModel
 
-from fastapi import APIRouter, HTTPException, UploadFile, Depends
-
 from core.auth import require_authenticated
-
-from documents.pipeline import DocumentPipeline, get_document_pipeline
-from documents.confluence import get_confluence_client
-from documents.webdav import get_webdav_client
-from documents.multimodal import (
-    HybridMultimodalParser as MultimodalParser,
-    get_multimodal_parser,
-)
+from documents.pipeline import get_document_pipeline
 
 
 class DocumentResponse(BaseModel):
@@ -62,7 +55,9 @@ class ImageParseRequest(BaseModel):
     title: Optional[str] = None
 
 
-router = APIRouter(prefix="/documents", tags=["documents"], dependencies=[Depends(require_authenticated)])
+router = APIRouter(
+    prefix="/documents", tags=["documents"], dependencies=[Depends(require_authenticated)]
+)
 
 
 @router.post("/upload", response_model=DocumentResponse)

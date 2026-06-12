@@ -6,11 +6,13 @@ with metrics tracking.
 """
 
 import asyncio
-from dataclasses import dataclass, field
+import threading
+import time
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from tools.base import get_tool_registry, BaseTool, ToolOutput
+from tools.base import get_tool_registry
 
 
 class ToolStatus(str, Enum):
@@ -86,8 +88,9 @@ class ToolExecutor:
         self.max_concurrent = max_concurrent
         self.default_timeout = default_timeout
         self.max_retries = max_retries
-        self._semaphore = asyncio.Semaphore(max_concurrent)
+        self._semaphore: Optional[asyncio.Semaphore] = None
 
+        self._metrics_lock = threading.Lock()
         self._metrics = {
             "total_executions": 0,
             "successful": 0,
@@ -102,11 +105,16 @@ class ToolExecutor:
         args: Dict[str, Any],
         timeout: Optional[int] = None,
     ) -> ToolResult:
-        start_time = asyncio.get_event_loop().time()
+        start_time = time.monotonic()
 
         result = ToolResult(tool=tool_name)
 
         for attempt in range(self.max_retries + 1):
+            # Clear stale output/error from previous attempt on retry
+            if attempt > 0:
+                result.output = None
+                result.error = None
+
             try:
                 tool = self.registry.get(tool_name)
                 if not tool:
@@ -119,7 +127,7 @@ class ToolExecutor:
                     result.error = "Invalid input"
                     break
 
-                async with self._semaphore:
+                async with await self._get_semaphore():
                     tool_output = await asyncio.wait_for(
                         tool.execute(args),
                         timeout=timeout or self.default_timeout,
@@ -142,12 +150,16 @@ class ToolExecutor:
                 if attempt < self.max_retries:
                     self._metrics["retries"] += 1
             finally:
-                result.took_ms = int(
-                    (asyncio.get_event_loop().time() - start_time) * 1000
-                )
+                result.took_ms = int((time.monotonic() - start_time) * 1000)
 
         self._update_metrics(result)
         return result
+
+    async def _get_semaphore(self) -> asyncio.Semaphore:
+        """Lazily create the semaphore inside a running event loop."""
+        if self._semaphore is None:
+            self._semaphore = asyncio.Semaphore(self.max_concurrent)
+        return self._semaphore
 
     async def execute_parallel(
         self,
@@ -201,13 +213,14 @@ class ToolExecutor:
         return pipeline
 
     def _update_metrics(self, result: ToolResult):
-        self._metrics["total_executions"] += 1
-        if result.status == ToolStatus.COMPLETED:
-            self._metrics["successful"] += 1
-        else:
-            self._metrics["failed"] += 1
+        with self._metrics_lock:
+            self._metrics["total_executions"] += 1
+            if result.status == ToolStatus.COMPLETED:
+                self._metrics["successful"] += 1
+            else:
+                self._metrics["failed"] += 1
 
-        self._metrics["total_time_ms"] += result.took_ms
+            self._metrics["total_time_ms"] += result.took_ms
 
     def get_metrics(self) -> Dict[str, Any]:
         avg_time = (

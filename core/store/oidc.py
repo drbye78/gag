@@ -5,7 +5,6 @@ from typing import Dict, Optional
 
 from pydantic import BaseModel
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -41,8 +40,9 @@ class OIDCProvider:
             "grant_type": "authorization_code",
             "redirect_uri": self.config.redirect_uri,
         }
-        import httpx
         import asyncio
+
+        import httpx
 
         async def exchange():
             async with httpx.AsyncClient() as client:

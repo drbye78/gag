@@ -6,17 +6,15 @@ with in-memory caching and metrics tracking.
 """
 
 import asyncio
+import copy
 import hashlib
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
-from agents.planner import ExecutionStep, ExecutionPlan
+from agents.planner import ExecutionPlan, ExecutionStep
 from retrieval.orchestrator import RetrievalOrchestrator, RetrievalSource
-from retrieval.hybrid import get_enhanced_hybrid_retriever
-from retrieval.reasoning import get_reasoning_engine
-from retrieval.reasoning.entity_aware import get_entity_aware_reasoning_engine
 
 
 class RetrievalStrategy(str, Enum):
@@ -51,7 +49,8 @@ class RetrievalResult:
 
 class RetrievalCache:
     def __init__(self, ttl_seconds: int = 300, max_size: int = 1000):
-        self._cache: Dict[str, tuple] = {}
+        self._cache: Dict[str, tuple] = {}  # key -> (result, timestamp)
+        self._access_order: List[str] = []  # LRU tracking
         self._ttl = ttl_seconds
         self._max_size = max_size
         self._hits = 0
@@ -60,29 +59,44 @@ class RetrievalCache:
     def _make_key(self, query: str, source: str) -> str:
         return hashlib.sha256(f"{query}:{source}".encode()).hexdigest()
 
+    def _touch(self, key: str) -> None:
+        """Move key to end of access_order (most recently used)."""
+        if key in self._access_order:
+            self._access_order.remove(key)
+        self._access_order.append(key)
+
     def get(self, query: str, source: str) -> Optional[RetrievalResult]:
         key = self._make_key(query, source)
         if key in self._cache:
             result, timestamp = self._cache[key]
             if time.time() - timestamp < self._ttl:
                 self._hits += 1
-                result.cached = True
-                return result
+                self._touch(key)  # Mark as recently used
+                # Return a shallow copy to prevent caller from corrupting cache
+                cached_result = copy.copy(result)
+                cached_result.cached = True
+                return cached_result
             else:
                 del self._cache[key]
+                self._access_order.remove(key)
         self._misses += 1
         return None
 
     def set(self, query: str, source: str, result: RetrievalResult):
         key = self._make_key(query, source)
-        if len(self._cache) >= self._max_size:
-            # Evict oldest entry (first key)
-            oldest_key = next(iter(self._cache))
-            del self._cache[oldest_key]
+        if key in self._cache:
+            # Update existing entry
+            self._touch(key)
+        elif len(self._cache) >= self._max_size:
+            # Evict least recently used entry (first in access_order)
+            lru_key = self._access_order.pop(0)
+            del self._cache[lru_key]
         self._cache[key] = (result, time.time())
+        self._touch(key)
 
     def clear(self):
         self._cache.clear()
+        self._access_order.clear()
         self._hits = 0
         self._misses = 0
 
@@ -114,7 +128,6 @@ class RetrievalAgent:
 
     def _select_strategy(
         self,
-        step: ExecutionStep,
         context: Dict[str, Any],
     ) -> RetrievalStrategy:
         if self.strategy == RetrievalStrategy.ADAPTIVE:
@@ -138,9 +151,7 @@ class RetrievalAgent:
 
         results = []
 
-        strategy = self._select_strategy(
-            steps[0] if steps else None, {"intent": plan.intent}
-        )
+        strategy = self._select_strategy({"intent": plan.intent})
 
         if strategy == RetrievalStrategy.PARALLEL:
             results = await self._execute_parallel(steps, query, limit)
@@ -234,9 +245,7 @@ class RetrievalAgent:
                     data = await self.orchestrator.retrieve(query, limit=limit)
                 else:
                     sources = [RetrievalSource(source)]
-                    data = await self.orchestrator.retrieve(
-                        query, sources=sources, limit=limit
-                    )
+                    data = await self.orchestrator.retrieve(query, sources=sources, limit=limit)
 
                 result = RetrievalResult(
                     source=source,
@@ -275,13 +284,10 @@ class RetrievalAgent:
         self._metrics["total_queries"] += 1
         self._metrics["total_results"] += sum(r.total for r in results)
 
-        if self._metrics["avg_latency_ms"]:
-            alpha = 0.3
-            self._metrics["avg_latency_ms"] = (
-                self._metrics["avg_latency_ms"] * (1 - alpha) + total_time * alpha
-            )
-        else:
-            self._metrics["avg_latency_ms"] = total_time
+        # Proper Exponential Moving Average (EMA)
+        alpha = 0.3
+        old_avg = self._metrics["avg_latency_ms"]
+        self._metrics["avg_latency_ms"] = alpha * total_time + (1 - alpha) * old_avg
 
     def get_metrics(self) -> Dict[str, Any]:
         return {

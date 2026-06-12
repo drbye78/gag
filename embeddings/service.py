@@ -143,7 +143,9 @@ class EmbeddingService:
             elif self.provider in ("openrouter", "or", "google"):
                 fresh_embeddings = await self._embed_openrouter(to_embed)
             else:
-                raise RuntimeError(f"Unknown embedding provider: {self.provider}. Use: openai, qwen, ollama, openrouter")
+                raise RuntimeError(
+                    f"Unknown embedding provider: {self.provider}. Use: openai, qwen, ollama, openrouter"
+                )
 
             for idx, embedding in zip(to_embed_indices, fresh_embeddings):
                 text_hash = self._text_hash(texts[idx])
@@ -155,7 +157,7 @@ class EmbeddingService:
         for pos, idx in enumerate(to_embed_indices):
             results[idx] = fresh_embeddings[pos]
 
-        return results  # type: ignore[return-value]
+        return results  # type: ignore[return-value]  # list[list[float]|None] -> list[list[float]] after filter
 
     async def _embed_openai(self, texts: list[str]) -> list[list[float]]:
         settings = get_settings()
@@ -211,9 +213,7 @@ class EmbeddingService:
             )
             resp.raise_for_status()
             data = resp.json()
-            return (
-                data.get("output", {}).get("embeddings", [{}])[0].get("embedding", [])
-            )
+            return data.get("output", {}).get("embeddings", [{}])[0].get("embedding", [])
 
         results = await asyncio.gather(
             *[_embed_one(t) for t in texts],
@@ -223,7 +223,7 @@ class EmbeddingService:
         for r in results:
             if isinstance(r, Exception):
                 raise r
-            embeddings.append(r)  # type: ignore[arg-type]
+            embeddings.append(r)  # type: ignore[arg-type]  # pyright can't narrow asyncio.gather union after isinstance check
         return embeddings
 
     async def _embed_ollama(self, texts: list[str]) -> list[list[float]]:
@@ -248,7 +248,7 @@ class EmbeddingService:
         for r in results:
             if isinstance(r, Exception):
                 raise r
-            embeddings.append(r)  # type: ignore[arg-type]
+            embeddings.append(r)  # type: ignore[arg-type]  # pyright can't narrow asyncio.gather union after isinstance check
         return embeddings
 
     async def _embed_openrouter(self, texts: list[str]) -> list[list[float]]:
@@ -283,7 +283,7 @@ class EmbeddingService:
         for r in results:
             if isinstance(r, Exception):
                 raise r
-            embeddings.append(r)  # type: ignore[arg-type]
+            embeddings.append(r)  # type: ignore[arg-type]  # pyright can't narrow asyncio.gather union after isinstance check
         return embeddings
 
     async def embed_chunks(self, chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:

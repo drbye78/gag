@@ -7,9 +7,7 @@ Provides:
 """
 
 import ipaddress
-import re
 from urllib.parse import urlparse
-
 
 # Private/loopback/link-local networks to block for SSRF prevention
 _PRIVATE_NETWORKS = [
@@ -49,9 +47,7 @@ def validate_url(url: str, allowed_domain: str | None = None) -> str:
 
     # Scheme check
     if parsed.scheme not in ("http", "https"):
-        raise ValueError(
-            f"Invalid URL scheme '{parsed.scheme}': only http and https are allowed"
-        )
+        raise ValueError(f"Invalid URL scheme '{parsed.scheme}': only http and https are allowed")
 
     hostname = parsed.hostname
     if not hostname:

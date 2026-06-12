@@ -1,6 +1,6 @@
-from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
+from dataclasses import dataclass
 from enum import Enum
+from typing import Any, List, Optional
 
 from ingestion.graphrag.entity_extractor import EntityType
 
@@ -71,9 +71,7 @@ class RelationshipInferrer:
                 if rel:
                     relationships.append(rel)
         else:
-            batches = [
-                entity_pairs[i : i + 20] for i in range(0, len(entity_pairs), 20)
-            ]
+            batches = [entity_pairs[i : i + 20] for i in range(0, len(entity_pairs), 20)]
             for batch in batches:
                 batch_rels = await self._infer_batch_relationships(batch, text)
                 relationships.extend(batch_rels)
@@ -128,9 +126,7 @@ Return JSON only:"""
             return Relationship(
                 source_id=e1.id,
                 target_id=e2.id,
-                relationship_type=RelationshipType(
-                    data.get("relationship_type", "related_to")
-                ),
+                relationship_type=RelationshipType(data.get("relationship_type", "related_to")),
                 confidence=data.get("confidence", 0.5),
                 context=data.get("context", ""),
                 source_doc="",
@@ -172,9 +168,7 @@ Return JSON array:"""
             data = json.loads(response.text)
 
             relationships = []
-            entity_map = {
-                e.name: e.id for e in sum([[p[0], p[1]] for p in entity_pairs], [])
-            }
+            entity_map = {e.name: e.id for e in sum([[p[0], p[1]] for p in entity_pairs], [])}
 
             for item in data:
                 source_name = item.get("source", "")
@@ -201,8 +195,8 @@ Return JSON array:"""
 
 
 class LightweightRelationshipInferrer:
-    def __init__(self):
-        pass
+    def __init__(self, confidence_threshold: float = 0.5):
+        self.confidence_threshold = confidence_threshold
 
     def infer(
         self,
@@ -211,7 +205,6 @@ class LightweightRelationshipInferrer:
         source_id: str,
     ) -> RelationshipInferenceResult:
         import time
-        import re
         from collections import defaultdict
 
         start = time.time()
@@ -238,16 +231,18 @@ class LightweightRelationshipInferrer:
 
         for (e1_id, e2_id), data in cooccurrence.items():
             if data["count"] >= 1:
-                relationships.append(
-                    Relationship(
-                        source_id=e1_id,
-                        target_id=e2_id,
-                        relationship_type=RelationshipType.RELATED_TO,
-                        confidence=min(0.9, data["count"] * 0.3),
-                        context="; ".join(data["contexts"][:2]),
-                        source_doc=source_id,
+                confidence = min(0.9, data["count"] * 0.3)
+                if confidence >= self.confidence_threshold:
+                    relationships.append(
+                        Relationship(
+                            source_id=e1_id,
+                            target_id=e2_id,
+                            relationship_type=RelationshipType.RELATED_TO,
+                            confidence=confidence,
+                            context="; ".join(data["contexts"][:2]),
+                            source_doc=source_id,
+                        )
                     )
-                )
 
         took = int((time.time() - start) * 1000)
         return RelationshipInferenceResult(

@@ -25,16 +25,26 @@ LLAMA_INDEX_AVAILABLE = False
 
 try:
     from llama_index.core.node_parser import (
-        SemanticSplitterNodeParser as LISemanticChunker,
-        SentenceSplitter as LISentenceSplitter,
-        JSONNodeParser as LIJSONSplitter,
         HTMLNodeParser as LIHTMLTagSplitter,
     )
+    from llama_index.core.node_parser import (
+        JSONNodeParser as LIJSONSplitter,
+    )
+    from llama_index.core.node_parser import (
+        SemanticSplitterNodeParser as LISemanticChunker,
+    )
+    from llama_index.core.node_parser import (
+        SentenceSplitter as LISentenceSplitter,
+    )
     from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+
     LLAMA_INDEX_AVAILABLE = True
 except ImportError:
     import logging
-    logging.getLogger(__name__).warning("LlamaIndex not available - semantic chunkers will use fallbacks")
+
+    logging.getLogger(__name__).warning(
+        "LlamaIndex not available - semantic chunkers will use fallbacks"
+    )
 
 
 @dataclass
@@ -68,6 +78,7 @@ class LlamaIndexSentenceChunker(TextChunker):
     def chunk(self, text: str, source_id: str) -> ChunkResult:
         if not self.available:
             from ingestion.chunker import DocumentChunker
+
             return DocumentChunker(chunk_size=self.chunk_size).chunk(text, source_id)
 
         start = time.time()

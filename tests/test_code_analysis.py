@@ -1,7 +1,8 @@
 """Tests for code_analysis tools."""
 
-import pytest
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from tools.code_analysis import CodeAnalysisTools, get_code_analysis_tools
 
@@ -63,7 +64,9 @@ class TestCodeAnalysisTools:
 
     @pytest.mark.asyncio
     async def test_get_most_complex(self, tools):
-        with patch.object(tools.retriever, "get_most_complex_functions", new_callable=AsyncMock) as mock:
+        with patch.object(
+            tools.retriever, "get_most_complex_functions", new_callable=AsyncMock
+        ) as mock:
             mock.return_value = {"results": []}
             result = await tools.get_most_complex(limit=5)
             mock.assert_called_once_with(limit=5)

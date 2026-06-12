@@ -140,7 +140,9 @@ class GitRepoManager:
             raise ValueError("Invalid URL: cannot start with '-' (argument injection prevention)")
 
         if branch.startswith("-"):
-            raise ValueError("Invalid branch: cannot start with '-' (argument injection prevention)")
+            raise ValueError(
+                "Invalid branch: cannot start with '-' (argument injection prevention)"
+            )
 
         repo_id = str(uuid.uuid4())[:8]
         source = self._detect_source(url)
@@ -177,7 +179,7 @@ class GitRepoManager:
                     capture_output=True,
                     text=True,
                     timeout=300,
-                )
+                ),
             )
             if result.returncode != 0:
                 repo.status = RepoStatus.FAILED
@@ -207,7 +209,9 @@ class GitRepoManager:
             raise ValueError(f"Repo {repo_id} not found")
 
         if branch.startswith("-"):
-            raise ValueError("Invalid branch: cannot start with '-' (argument injection prevention)")
+            raise ValueError(
+                "Invalid branch: cannot start with '-' (argument injection prevention)"
+            )
 
         repo.status = RepoStatus.CHECKING_OUT
 
@@ -221,7 +225,7 @@ class GitRepoManager:
                     capture_output=True,
                     text=True,
                     timeout=60,
-                )
+                ),
             )
             if result.returncode != 0:
                 repo.status = RepoStatus.FAILED
@@ -255,7 +259,7 @@ class GitRepoManager:
                     capture_output=True,
                     text=True,
                     timeout=120,
-                )
+                ),
             )
             if result.returncode != 0:
                 repo.status = RepoStatus.FAILED
@@ -284,7 +288,7 @@ class GitRepoManager:
                     capture_output=True,
                     text=True,
                     timeout=10,
-                )
+                ),
             )
             if result.returncode == 0:
                 return result.stdout.strip()
@@ -307,7 +311,7 @@ class GitRepoManager:
                     capture_output=True,
                     text=True,
                     timeout=30,
-                )
+                ),
             )
             if result.returncode == 0:
                 branches = []
@@ -340,7 +344,7 @@ class GitRepoManager:
                     capture_output=True,
                     text=True,
                     timeout=30,
-                )
+                ),
             )
             if result.returncode != 0:
                 return []
@@ -443,7 +447,7 @@ class GitRepoManager:
                     capture_output=True,
                     text=True,
                     timeout=30,
-                )
+                ),
             )
             if result.returncode != 0:
                 return []

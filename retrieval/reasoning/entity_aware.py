@@ -76,9 +76,7 @@ class EntityAwareReasoningEngine:
 
         steps = self._build_reasoning_steps(query, relevant_facts, graph_paths)
 
-        answer = self._synthesize_answer(
-            query, relevant_facts, graph_paths, query_entities
-        )
+        answer = self._synthesize_answer(query, relevant_facts, graph_paths, query_entities)
 
         return {
             "query": query,
@@ -231,13 +229,9 @@ class EntityAwareReasoningEngine:
         facts: List[Dict[str, Any]],
         graph_paths: Dict[str, List[str]],
     ) -> float:
-        fact_score = (
-            sum(f.get("score", 0) for f in facts) / max(len(facts), 1) if facts else 0.0
-        )
+        fact_score = sum(f.get("score", 0) for f in facts) / max(len(facts), 1) if facts else 0.0
 
-        path_score = (
-            (sum(len(p) for p in graph_paths.values())) / max(len(graph_paths), 1) * 0.2
-        )
+        path_score = (sum(len(p) for p in graph_paths.values())) / max(len(graph_paths), 1) * 0.2
 
         return min(fact_score + path_score, 1.0)
 

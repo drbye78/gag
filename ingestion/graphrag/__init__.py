@@ -1,36 +1,32 @@
-from ingestion.graphrag.entity_extractor import (
-    DocumentEntityExtractor,
-    LightweightEntityExtractor,
-    EntityType,
-    ExtractedEntity,
-    EntityExtractionResult,
-    get_entity_extractor,
-)
-
-from ingestion.graphrag.relationship_inferrer import (
-    RelationshipInferrer,
-    LightweightRelationshipInferrer,
-    RelationshipType,
-    Relationship,
-    RelationshipInferenceResult,
-    get_relationship_inferrer,
-)
-
 from ingestion.graphrag.community_detector import (
-    CommunityDetector,
-    LightweightCommunityDetector,
     Community,
     CommunityDetectionResult,
+    CommunityDetector,
+    LightweightCommunityDetector,
     get_community_detector,
 )
-
+from ingestion.graphrag.entity_extractor import (
+    DocumentEntityExtractor,
+    EntityExtractionResult,
+    EntityType,
+    ExtractedEntity,
+    LightweightEntityExtractor,
+    get_entity_extractor,
+)
 from ingestion.graphrag.pipeline import (
     GraphRAGPipeline,
-    IncrementalGraphRAGPipeline,
     GraphRAGResult,
+    IncrementalGraphRAGPipeline,
     get_graphrag_pipeline,
 )
-
+from ingestion.graphrag.relationship_inferrer import (
+    LightweightRelationshipInferrer,
+    Relationship,
+    RelationshipInferenceResult,
+    RelationshipInferrer,
+    RelationshipType,
+    get_relationship_inferrer,
+)
 
 __all__ = [
     "DocumentEntityExtractor",

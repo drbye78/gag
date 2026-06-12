@@ -2,20 +2,27 @@
 
 import logging
 import threading
-from typing import Any, Callable, Dict, Optional, Type, TypeVar
 from contextlib import asynccontextmanager
+from typing import Any, Callable, Dict, Optional, Type
 
 from core.config import Settings, get_settings
-from core.pool import HttpPool, get_http_pool
-from core.errors import ServiceUnavailableError
+from core.pool import HttpPool
 
 logger = logging.getLogger(__name__)
 
 
+_settings_lock = threading.Lock()
+
+
 class AppContainer:
     """Central DI container with singleton and scoped lifecycles.
-    
+
     Thread-safe implementation using locks for singleton registration/resolution.
+
+    NOTE: Currently only the SINGLETON lifecycle is supported.  Scoped and
+    transient lifecycles are planned for a future release.  When added:
+    - ``SCOPED``: one instance per request / unit-of-work scope.
+    - ``TRANSIENT``: a new instance on every resolution call.
     """
 
     _instance: Optional["AppContainer"] = None
@@ -117,8 +124,9 @@ _container: Optional[AppContainer] = None
 
 def get_container() -> AppContainer:
     global _container
-    if _container is None:
-        _container = AppContainer()
+    with _settings_lock:
+        if _container is None:
+            _container = AppContainer()
     return _container
 
 

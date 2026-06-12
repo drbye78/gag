@@ -1,40 +1,59 @@
 """
-CodeGraph Retriever - Code-specific graph queries via CodeGraphContext MCP.
+CodeGraph Retriever - Code-specific graph queries via CodeGraphContext.
 
-Architecture:
-- MCP client via persistent subprocess using JSON-RPC 2.0 protocol
-- Falls back to CLI spawn if MCP unavailable
-- Connection pooling for parallel queries
+CodeGraphContext CLI integration (v0.4+):
+- cgc find pattern <query> - Find code elements
+- cgc analyze callers <target> - Find function callers
+- cgc analyze calls <target> - Find callees
+- cgc find dead-code - Find unused functions
+- cgc find complex - Find complex functions
 
-MCP Tools: find_code, analyze_code_relationships, find_dead_code,
-calculate_cyclomatic_complexity, execute_cypher_query, visualize_graph_query
+Ingestion support (via CLI):
+- git repositories (with branch/tag support)
+- ZIP archives (downloaded or uploaded)
+- Markdown/Confluence content
 """
 
 import asyncio
 import json
 import logging
-import os
 import re
 import subprocess
 import tempfile
 import time
-from enum import StrEnum
+from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 import aiohttp
 
 logger = logging.getLogger(__name__)
 
-CGC_COMMAND = os.environ.get("CGC_COMMAND", "codegraphcontext")
-CGC_POOL_SIZE = int(os.environ.get("CGC_POOL_SIZE", "3"))
-CGC_TIMEOUT = float(os.environ.get("CGC_TIMEOUT", "30.0"))
+# MCP CodeGraphContext tool proxies — injected at runtime when running
+# inside the OpenCode MCP environment. Define stubs for standalone use.
+try:
+    from CodeGraphContext import (  # type: ignore[import-untyped]  # MCP runtime-injected package, no stubs available
+        execute_cypher_query,
+        visualize_graph_query,
+    )
+except ImportError:
+
+    async def _codegraph_stub(**kwargs: Any) -> Dict[str, Any]:  # type: ignore[misc]  # stub signature intentionally broad for any MCP tool
+        raise RuntimeError(
+            "CodeGraphContext MCP tools are not available in this environment. "
+            "Run inside OpenCode or install the cgc CLI."
+        )
+
+    execute_cypher_query = _codegraph_stub
+    visualize_graph_query = _codegraph_stub
 
 
+# Check for CLI availability (lazy)
 def _check_cgc_available() -> bool:
     try:
         result = subprocess.run(
-            [CGC_COMMAND, "--version"],
+            ["cgc", "--version"],
             capture_output=True,
             text=True,
             timeout=5,
@@ -44,184 +63,38 @@ def _check_cgc_available() -> bool:
         return False
 
 
-_cgc_available: bool | None = None
+_cgc_available: Optional[bool] = None
 
 
 def _is_cgc_available() -> bool:
     global _cgc_available
     if _cgc_available is None:
         _cgc_available = _check_cgc_available()
+        if _cgc_available:
+            logger.info("CodeGraphContext CLI available")
+        else:
+            logger.info("CodeGraphContext CLI not installed (optional)")
     return _cgc_available
 
 
+def reset_cgc_availability() -> None:
+    """Reset the cached CGC availability flag.
+
+    Intended for testing: allows re-checking CLI availability after
+    install/uninstall without restarting the process.
+    """
+    global _cgc_available
+    _cgc_available = None
+
+
+# Module-level availability flags — kept for backward compatibility.
+# Call _is_cgc_available() for the actual lazy check.
 CODEGRAPH_AVAILABLE = False
 CODEGRAPH_FULL_AVAILABLE = False
 
 
-# =============================================================================
-# MCP Client Implementation
-# =============================================================================
-
+# Regex for validating cgc CLI arguments — only safe characters allowed
 _CGC_ARG_RE = re.compile(r"^[A-Za-z0-9._\-/]+$")
-
-
-async def _mcp_execute(method: str, params: dict | None = None) -> dict[str, Any]:
-    """Execute via CLI - MCP stdin/stdout not fully async-compatible in cgc v0.4."""
-    cli_args = _MCP_TO_CLI.get(method, [])
-    if params:
-        cli_args.extend(_params_to_cli_args(method, params))
-    return await _cli_execute(cli_args)
-
-
-async def _cli_execute(args: list[str]) -> dict[str, Any]:
-    """Execute CLI command as fallback with concurrency control."""
-    loop = asyncio.get_event_loop()
-    async with _cli_semaphore:
-        try:
-            result = await loop.run_in_executor(
-                None,
-                lambda: subprocess.run(
-                    [CGC_COMMAND, *args],
-                    capture_output=True,
-                    text=True,
-                    timeout=CGC_TIMEOUT,
-                )
-            )
-            if result.returncode == 0:
-                try:
-                    return {"success": True, "data": json.loads(result.stdout)}
-                except json.JSONDecodeError:
-                    lines = result.stdout.strip().split("\n")
-                    matches = []
-                    for line in lines:
-                        if "│" in line and "─" not in line:
-                            parts = [p.strip() for p in line.split("│")]
-                            if len(parts) >= 3 and parts[1]:
-                                matches.append({
-                                    "name": parts[1],
-                                    "type": parts[2] if len(parts) > 2 else "",
-                                    "location": parts[3] if len(parts) > 3 else "",
-                                })
-                    return {"success": True, "data": matches}
-            return {"success": False, "error": result.stderr}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-
-
-_cli_semaphore: asyncio.Semaphore = asyncio.Semaphore(CGC_POOL_SIZE)
-
-
-# MCP method to CLI args mapping
-_MCP_TO_CLI = {
-    "find_code": ["find", "pattern"],
-    "analyze_code_relationships": ["analyze", "callers"],
-    "find_dead_code": ["find", "dead-code"],
-    "calculate_cyclomatic_complexity": ["analyze", "complex"],
-    "find_most_complex_functions": ["analyze", "complexity"],
-    "add_code_to_graph": ["index"],
-    "switch_context": ["switch"],
-    "discover_codegraph_contexts": ["discover"],
-    "list_indexed_repositories": ["stats"],
-    "load_bundle": ["load"],
-    "search_registry_bundles": ["search", "bundles"],
-    "watch_directory": ["watch"],
-    "unwatch_directory": ["unwatch"],
-    "add_package_to_graph": ["add", "package"],
-    "get_repository_stats": ["stats"],
-    "execute_cypher_query": ["cypher"],
-    "visualize_graph_query": ["visualize"],
-}
-
-
-def _params_to_cli_args(method: str, params: dict[str, Any]) -> list[str]:
-    args = []
-    if method == "find_code":
-        args.append(params.get("query", ""))
-    elif method == "analyze_code_relationships":
-        args.append(params.get("query_type", ""))
-        args.append(params.get("target", ""))
-    elif method == "find_dead_code":
-        if exclude := params.get("exclude_decorated_with"):
-            for e in exclude:
-                args.extend(["--decorator", e])
-    elif method == "calculate_cyclomatic_complexity":
-        args.append(params.get("function_name", ""))
-    elif method == "find_most_complex_functions":
-        args.append("--limit")
-        args.append(str(params.get("limit", 10)))
-    elif method == "add_code_to_graph":
-        args.append(params.get("path", ""))
-        if params.get("is_dependency"):
-            args.append("--dependency")
-    elif method == "switch_context":
-        args.append(params.get("context_path", ""))
-    elif method == "discover_codegraph_contexts":
-        if params.get("max_depth"):
-            args.extend(["--max-depth", str(params["max_depth"])])
-    elif method == "load_bundle":
-        args.append(params.get("bundle_name", ""))
-        if params.get("clear_existing"):
-            args.append("--clear")
-    elif method == "search_registry_bundles":
-        args.extend([params.get("query", ""), "--unique"] if params.get("unique_only") else [params.get("query", "")])
-    elif method == "execute_cypher_query":
-        args.append(params.get("cypher_query", ""))
-    elif method == "visualize_graph_query":
-        args.append("--visual")
-        args.append(params.get("cypher_query", ""))
-    elif method == "add_package_to_graph":
-        args.append(params.get("package_name", ""))
-        args.append("--language")
-        args.append(params.get("language", "python"))
-    return args
-_CLI_TO_MCP = {
-    ("find", "pattern"): "find_code",
-    ("analyze", "callers"): "analyze_code_relationships",
-    ("analyze", "calls"): "analyze_code_relationships",
-    ("analyze", "tree"): "analyze_code_relationships",
-    ("analyze", "deps"): "analyze_code_relationships",
-    ("find", "dead-code"): "find_dead_code",
-    ("analyze", "complexity"): "find_most_complex_functions",
-    ("analyze", "complex"): "calculate_cyclomatic_complexity",
-    ("index",): "add_code_to_graph",
-    ("switch",): "switch_context",
-    ("discover",): "discover_codegraph_contexts",
-    ("stats",): "list_indexed_repositories",
-}
-
-
-def _build_params(args: list[str]) -> dict[str, Any]:
-    """Build MCP params from CLI args."""
-    params = {}
-    i = 0
-    while i < len(args):
-        if args[i] == "--limit" and i + 1 < len(args):
-            params["limit"] = int(args[i + 1])
-            i += 2
-        elif args[i] == "--decorator" and i + 1 < len(args):
-            params.setdefault("exclude_decorated_with", []).append(args[i + 1])
-            i += 2
-        elif args[i] == "--dependency":
-            params["is_dependency"] = True
-            i += 1
-        elif args[i] == "--language" and i + 1 < len(args):
-            params["language"] = args[i + 1]
-            i += 2
-        elif args[i] == "--save" and args[i + 1] == "false":
-            params["save"] = False
-            i += 2
-        elif args[i] == "--max-depth" and i + 1 < len(args):
-            params["max_depth"] = int(args[i + 1])
-            i += 2
-        else:
-            if "query" not in params:
-                params["query"] = args[i]
-            elif "target" not in params:
-                params["target"] = args[i]
-            elif "query_type" not in params:
-                params["query_type"] = args[i]
-            i += 1
-    return params
 
 
 def _validate_cgc_arg(arg: str) -> str:
@@ -249,10 +122,35 @@ def _validate_cgc_arg(arg: str) -> str:
     return arg
 
 
-def _run_cgc(args: list[str], timeout: int = 30) -> dict[str, Any]:
+def _validate_git_url(url: str) -> str:
+    """Validate that a git clone URL uses only http:// or https:// schemes.
+
+    Rejects dangerous schemes like file://, ssh://, ftp://, git:// that could
+    be used for local file access, command injection, or other attacks.
+
+    Args:
+        url: The git repository URL to validate.
+
+    Returns:
+        The validated URL string.
+
+    Raises:
+        ValueError: If the URL scheme is not http or https.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(
+            f"Invalid git URL scheme '{parsed.scheme}': only http:// and https:// are allowed"
+        )
+    if not parsed.hostname:
+        raise ValueError("Git URL must have a valid hostname")
+    return url
+
+
+def _run_cgc(args: List[str], timeout: int = 30) -> Dict[str, Any]:
     try:
         result = subprocess.run(
-            ["cgc", *args],
+            ["cgc"] + args,
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -268,33 +166,35 @@ def _run_cgc(args: list[str], timeout: int = 30) -> dict[str, Any]:
                 matches = []
                 for line in lines:
                     # Parse table rows: | Name | Type | Location | Source |
-                    if "│" in line and "─" not in line and "╭" not in line and "╰" not in line and "Name" not in line:
+                    if (
+                        "│" in line
+                        and "─" not in line
+                        and "╭" not in line
+                        and "╰" not in line
+                        and "Name" not in line
+                    ):
                         parts = [p.strip() for p in line.split("│")]
                         if len(parts) >= 3 and parts[1]:
-                            matches.append({
-                                "name": parts[1],
-                                "type": parts[2] if len(parts) > 2 else "",
-                                "location": parts[3] if len(parts) > 3 else "",
-                            })
+                            matches.append(
+                                {
+                                    "name": parts[1],
+                                    "type": parts[2] if len(parts) > 2 else "",
+                                    "location": parts[3] if len(parts) > 3 else "",
+                                }
+                            )
                 return {"success": True, "data": matches}
         return {"success": False, "error": result.stderr}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 
-async def _run_cgc_async(args: list[str], timeout: int = 30) -> dict[str, Any]:
-    """Try MCP first, fallback to CLI spawn."""
-    if _is_cgc_available():
-        method = _CLI_TO_MCP.get(tuple(args[:2]))
-        if method:
-            params = _build_params(args[2:])
-            result = await _mcp_execute(method, params)
-            if "error" not in result:
-                return {"success": True, "data": result}
-    return await _cli_execute(args)
+async def _run_cgc_async(args: List[str], timeout: int = 30) -> Dict[str, Any]:
+    """Run cgc CLI in a thread executor to avoid blocking the event loop."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _run_cgc, args, timeout)
 
 
-async def find_code(query: str, limit: int = 10) -> dict[str, Any]:
+async def find_code(query: str, limit: int = 10) -> Dict[str, Any]:
     if not _is_cgc_available():
         return {"results": [], "error": "CodeGraphContext CLI not installed"}
     result = await _cgc_find_pattern(query)
@@ -304,7 +204,7 @@ async def find_code(query: str, limit: int = 10) -> dict[str, Any]:
     return {"results": [], "error": result.get("error")}
 
 
-async def _cgc_find_pattern(pattern: str) -> dict[str, Any]:
+async def _cgc_find_pattern(pattern: str) -> Dict[str, Any]:
     """Call cgc find pattern and parse results."""
     _validate_cgc_arg(pattern)
     result = await _run_cgc_async(["find", "pattern", pattern])
@@ -324,8 +224,8 @@ async def _cgc_find_pattern(pattern: str) -> dict[str, Any]:
 async def analyze_code_relationships(
     query_type: str,
     target: str,
-    context: str | None = None,
-) -> dict[str, Any]:
+    context: Optional[str] = None,
+) -> Dict[str, Any]:
     if not _is_cgc_available():
         return {"results": [], "error": "CodeGraphContext CLI not installed"}
     _validate_cgc_arg(target)
@@ -344,9 +244,9 @@ async def analyze_code_relationships(
 
 
 async def find_dead_code(
-    exclude_decorators: list[str] | None = None,
+    exclude_decorators: Optional[List[str]] = None,
     limit: int = 20,
-) -> dict[str, Any]:
+) -> Dict[str, Any]:
     if not _is_cgc_available():
         return {"results": [], "error": "CodeGraphContext CLI not installed"}
     args = ["find", "dead-code"]
@@ -362,7 +262,7 @@ async def find_dead_code(
     return {"results": [], "error": result.get("error")}
 
 
-async def find_most_complex_functions(limit: int = 10) -> dict[str, Any]:
+async def find_most_complex_functions(limit: int = 10) -> Dict[str, Any]:
     result = await _run_cgc_async(["analyze", "complexity", "--limit", str(limit)])
     if result.get("success"):
         data = result.get("data", {})
@@ -372,8 +272,8 @@ async def find_most_complex_functions(limit: int = 10) -> dict[str, Any]:
 
 async def calculate_cyclomatic_complexity(
     function_name: str,
-    path: str | None = None,
-) -> dict[str, Any]:
+    path: Optional[str] = None,
+) -> Dict[str, Any]:
     _validate_cgc_arg(function_name)
     args = ["analyze", "complexity", function_name]
     result = await _run_cgc_async(args)
@@ -383,37 +283,13 @@ async def calculate_cyclomatic_complexity(
     return {"results": [], "error": result.get("error")}
 
 
-async def watch_directory(path: str) -> dict[str, Any]:
+async def watch_directory(path: str) -> Dict[str, Any]:
     _validate_cgc_arg(path)
-    result = await _cli_execute(["watch", path])
+    result = await _run_cgc_async(["watch", path])
     return {"success": result.get("success"), "error": result.get("error")}
 
 
-async def execute_cypher_query(cypher_query: str) -> dict[str, Any]:
-    """Execute a read-only Cypher query against the code graph."""
-    if not _is_cgc_available():
-        return {"results": [], "error": "CodeGraphContext CLI not installed"}
-    result = await _cli_execute(["cypher", cypher_query])
-    if result.get("success"):
-        data = result.get("data", {})
-        return {"results": data.get("results", []) if isinstance(data, dict) else []}
-    return {"results": [], "error": result.get("error")}
-
-
-async def visualize_graph_query(cypher_query: str) -> dict[str, Any]:
-    """Generate visualization URL from Cypher query."""
-    if not _is_cgc_available():
-        return {"url": None, "mermaid": None, "error": "CodeGraphContext CLI not installed"}
-    result = await _cli_execute(["visualize", cypher_query])
-    if result.get("success"):
-        data = result.get("data", {})
-        url = data.get("url") if isinstance(data, dict) else None
-        mermaid = data.get("mermaid") if isinstance(data, dict) else None
-        return {"url": url, "mermaid": mermaid}
-    return {"url": None, "mermaid": None, "error": result.get("error")}
-
-
-async def add_code_to_graph(path: str, is_dependency: bool = False) -> dict[str, Any]:
+async def add_code_to_graph(path: str, is_dependency: bool = False) -> Dict[str, Any]:
     _validate_cgc_arg(path)
     args = ["index", path]
     if is_dependency:
@@ -429,19 +305,38 @@ async def index_git_repository(
     url: str,
     branch: str = "main",
     depth: int = 1,
-) -> dict[str, Any]:
+) -> Dict[str, Any]:
     """Index a git repository by URL with optional branch."""
     if not _is_cgc_available():
         return {"success": False, "error": "CodeGraphContext CLI not installed"}
 
+    # C-13: Validate URL scheme to prevent git clone injection
+    try:
+        _validate_git_url(url)
+    except ValueError as e:
+        return {"success": False, "error": str(e)}
+
     with tempfile.TemporaryDirectory() as tmpdir:
         try:
-            subprocess.run(
-                ["git", "clone", "--branch", branch, "--depth", str(depth), url, tmpdir],
-                capture_output=True,
-                timeout=120,
-                check=True,
+            # C-14: Use async subprocess to avoid blocking the event loop
+            proc = await asyncio.create_subprocess_exec(
+                "git",
+                "clone",
+                "--branch",
+                branch,
+                "--depth",
+                str(depth),
+                url,
+                tmpdir,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+            if proc.returncode != 0:
+                return {
+                    "success": False,
+                    "error": f"Git clone failed: {stderr.decode().strip()}",
+                }
             result = await add_code_to_graph(tmpdir)
             return {
                 "success": result.get("success", False),
@@ -449,8 +344,8 @@ async def index_git_repository(
                 "branch": branch,
                 "error": result.get("error"),
             }
-        except subprocess.CalledProcessError as e:
-            return {"success": False, "error": f"Git clone failed: {e.stderr}"}
+        except asyncio.TimeoutError:
+            return {"success": False, "error": "Git clone timed out after 120 seconds"}
         except Exception as e:
             return {"success": False, "error": str(e)}
 
@@ -458,7 +353,7 @@ async def index_git_repository(
 async def index_zip_archive(
     content: bytes,
     filename: str = "archive.zip",
-) -> dict[str, Any]:
+) -> Dict[str, Any]:
     """Index a ZIP archive (uploaded or downloaded)."""
     if not _is_cgc_available():
         return {"success": False, "error": "CodeGraphContext CLI not installed"}
@@ -468,6 +363,7 @@ async def index_zip_archive(
         zip_path.write_bytes(content)
 
         import zipfile
+
         extract_dir = Path(tmpdir) / "extracted"
         extract_dir.mkdir()
 
@@ -492,7 +388,7 @@ async def index_zip_archive(
                             member.filename,
                         )
                         continue
-                zf.extractall(extract_dir)
+                    zf.extract(member, extract_dir)
 
             result = await add_code_to_graph(str(extract_dir))
             return {
@@ -509,10 +405,18 @@ async def index_zip_archive(
 async def index_from_url(
     url: str,
     url_type: str = "zip",
-) -> dict[str, Any]:
+) -> Dict[str, Any]:
     """Download and index from URL (ZIP, raw, etc.)."""
     if not _is_cgc_available():
         return {"success": False, "error": "CodeGraphContext CLI not installed"}
+
+    # C-16: SSRF protection - validate URL before fetching
+    try:
+        from core.security import validate_url
+
+        validate_url(url)
+    except ValueError as e:
+        return {"success": False, "error": str(e)}
 
     async with aiohttp.ClientSession() as session:
         try:
@@ -535,7 +439,7 @@ async def index_from_url(
 async def index_markdown_content(
     content: str,
     source_name: str = "document.md",
-) -> dict[str, Any]:
+) -> Dict[str, Any]:
     """Index markdown document content."""
     if not _is_cgc_available():
         return {"success": False, "error": "CodeGraphContext CLI not installed"}
@@ -558,7 +462,7 @@ async def index_confluence_page(
     page_id: str,
     api_token: str,
     email: str,
-) -> dict[str, Any]:
+) -> Dict[str, Any]:
     """Index Confluence page content via REST API."""
     if not _is_cgc_available():
         return {"success": False, "error": "CodeGraphContext CLI not installed"}
@@ -584,6 +488,7 @@ async def index_confluence_page(
                 for block in plantuml_blocks:
                     try:
                         from documents.diagram_formats import PlantUMLParser
+
                         result = PlantUMLParser().parse(block)
                         if result.entities:
                             for entity in result.entities:
@@ -592,7 +497,7 @@ async def index_confluence_page(
                                     f"TYPE: {entity.get('type', 'node')}\n"
                                     f"SOURCE: confluence_{page_id}_plantuml\n"
                                     f"DIAGRAM_TYPE: plantuml_{result.diagram_type}",
-                                    f"confluence_{page_id}_entity_{entities_indexed}.md"
+                                    f"confluence_{page_id}_entity_{entities_indexed}.md",
                                 )
                                 if entity_result.get("success"):
                                     entities_indexed += 1
@@ -605,28 +510,29 @@ async def index_confluence_page(
                 for block in drawio_blocks:
                     try:
                         from documents.diagram_formats import DrawIOParser
+
                         result = DrawIOParser().parse(block)
-                        for elem in result.elements:
-                            node_result = await index_markdown_content(
-                                f"ENTITY: {elem.element_id}\n"
-                                f"TYPE: node\n"
-                                f"LABEL: {elem.value}\n"
-                                f"SOURCE: confluence_{page_id}_drawio",
-                                f"confluence_{page_id}_drawio_{entities_indexed}.md"
-                            )
-                            if node_result.get("success"):
-                                entities_indexed += 1
-                        for conn in result.connections:
-                            src = conn.get("source", "") if isinstance(conn, dict) else ""
-                            tgt = conn.get("target", "") if isinstance(conn, dict) else ""
-                            rel_result = await index_markdown_content(
-                                f"RELATIONSHIP: {src} -> {tgt}\n"
-                                f"TYPE: arrow\n"
-                                f"SOURCE: confluence_{page_id}_drawio",
-                                f"confluence_{page_id}_rel_{relationships_indexed}.md"
-                            )
-                            if rel_result.get("success"):
-                                relationships_indexed += 1
+                        if result.nodes:
+                            for node in result.nodes:
+                                node_result = await index_markdown_content(
+                                    f"ENTITY: {node.get('id', node.get('label', ''))}\n"
+                                    f"TYPE: node\n"
+                                    f"LABEL: {node.get('label', '')}\n"
+                                    f"SOURCE: confluence_{page_id}_drawio",
+                                    f"confluence_{page_id}_drawio_{entities_indexed}.md",
+                                )
+                                if node_result.get("success"):
+                                    entities_indexed += 1
+                        if result.edges:
+                            for edge in result.edges:
+                                rel_result = await index_markdown_content(
+                                    f"RELATIONSHIP: {edge.get('source', '')} -> {edge.get('target', '')}\n"
+                                    f"TYPE: {edge.get('style', 'arrow')}\n"
+                                    f"SOURCE: confluence_{page_id}_drawio",
+                                    f"confluence_{page_id}_rel_{relationships_indexed}.md",
+                                )
+                                if rel_result.get("success"):
+                                    relationships_indexed += 1
                     except Exception:
                         pass
 
@@ -667,9 +573,10 @@ def _html_to_markdown(html: str) -> str:
     return md.strip()
 
 
-def _extract_plantuml_blocks(md: str) -> list[str]:
+def _extract_plantuml_blocks(md: str) -> List[str]:
     """Extract PlantUML code blocks from markdown content."""
     import re
+
     blocks = []
 
     pattern = r"```plantuml\n(.*?)```"
@@ -683,9 +590,10 @@ def _extract_plantuml_blocks(md: str) -> list[str]:
     return blocks
 
 
-def _extract_drawio_blocks(html: str) -> list[str]:
+def _extract_drawio_blocks(html: str) -> List[str]:
     """Extract draw.io XML from Confluence HTML."""
     import re
+
     blocks = []
 
     pattern = r'<ac:structured-macro ac:name="diagram"[^>]*>.*?<ac:parameter ac:name="xml">(.*?)</ac:parameter>'
@@ -694,20 +602,20 @@ def _extract_drawio_blocks(html: str) -> list[str]:
         if "mxfile" in xml or "diagram" in xml:
             blocks.append(xml)
 
-    pattern = r'<div[^>]*data-model[^>]*>(.*?)</div>'
+    pattern = r"<div[^>]*data-model[^>]*>(.*?)</div>"
     matches = re.findall(pattern, html, re.DOTALL)
     for xml in matches:
         if "<diagram" in xml or "<mxfile" in xml:
             blocks.append(xml)
 
-    pattern = r'<mxfile[^>]*>(.*?)</mxfile>'
+    pattern = r"<mxfile[^>]*>(.*?)</mxfile>"
     matches = re.findall(pattern, html, re.DOTALL)
     blocks.extend(matches)
 
     return blocks
 
 
-async def switch_context(context_path: str) -> dict[str, Any]:
+async def switch_context(context_path: str) -> Dict[str, Any]:
     _validate_cgc_arg(context_path)
     result = await _run_cgc_async(["switch", context_path])
     return {"success": result.get("success"), "error": result.get("error")}
@@ -715,7 +623,7 @@ async def switch_context(context_path: str) -> dict[str, Any]:
 
 async def discover_codegraph_contexts(
     max_depth: int = 1,
-) -> list[dict[str, Any]]:
+) -> List[Dict[str, Any]]:
     result = await _run_cgc_async(["discover", "--max-depth", str(max_depth)])
     if result.get("success"):
         data = result.get("data", [])
@@ -723,7 +631,7 @@ async def discover_codegraph_contexts(
     return []
 
 
-async def list_indexed_repositories() -> list[str]:
+async def list_indexed_repositories() -> List[str]:
     result = await _run_cgc_async(["stats"])
     if result.get("success"):
         data = result.get("data", {})
@@ -731,7 +639,7 @@ async def list_indexed_repositories() -> list[str]:
     return []
 
 
-async def load_bundle(bundle_name: str, clear_existing: bool = False) -> dict[str, Any]:
+async def load_bundle(bundle_name: str, clear_existing: bool = False) -> Dict[str, Any]:
     _validate_cgc_arg(bundle_name)
     args = ["load", bundle_name]
     if clear_existing:
@@ -740,7 +648,7 @@ async def load_bundle(bundle_name: str, clear_existing: bool = False) -> dict[st
     return {"success": result.get("success"), "error": result.get("error")}
 
 
-async def search_registry_bundles(query: str) -> list[dict[str, Any]]:
+async def search_registry_bundles(query: str) -> List[Dict[str, Any]]:
     _validate_cgc_arg(query)
     result = await _run_cgc_async(["search", "bundles", query])
     if result.get("success"):
@@ -753,7 +661,7 @@ async def add_package_to_graph(
     package_name: str,
     language: str,
     is_dependency: bool = True,
-) -> dict[str, Any]:
+) -> Dict[str, Any]:
     _validate_cgc_arg(package_name)
     _validate_cgc_arg(language)
     args = ["add", "package", package_name, "--language", language]
@@ -763,7 +671,7 @@ async def add_package_to_graph(
     return {"success": result.get("success"), "error": result.get("error")}
 
 
-class CodeGraphQueryType(StrEnum):
+class CodeGraphQueryType(str, Enum):
     FIND_CALLERS = "find_callers"
     FIND_CALLEES = "find_callees"
     FIND_ALL_CALLERS = "find_all_callers"
@@ -782,16 +690,16 @@ class CodeGraphQueryType(StrEnum):
 class CodeGraphRetriever:
     """Code-specific retriever using CodeGraphContext MCP."""
 
-    def __init__(self, repo_path: str | None = None):
+    def __init__(self, repo_path: Optional[str] = None):
         self.repo_path = repo_path
 
     async def search(
         self,
         query: str,
         limit: int = 10,
-        filters: dict[str, Any] | None = None,
-        method: str | None = None,
-    ) -> dict[str, Any]:
+        filters: Optional[Dict[str, Any]] = None,
+        method: Optional[str] = None,
+    ) -> Dict[str, Any]:
         if not _is_cgc_available():
             return {
                 "source": "code_graph",
@@ -811,15 +719,15 @@ class CodeGraphRetriever:
         self,
         query: str,
         limit: int = 10,
-    ) -> dict[str, Any]:
+    ) -> Dict[str, Any]:
         start = int(time.time() * 1000)
         result = await find_code(query=query)
         took = int(time.time() * 1000) - start
         return {
             "source": "code_graph",
             "query": query,
-            "results": result.get("ranked_results", []),
-            "total": result.get("total_matches", 0),
+            "results": result.get("results", []),
+            "total": result.get("total", 0),
             "took_ms": took,
         }
 
@@ -828,7 +736,7 @@ class CodeGraphRetriever:
         method: str,
         query: str,
         limit: int = 10,
-    ) -> dict[str, Any]:
+    ) -> Dict[str, Any]:
 
         if method == "find_callers":
             func_name = self._extract_function_name(query)
@@ -837,24 +745,25 @@ class CodeGraphRetriever:
             func_name = self._extract_function_name(query)
             return await self.find_callees(func_name, limit)
         elif method == "dead_code":
-            return await find_dead_code(limit=limit)
+            return await self.find_dead_code(limit)
         elif method == "complexity":
             func_name = self._extract_function_name(query)
             return await self.get_complexity(func_name)
         elif method == "class_hierarchy":
             class_name = self._extract_class_name(query)
-            return await self.get_class_hierarchy(class_name)
+            return await self.get_class_hierarchy(class_name, limit)
         elif method == "module_deps":
             module = self._extract_module(query)
             return await self.get_module_deps(module)
         elif method == "call_chain":
             func_name = self._extract_function_name(query)
-            return await self.get_call_chain(func_name)
+            return await self.get_call_chain(func_name, limit)
         else:
             return await self._content_search(query, limit)
 
     def _extract_function_name(self, query: str) -> str:
         import re
+
         match = re.search(r"(?:of|for|to)\s+(\w+)", query, re.IGNORECASE)
         if match:
             return match.group(1)
@@ -867,6 +776,7 @@ class CodeGraphRetriever:
 
     def _extract_class_name(self, query: str) -> str:
         import re
+
         match = re.search(r"(?:class|parent)\s+(\w+)", query, re.IGNORECASE)
         if match:
             return match.group(1)
@@ -874,6 +784,7 @@ class CodeGraphRetriever:
 
     def _extract_module(self, query: str) -> str:
         import re
+
         match = re.search(r"(?:module|import)\s+(\w+)", query, re.IGNORECASE)
         if match:
             return match.group(1)
@@ -883,7 +794,7 @@ class CodeGraphRetriever:
         self,
         function_name: str,
         limit: int = 20,
-    ) -> dict[str, Any]:
+    ) -> Dict[str, Any]:
         """Find functions that call the given function."""
         if not _is_cgc_available():
             return {
@@ -917,7 +828,7 @@ class CodeGraphRetriever:
         self,
         function_name: str,
         limit: int = 20,
-    ) -> dict[str, Any]:
+    ) -> Dict[str, Any]:
         """Find functions called by the given function."""
         if not _is_cgc_available():
             return {
@@ -951,7 +862,7 @@ class CodeGraphRetriever:
         self,
         function_name: str,
         limit: int = 20,
-    ) -> dict[str, Any]:
+    ) -> Dict[str, Any]:
         """Find all callers (transitive) of the given function."""
         if not _is_cgc_available():
             return {
@@ -985,7 +896,7 @@ class CodeGraphRetriever:
         self,
         function_name: str,
         limit: int = 20,
-    ) -> dict[str, Any]:
+    ) -> Dict[str, Any]:
         """Find all callees (transitive) of the given function."""
         if not _is_cgc_available():
             return {
@@ -1019,7 +930,7 @@ class CodeGraphRetriever:
         self,
         module_name: str,
         limit: int = 20,
-    ) -> dict[str, Any]:
+    ) -> Dict[str, Any]:
         """Find files that import the given module."""
         if not _is_cgc_available():
             return {
@@ -1052,7 +963,7 @@ class CodeGraphRetriever:
     async def get_class_hierarchy(
         self,
         class_name: str,
-    ) -> dict[str, Any]:
+    ) -> Dict[str, Any]:
         """Get class hierarchy (parent classes)."""
         if not _is_cgc_available():
             return {
@@ -1083,7 +994,7 @@ class CodeGraphRetriever:
     async def get_overrides(
         self,
         method_name: str,
-    ) -> dict[str, Any]:
+    ) -> Dict[str, Any]:
         """Find methods that override the given method."""
         if not _is_cgc_available():
             return {
@@ -1113,8 +1024,8 @@ class CodeGraphRetriever:
 
     async def get_dead_code(
         self,
-        exclude_decorated_with: list[str] | None = None,
-    ) -> dict[str, Any]:
+        exclude_decorated_with: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
         """Find potentially unused functions."""
         if not _is_cgc_available():
             return {
@@ -1129,8 +1040,7 @@ class CodeGraphRetriever:
         start = int(time.time() * 1000)
 
         result = await find_dead_code(
-            exclude_decorators=exclude_decorated_with,
-            limit=20,
+            exclude_decorators=exclude_decorated_with or [],
         )
 
         took = int(time.time() * 1000) - start
@@ -1146,7 +1056,7 @@ class CodeGraphRetriever:
     async def get_most_complex_functions(
         self,
         limit: int = 20,
-    ) -> dict[str, Any]:
+    ) -> Dict[str, Any]:
         """Get most complex functions by cyclomatic complexity."""
         if not _is_cgc_available():
             return {
@@ -1177,8 +1087,8 @@ class CodeGraphRetriever:
     async def get_complexity(
         self,
         function_name: str,
-        path: str | None = None,
-    ) -> dict[str, Any]:
+        path: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Get cyclomatic complexity of a specific function."""
         if not _is_cgc_available():
             return {
@@ -1205,10 +1115,15 @@ class CodeGraphRetriever:
             "took_ms": took,
         }
 
-    async def watch_directory(self, path: str) -> dict[str, Any]:
+    async def watch_directory(self, path: str) -> Dict[str, Any]:
         """Start watching a directory for live code indexing."""
         if not _is_cgc_available():
-            return {"source": "code_graph", "action": "watch_directory", "watching": False, "error": "CodeGraphContext CLI not installed"}
+            return {
+                "source": "code_graph",
+                "action": "watch_directory",
+                "watching": False,
+                "error": "CodeGraphContext CLI not installed",
+            }
 
         start = int(time.time() * 1000)
         result = await watch_directory(path=path)
@@ -1223,10 +1138,15 @@ class CodeGraphRetriever:
             "took_ms": took,
         }
 
-    async def add_code_to_graph(self, path: str, is_dependency: bool = False) -> dict[str, Any]:
+    async def add_code_to_graph(self, path: str, is_dependency: bool = False) -> Dict[str, Any]:
         """Add code to graph index."""
         if not _is_cgc_available():
-            return {"source": "code_graph", "action": "add_code_to_graph", "indexed": False, "error": "CodeGraphContext CLI not installed"}
+            return {
+                "source": "code_graph",
+                "action": "add_code_to_graph",
+                "indexed": False,
+                "error": "CodeGraphContext CLI not installed",
+            }
 
         start = int(time.time() * 1000)
         result = await add_code_to_graph(path=path, is_dependency=is_dependency)
@@ -1241,13 +1161,18 @@ class CodeGraphRetriever:
             "took_ms": took,
         }
 
-    async def switch_context(self, context_path: str, save: bool = True) -> dict[str, Any]:
+    async def switch_context(self, context_path: str, save: bool = True) -> Dict[str, Any]:
         """Switch to a different repository context."""
         if not _is_cgc_available():
-            return {"source": "code_graph", "action": "switch_context", "switched": False, "error": "CodeGraphContext CLI not installed"}
+            return {
+                "source": "code_graph",
+                "action": "switch_context",
+                "switched": False,
+                "error": "CodeGraphContext CLI not installed",
+            }
 
         start = int(time.time() * 1000)
-        result = await switch_context(context_path)
+        result = await switch_context(context_path=context_path)
         took = int(time.time() * 1000) - start
 
         return {
@@ -1258,10 +1183,15 @@ class CodeGraphRetriever:
             "took_ms": took,
         }
 
-    async def discover_contexts(self, path: str = ".", max_depth: int = 1) -> dict[str, Any]:
+    async def discover_contexts(self, path: str = ".", max_depth: int = 1) -> Dict[str, Any]:
         """Discover indexed code graph contexts in subdirectories."""
         if not _is_cgc_available():
-            return {"source": "code_graph", "action": "discover_contexts", "contexts": [], "error": "CodeGraphContext CLI not installed"}
+            return {
+                "source": "code_graph",
+                "action": "discover_contexts",
+                "contexts": [],
+                "error": "CodeGraphContext CLI not installed",
+            }
 
         start = int(time.time() * 1000)
         result = await discover_codegraph_contexts(max_depth=max_depth)
@@ -1271,14 +1201,19 @@ class CodeGraphRetriever:
             "source": "code_graph",
             "action": "discover_contexts",
             "path": path,
-            "contexts": result,
+            "contexts": result.get("contexts", []),
             "took_ms": took,
         }
 
-    async def list_repositories(self) -> dict[str, Any]:
+    async def list_repositories(self) -> Dict[str, Any]:
         """List all indexed repositories."""
         if not _is_cgc_available():
-            return {"source": "code_graph", "action": "list_repositories", "repositories": [], "error": "CodeGraphContext CLI not installed"}
+            return {
+                "source": "code_graph",
+                "action": "list_repositories",
+                "repositories": [],
+                "error": "CodeGraphContext CLI not installed",
+            }
 
         start = int(time.time() * 1000)
         result = await list_indexed_repositories()
@@ -1287,17 +1222,22 @@ class CodeGraphRetriever:
         return {
             "source": "code_graph",
             "action": "list_repositories",
-            "repositories": result,
+            "repositories": result.get("repositories", []),
             "took_ms": took,
         }
 
-    async def load_bundle(self, bundle_name: str, clear_existing: bool = False) -> dict[str, Any]:
+    async def load_bundle(self, bundle_name: str, clear_existing: bool = False) -> Dict[str, Any]:
         """Load a pre-indexed bundle."""
         if not _is_cgc_available():
-            return {"source": "code_graph", "action": "load_bundle", "loaded": False, "error": "CodeGraphContext CLI not installed"}
+            return {
+                "source": "code_graph",
+                "action": "load_bundle",
+                "loaded": False,
+                "error": "CodeGraphContext CLI not installed",
+            }
 
         start = int(time.time() * 1000)
-        result = await load_bundle(bundle_name, clear_existing)
+        result = await load_bundle(bundle_name=bundle_name, clear_existing=clear_existing)
         took = int(time.time() * 1000) - start
 
         return {
@@ -1308,27 +1248,41 @@ class CodeGraphRetriever:
             "took_ms": took,
         }
 
-    async def search_registry_bundles(self, query: str = "", unique_only: bool = True) -> dict[str, Any]:
+    async def search_registry_bundles(
+        self, query: str = "", unique_only: bool = True
+    ) -> Dict[str, Any]:
         """Search available bundles in the registry."""
         if not _is_cgc_available():
-            return {"source": "code_graph", "action": "search_bundles", "bundles": [], "error": "CodeGraphContext CLI not installed"}
+            return {
+                "source": "code_graph",
+                "action": "search_bundles",
+                "bundles": [],
+                "error": "CodeGraphContext CLI not installed",
+            }
 
         start = int(time.time() * 1000)
-        result = await search_registry_bundles(query)
+        result = await search_registry_bundles(query=query, unique_only=unique_only)
         took = int(time.time() * 1000) - start
 
         return {
             "source": "code_graph",
             "action": "search_bundles",
             "query": query,
-            "bundles": result,
+            "bundles": result.get("bundles", []),
             "took_ms": took,
         }
 
-    async def add_package_to_graph(self, package_name: str, language: str = "python") -> dict[str, Any]:
+    async def add_package_to_graph(
+        self, package_name: str, language: str = "python"
+    ) -> Dict[str, Any]:
         """Add a package to the graph."""
         if not _is_cgc_available():
-            return {"source": "code_graph", "action": "add_package", "added": False, "error": "CodeGraphContext CLI not installed"}
+            return {
+                "source": "code_graph",
+                "action": "add_package",
+                "added": False,
+                "error": "CodeGraphContext CLI not installed",
+            }
 
         start = int(time.time() * 1000)
         result = await add_package_to_graph(package_name=package_name, language=language)
@@ -1344,14 +1298,24 @@ class CodeGraphRetriever:
             "took_ms": took,
         }
 
-    async def execute_cypher(self, cypher_query: str) -> dict[str, Any]:
+    async def execute_cypher(self, cypher_query: str) -> Dict[str, Any]:
         """Execute raw Cypher query against the code graph."""
         if not _is_cgc_available():
-            return {"source": "code_graph", "action": "execute_cypher", "results": [], "error": "CodeGraphContext CLI not installed"}
+            return {
+                "source": "code_graph",
+                "action": "execute_cypher",
+                "results": [],
+                "error": "CodeGraphContext CLI not installed",
+            }
 
         dangerous = ["DELETE", "DROP", "ALTER", "CREATE", "SET", "REMOVE"]
         if any(p in cypher_query.upper() for p in dangerous):
-            return {"source": "code_graph", "action": "execute_cypher", "results": [], "error": "Query contains dangerous operations"}
+            return {
+                "source": "code_graph",
+                "action": "execute_cypher",
+                "results": [],
+                "error": "Query contains dangerous operations",
+            }
 
         start = int(time.time() * 1000)
         result = await execute_cypher_query(cypher_query=cypher_query)
@@ -1365,18 +1329,45 @@ class CodeGraphRetriever:
             "took_ms": took,
         }
 
-    async def visualize(self, cypher_query: str) -> dict[str, Any]:
+    async def visualize(self, cypher_query: str) -> Dict[str, Any]:
         """Generate Mermaid diagram from Cypher query."""
         if not _is_cgc_available():
-            return {"source": "code_graph", "action": "visualize", "url": None, "error": "CodeGraphContext CLI not installed"}
+            return {
+                "source": "code_graph",
+                "action": "visualize",
+                "url": None,
+                "error": "CodeGraphContext CLI not installed",
+            }
 
-        dangerous = ["DELETE", "DROP", "ALTER", "CREATE", "SET", "REMOVE", "FOREACH", "MERGE", "CALL"]
+        dangerous = [
+            "DELETE",
+            "DROP",
+            "ALTER",
+            "CREATE",
+            "SET",
+            "REMOVE",
+            "FOREACH",
+            "MERGE",
+            "CALL",
+        ]
         upper = cypher_query.upper()
         if any(p in upper for p in dangerous):
-            return {"source": "code_graph", "action": "visualize", "query": cypher_query, "url": None, "error": "Query contains write operations"}
+            return {
+                "source": "code_graph",
+                "action": "visualize",
+                "query": cypher_query,
+                "url": None,
+                "error": "Query contains write operations",
+            }
 
         if "MATCH" not in upper and "RETURN" not in upper:
-            return {"source": "code_graph", "action": "visualize", "query": cypher_query, "url": None, "error": "Only MATCH/RETURN queries allowed"}
+            return {
+                "source": "code_graph",
+                "action": "visualize",
+                "query": cypher_query,
+                "url": None,
+                "error": "Only MATCH/RETURN queries allowed",
+            }
 
         start = int(time.time() * 1000)
         result = await visualize_graph_query(cypher_query=cypher_query)
@@ -1391,10 +1382,15 @@ class CodeGraphRetriever:
             "took_ms": took,
         }
 
-    async def get_module_deps(self, module_name: str) -> dict[str, Any]:
+    async def get_module_deps(self, module_name: str) -> Dict[str, Any]:
         """Get module dependencies for a given module."""
         if not _is_cgc_available():
-            return {"source": "code_graph", "query": f"module_deps:{module_name}", "dependencies": [], "error": "CodeGraphContext CLI not installed"}
+            return {
+                "source": "code_graph",
+                "query": f"module_deps:{module_name}",
+                "dependencies": [],
+                "error": "CodeGraphContext CLI not installed",
+            }
 
         start = int(time.time() * 1000)
         result = await analyze_code_relationships(
@@ -1411,10 +1407,15 @@ class CodeGraphRetriever:
             "took_ms": took,
         }
 
-    async def get_call_chain(self, function_name: str) -> dict[str, Any]:
+    async def get_call_chain(self, function_name: str) -> Dict[str, Any]:
         """Get full call chain for a function."""
         if not _is_cgc_available():
-            return {"source": "code_graph", "query": f"call_chain:{function_name}", "chain": [], "error": "CodeGraphContext CLI not installed"}
+            return {
+                "source": "code_graph",
+                "query": f"call_chain:{function_name}",
+                "chain": [],
+                "error": "CodeGraphContext CLI not installed",
+            }
 
         start = int(time.time() * 1000)
         result = await analyze_code_relationships(
@@ -1436,7 +1437,7 @@ class CodeGraphRetriever:
         query_type: str,
         target: str,
         limit: int = 20,
-    ) -> dict[str, Any]:
+    ) -> Dict[str, Any]:
         """Execute any CodeGraphContext query by type."""
         query_map = {
             CodeGraphQueryType.FIND_CALLERS.value: self.find_callers,
@@ -1447,12 +1448,8 @@ class CodeGraphRetriever:
             CodeGraphQueryType.CLASS_HIERARCHY.value: self.get_class_hierarchy,
             CodeGraphQueryType.OVERRIDES.value: self.get_overrides,
             CodeGraphQueryType.DEAD_CODE.value: lambda: self.get_dead_code(),
-            CodeGraphQueryType.COMPLEXITY.value: lambda: (
-                self.get_most_complex_functions(limit)
-            ),
-            CodeGraphQueryType.FIND_DEFINITION.value: lambda: self.search(
-                target, limit
-            ),
+            CodeGraphQueryType.COMPLEXITY.value: lambda: self.get_most_complex_functions(limit),
+            CodeGraphQueryType.FIND_DEFINITION.value: lambda: self.search(target, limit),
             CodeGraphQueryType.MODULE_DEPS.value: self.get_module_deps,
             CodeGraphQueryType.CALL_CHAIN.value: self.get_call_chain,
         }
@@ -1463,16 +1460,11 @@ class CodeGraphRetriever:
         return await self.search(target, limit)
 
 
-_code_graph_retriever: CodeGraphRetriever | None = None
+_code_graph_retriever: Optional[CodeGraphRetriever] = None
 
 
-def get_code_graph_retriever(repo_path: str | None = None) -> CodeGraphRetriever:
+def get_code_graph_retriever(repo_path: Optional[str] = None) -> CodeGraphRetriever:
     global _code_graph_retriever
     if _code_graph_retriever is None:
         _code_graph_retriever = CodeGraphRetriever(repo_path=repo_path)
     return _code_graph_retriever
-
-
-from retrieval.registry import get_registry
-registry = get_registry()
-registry.register("code_graph", get_code_graph_retriever, "retrieval.code_graph")

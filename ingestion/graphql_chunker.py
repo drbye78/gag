@@ -1,7 +1,7 @@
-import re
 import hashlib
-from typing import Any, Dict, List
+import re
 from dataclasses import dataclass
+from typing import List
 
 from ingestion.chunker import Chunk, ChunkResult, TextChunker
 
@@ -20,6 +20,7 @@ class GraphQLChunker(TextChunker):
 
     def chunk(self, text: str, source_id: str) -> ChunkResult:
         import time
+
         start = time.time()
 
         definitions = self._parse_graphql(text)
@@ -27,14 +28,16 @@ class GraphQLChunker(TextChunker):
 
         for idx, defn in enumerate(definitions):
             chunk_id = self._make_chunk_id(source_id, idx)
-            chunks.append(Chunk(
-                id=chunk_id,
-                content=defn.content,
-                chunk_index=idx,
-                start_char=0,
-                end_char=0,
-                metadata={"kind": defn.kind, "name": defn.name, "fields": defn.fields},
-            ))
+            chunks.append(
+                Chunk(
+                    id=chunk_id,
+                    content=defn.content,
+                    chunk_index=idx,
+                    start_char=0,
+                    end_char=0,
+                    metadata={"kind": defn.kind, "name": defn.name, "fields": defn.fields},
+                )
+            )
 
         taken = int((time.time() - start) * 1000)
         return ChunkResult(
@@ -52,30 +55,48 @@ class GraphQLChunker(TextChunker):
         for match in re.finditer(type_pattern, content, re.MULTILINE):
             name = match.group(1)
             fields = self._extract_fields(match.group(2))
-            definitions.append(GraphQLDefinition(
-                kind="type",
-                name=name,
-                content=match.group(0),
-                fields=fields,
-            ))
+            definitions.append(
+                GraphQLDefinition(
+                    kind="type",
+                    name=name,
+                    content=match.group(0),
+                    fields=fields,
+                )
+            )
 
         op_pattern = r"(?:query|mutation|subscription)\s*(?:\w+)?\s*(?:\([^)]*\))?\s*\{([^}]+)\}"
         for match in re.finditer(op_pattern, content):
-            definitions.append(GraphQLDefinition(
-                kind="operation",
-                name="anonymous",
-                content=match.group(0),
-                fields=[],
-            ))
+            definitions.append(
+                GraphQLDefinition(
+                    kind="operation",
+                    name="anonymous",
+                    content=match.group(0),
+                    fields=[],
+                )
+            )
 
         schema_pattern = r"schema\s*\{([^}]+)\}"
         for match in re.finditer(schema_pattern, content):
-            definitions.append(GraphQLDefinition(
-                kind="schema",
-                name="schema",
-                content=match.group(0),
-                fields=[],
-            ))
+            definitions.append(
+                GraphQLDefinition(
+                    kind="schema",
+                    name="schema",
+                    content=match.group(0),
+                    fields=[],
+                )
+            )
+
+        # Handle directive definitions (e.g., @deprecated, @auth)
+        directive_pattern = r"directive\s+@(\w+)(?:\s*\([^)]*\))?\s+on\s+([^\n]+)"
+        for match in re.finditer(directive_pattern, content):
+            definitions.append(
+                GraphQLDefinition(
+                    kind="directive",
+                    name=match.group(1),
+                    content=match.group(0),
+                    fields=[loc.strip() for loc in match.group(2).split("|")],
+                )
+            )
 
         return definitions
 

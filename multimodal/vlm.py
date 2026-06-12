@@ -13,11 +13,12 @@ Advanced capabilities per provider:
 - Structured output (all, provider-dependent)
 - Thinking mode (OpenRouter/Gemma 4)
 """
-import os
+
 import json
 import logging
+import os
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Callable
+from typing import Any, Dict, List, Optional
 
 import httpx
 
@@ -30,9 +31,10 @@ logger = logging.getLogger(__name__)
 # Prompt Templates (per-VLM optimized)
 # =============================================================================
 
+
 class VLMPrompts:
     """Curated prompts optimized for different VLM providers and tasks."""
-    
+
     # -------------------------------------------------------------------------
     # Image Analysis Prompts
     # -------------------------------------------------------------------------
@@ -65,7 +67,7 @@ class VLMPrompts:
             "5. Output your findings in clear, structured format"
         ),
     }
-    
+
     # -------------------------------------------------------------------------
     # Text Extraction Prompts
     # -------------------------------------------------------------------------
@@ -74,7 +76,7 @@ class VLMPrompts:
         "openai": "Extract all readable text from this image. Preserve the original spelling and formatting.",
         "openrouter": "Extract ALL text from this image with perfect accuracy. Include every word, number, and symbol. Preserve formatting.",
     }
-    
+
     # -------------------------------------------------------------------------
     # Diagram Extraction Prompts
     # -------------------------------------------------------------------------
@@ -103,7 +105,7 @@ class VLMPrompts:
             "Be precise. Use consistent IDs. Include all visible connections."
         ),
     }
-    
+
     # -------------------------------------------------------------------------
     # UI Element Extraction Prompts
     # -------------------------------------------------------------------------
@@ -126,15 +128,12 @@ class VLMPrompts:
             '"function": "what it does", "state": "default|active|disabled"}'
         ),
     }
-    
+
     # -------------------------------------------------------------------------
     # Structured Output Prompts (for JSON schema enforcement)
     # -------------------------------------------------------------------------
     STRUCTURED_OUTPUT = {
-        "qwen": (
-            "按以下JSON Schema生成准确输出：\n{schema}\n\n"
-            "只返回有效的JSON，不要其他解释。"
-        ),
+        "qwen": ("按以下JSON Schema生成准确输出：\n{schema}\n\n只返回有效的JSON，不要其他解释。"),
         "openai": (
             "Output valid JSON conforming to this schema:\n{schema}\n\n"
             "Respond with ONLY valid JSON, no additional text."
@@ -144,7 +143,7 @@ class VLMPrompts:
             "Your response will be parsed directly - no wrapper text, no markdown."
         ),
     }
-    
+
     # -------------------------------------------------------------------------
     # Video Analysis Prompts (OpenRouter only)
     # -------------------------------------------------------------------------
@@ -158,7 +157,7 @@ class VLMPrompts:
             "帧率：1fps抽样"
         ),
     }
-    
+
     # -------------------------------------------------------------------------
     # Thinking Mode Prompts (for models that support it)
     # -------------------------------------------------------------------------
@@ -168,7 +167,7 @@ class VLMPrompts:
             "Consider multiple perspectives before finalizing your response."
         ),
     }
-    
+
     @classmethod
     def get(cls, task: str, provider: str) -> str:
         """Get prompt for task/provider combination."""
@@ -180,52 +179,49 @@ class VLMPrompts:
 # VLM Provider Interface (Extended)
 # =============================================================================
 
+
 class VLMProvider(ABC):
     """Abstract base for VLM providers."""
-    
+
     # Provider capabilities (override in subclasses)
     supports_video: bool = False
     supports_function_calling: bool = False
     supports_structured_output: bool = False
     supports_thinking: bool = False
-    
+
     @abstractmethod
     async def analyze_image(self, image_url: str, prompt: str) -> Dict[str, Any]:
         """Analyze an image with a custom prompt."""
         ...
-    
+
     @abstractmethod
     async def extract_text(self, image_url: str) -> str:
         """Extract all text from an image."""
         ...
-    
+
     async def analyze_diagram(self, image_url: str) -> Dict[str, Any]:
         """Extract structured diagram information."""
         prompt = VLMPrompts.get("DIAGRAM_EXTRACTION", self.provider_name)
         return await self.analyze_image(image_url, prompt)
-    
+
     async def analyze_ui(self, image_url: str) -> Dict[str, Any]:
         """Extract UI elements from screenshot."""
         prompt = VLMPrompts.get("UI_EXTRACTION", self.provider_name)
         return await self.analyze_image(image_url, prompt)
-    
+
     async def analyze_video(self, video_url: str) -> Dict[str, Any]:
         """Analyze a video (if supported)."""
         if not self.supports_video:
             return {"error": f"Video analysis not supported by {self.provider_name}"}
         return {"error": "Not implemented"}
-    
-    async def call_function(
-        self, prompt: str, functions: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+
+    async def call_function(self, prompt: str, functions: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Use function calling (if supported)."""
         if not self.supports_function_calling:
             return {"error": f"Function calling not supported by {self.provider_name}"}
         return {"error": "Not implemented"}
-    
-    async def generate_structured(
-        self, prompt: str, schema: Dict[str, Any]
-    ) -> Dict[str, Any]:
+
+    async def generate_structured(self, prompt: str, schema: Dict[str, Any]) -> Dict[str, Any]:
         """Generate JSON conforming to a schema."""
         if not self.supports_structured_output:
             # Fall back to prompt-based extraction
@@ -234,10 +230,8 @@ class VLMProvider(ABC):
             result = await self.analyze_image("", full_prompt)
             return self._parse_structured(result, schema)
         return {"error": "Not implemented"}
-    
-    def _parse_structured(
-        self, result: Dict[str, Any], schema: Dict[str, Any]
-    ) -> Dict[str, Any]:
+
+    def _parse_structured(self, result: Dict[str, Any], schema: Dict[str, Any]) -> Dict[str, Any]:
         """Parse result into structured format."""
         text = result.get("output", {}).get("text", "")
         try:
@@ -246,14 +240,15 @@ class VLMProvider(ABC):
         except json.JSONDecodeError:
             # Try to extract JSON from text
             import re
-            match = re.search(r'\{.*\}', text, re.DOTALL)
+
+            match = re.search(r"\{.*\}", text, re.DOTALL)
             if match:
                 try:
                     return json.loads(match.group())
                 except json.JSONDecodeError:
                     pass
             return {"raw": text, "error": "Failed to parse structured output"}
-    
+
     @property
     def provider_name(self) -> str:
         """Provider identifier for prompt selection."""
@@ -264,14 +259,15 @@ class VLMProvider(ABC):
 # Qwen VL Provider
 # =============================================================================
 
+
 class QwenVLProvider(VLMProvider):
     """Alibaba Qwen Vision model via DashScope."""
-    
+
     supports_video = False
     supports_function_calling = False
     supports_structured_output = False
     supports_thinking = False
-    
+
     def __init__(
         self,
         api_key: Optional[str] = None,
@@ -280,11 +276,11 @@ class QwenVLProvider(VLMProvider):
         self.api_key = api_key or os.getenv("QWEN_API_KEY", "")
         self.model = model
         self.base_url = "https://dashscope.aliyuncs.com/api/v1/services/multimodal"
-    
+
     @property
     def provider_name(self) -> str:
         return "qwen"
-    
+
     async def analyze_image(self, image_url: str, prompt: str) -> Dict[str, Any]:
         try:
             async with httpx.AsyncClient() as client:
@@ -305,7 +301,7 @@ class QwenVLProvider(VLMProvider):
         except Exception as e:
             logger.warning("Error analyzing image with Qwen: %s", e)
             return {"error": "Failed to analyze image"}
-    
+
     async def extract_text(self, image_url: str) -> str:
         prompt = VLMPrompts.get("TEXT_EXTRACTION", self.provider_name)
         result = await self.analyze_image(image_url, prompt)
@@ -316,14 +312,15 @@ class QwenVLProvider(VLMProvider):
 # OpenAI Vision Provider
 # =============================================================================
 
+
 class OpenAIVisionProvider(VLMProvider):
     """OpenAI GPT-4V via OpenAI API."""
-    
+
     supports_video = False
     supports_function_calling = False
     supports_structured_output = True  # Supports response_format
     supports_thinking = False
-    
+
     def __init__(
         self,
         api_key: Optional[str] = None,
@@ -331,11 +328,11 @@ class OpenAIVisionProvider(VLMProvider):
     ):
         self.api_key = api_key or os.getenv("OPENAI_API_KEY", "")
         self.model = model
-    
+
     @property
     def provider_name(self) -> str:
         return "openai"
-    
+
     async def analyze_image(self, image_url: str, prompt: str) -> Dict[str, Any]:
         try:
             async with httpx.AsyncClient() as client:
@@ -361,24 +358,18 @@ class OpenAIVisionProvider(VLMProvider):
                 )
                 resp.raise_for_status()
                 data = resp.json()
-                content = (
-                    data.get("choices", [{}])[0]
-                    .get("message", {})
-                    .get("content", "")
-                )
+                content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
                 return {"output": {"text": content}}
         except Exception as e:
             logger.warning("Error analyzing image with OpenAI: %s", e)
             return {"error": "Failed to analyze image"}
-    
+
     async def extract_text(self, image_url: str) -> str:
         prompt = VLMPrompts.get("TEXT_EXTRACTION", self.provider_name)
         result = await self.analyze_image(image_url, prompt)
         return result.get("output", {}).get("text", "")
-    
-    async def generate_structured(
-        self, prompt: str, schema: Dict[str, Any]
-    ) -> Dict[str, Any]:
+
+    async def generate_structured(self, prompt: str, schema: Dict[str, Any]) -> Dict[str, Any]:
         """Generate JSON with OpenAI's response_format parameter."""
         try:
             async with httpx.AsyncClient() as client:
@@ -394,11 +385,7 @@ class OpenAIVisionProvider(VLMProvider):
                 )
                 resp.raise_for_status()
                 data = resp.json()
-                content = (
-                    data.get("choices", [{}])[0]
-                    .get("message", {})
-                    .get("content", "")
-                )
+                content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
                 return {"output": {"text": content}}
         except Exception as e:
             logger.warning("Error with structured output: %s", e)
@@ -409,27 +396,28 @@ class OpenAIVisionProvider(VLMProvider):
 # OpenRouter VLM Provider (Gemma 4 + others)
 # =============================================================================
 
+
 class OpenRouterVLMProvider(VLMProvider):
     """OpenRouter-hosted models including Google Gemma 4.
-    
+
     Supports:
     - Text + images (all models)
     - Video input (models that support it)
     - Function calling (when available)
     - Structured output (via schema prompt)
     - Thinking mode (when enabled)
-    
+
     Models via OpenRouter:
     - google/gemma-4-31b-it:free: Text, images, video (60s), function calling, structured output, thinking
     - google/gemma-3-it: Text, images, video
     - Other multimodal models
     """
-    
+
     supports_video = True
     supports_function_calling = True
     supports_structured_output = True
     supports_thinking = True
-    
+
     def __init__(
         self,
         api_key: Optional[str] = None,
@@ -439,11 +427,11 @@ class OpenRouterVLMProvider(VLMProvider):
         self.api_key = api_key or settings.llm_api_key or os.getenv("OPENROUTER_API_KEY", "")
         self.model = model
         self.base_url = "https://openrouter.ai/api/v1"
-    
+
     @property
     def provider_name(self) -> str:
         return "openrouter"
-    
+
     async def analyze_image(self, image_url: str, prompt: str) -> Dict[str, Any]:
         """Analyze image using OpenRouter API."""
         try:
@@ -473,27 +461,23 @@ class OpenRouterVLMProvider(VLMProvider):
                 )
                 resp.raise_for_status()
                 data = resp.json()
-                content = (
-                    data.get("choices", [{}])[0]
-                    .get("message", {})
-                    .get("content", "")
-                )
+                content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
                 return {"output": {"text": content}}
         except Exception as e:
             logger.warning("Error analyzing image with OpenRouter: %s", e)
             return {"error": f"Failed to analyze image: {e}"}
-    
+
     async def extract_text(self, image_url: str) -> str:
         """Extract text with high accuracy prompt."""
         prompt = VLMPrompts.get("TEXT_EXTRACTION", self.provider_name)
         result = await self.analyze_image(image_url, prompt)
         return result.get("output", {}).get("text", "")
-    
+
     async def analyze_video(self, video_url: str) -> Dict[str, Any]:
         """Analyze video frame-by-frame."""
         if not self.supports_video:
             return {"error": f"Video not supported by {self.model}"}
-        
+
         prompt = VLMPrompts.get("VIDEO_ANALYSIS", self.provider_name)
         try:
             async with httpx.AsyncClient() as client:
@@ -522,23 +506,17 @@ class OpenRouterVLMProvider(VLMProvider):
                 )
                 resp.raise_for_status()
                 data = resp.json()
-                content = (
-                    data.get("choices", [{}])[0]
-                    .get("message", {})
-                    .get("content", "")
-                )
+                content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
                 return {"output": {"text": content}}
         except Exception as e:
             logger.warning("Error analyzing video with OpenRouter: %s", e)
             return {"error": f"Failed to analyze video: {e}"}
-    
-    async def call_function(
-        self, prompt: str, functions: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+
+    async def call_function(self, prompt: str, functions: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Use function calling with OpenRouter."""
         if not self.supports_function_calling:
             return {"error": f"Function calling not supported by {self.model}"}
-        
+
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.post(
@@ -559,16 +537,12 @@ class OpenRouterVLMProvider(VLMProvider):
         except Exception as e:
             logger.warning("Error with function calling: %s", e)
             return {"error": f"Function call failed: {e}"}
-    
-    async def generate_structured(
-        self, prompt: str, schema: Dict[str, Any]
-    ) -> Dict[str, Any]:
+
+    async def generate_structured(self, prompt: str, schema: Dict[str, Any]) -> Dict[str, Any]:
         """Generate structured JSON using schema prompt."""
-        schema_prompt = VLMPrompts.STRUCTURED_OUTPUT["openrouter"].format(
-            schema=json.dumps(schema)
-        )
+        schema_prompt = VLMPrompts.STRUCTURED_OUTPUT["openrouter"].format(schema=json.dumps(schema))
         full_prompt = f"{prompt}\n\n{schema_prompt}"
-        
+
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.post(
@@ -585,24 +559,18 @@ class OpenRouterVLMProvider(VLMProvider):
                 )
                 resp.raise_for_status()
                 data = resp.json()
-                content = (
-                    data.get("choices", [{}])[0]
-                    .get("message", {})
-                    .get("content", "")
-                )
+                content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
                 # Parse JSON from response
                 return self._parse_structured({"output": {"text": content}}, schema)
         except Exception as e:
             logger.warning("Error with structured output: %s", e)
             return {"error": f"Structured output failed: {e}"}
-    
-    async def analyze_with_thinking(
-        self, image_url: str, prompt: str
-    ) -> Dict[str, Any]:
+
+    async def analyze_with_thinking(self, image_url: str, prompt: str) -> Dict[str, Any]:
         """Analyze with thinking/reasoning enabled."""
         if not self.supports_thinking:
             return await self.analyze_image(image_url, prompt)
-        
+
         thinking_prompt = f"{prompt}\n\n{VLMPrompts.THINKING_MODE['openrouter']}"
         return await self.analyze_image(image_url, thinking_prompt)
 
@@ -611,16 +579,42 @@ class OpenRouterVLMProvider(VLMProvider):
 # VLM Processor (Router)
 # =============================================================================
 
+
 class VLMProcessor:
     """Routes to appropriate VLM provider."""
-    
+
+    # Maximum image size in bytes (10 MB)
+    MAX_IMAGE_SIZE = 10 * 1024 * 1024
+
+    # Supported image formats by file extension and magic bytes
+    SUPPORTED_EXTENSIONS = frozenset(
+        {
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".gif",
+            ".bmp",
+            ".webp",
+            ".tiff",
+            ".tif",
+            ".svg",
+        }
+    )
+    MAGIC_BYTES = {
+        b"\xff\xd8\xff": "jpeg",
+        b"\x89PNG": "png",
+        b"GIF8": "gif",
+        b"BM": "bmp",
+        b"RIFF": "webp",  # WebP starts with RIFF
+    }
+
     def __init__(self, provider: Optional[VLMProvider] = None):
         self.provider = provider or self._create_provider()
-    
+
     @staticmethod
     def _create_provider() -> VLMProvider:
         provider_type = os.getenv("VLM_PROVIDER", "").lower()
-        
+
         if provider_type == "qwen":
             return QwenVLProvider()
         elif provider_type == "openai":
@@ -633,62 +627,99 @@ class VLMProcessor:
         else:
             # Default to OpenRouter with Gemma 4
             return OpenRouterVLMProvider()
-    
+
     @property
     def provider_name(self) -> str:
         return self.provider.provider_name
-    
+
     @property
     def supports_video(self) -> bool:
         return self.provider.supports_video
-    
+
     @property
     def supports_function_calling(self) -> bool:
         return self.provider.supports_function_calling
-    
+
     @property
     def supports_structured_output(self) -> bool:
         return self.provider.supports_structured_output
-    
+
     @property
     def supports_thinking(self) -> bool:
         return self.provider.supports_thinking
-    
+
     async def analyze_image(self, image_url: str, prompt: str) -> Dict[str, Any]:
+        self._validate_image_format(image_url)
         return await self.provider.analyze_image(image_url, prompt)
-    
+
     async def extract_text(self, image_url: str) -> str:
+        self._validate_image_format(image_url)
         return await self.provider.extract_text(image_url)
-    
+
     async def analyze_diagram(self, image_url: str) -> Dict[str, Any]:
+        self._validate_image_format(image_url)
         return await self.provider.analyze_diagram(image_url)
-    
+
     async def analyze_ui(self, image_url: str) -> Dict[str, Any]:
+        self._validate_image_format(image_url)
         return await self.provider.analyze_ui(image_url)
-    
+
     async def analyze_video(self, video_url: str) -> Dict[str, Any]:
         return await self.provider.analyze_video(video_url)
-    
-    async def call_function(
-        self, prompt: str, functions: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+
+    async def call_function(self, prompt: str, functions: List[Dict[str, Any]]) -> Dict[str, Any]:
         return await self.provider.call_function(prompt, functions)
-    
-    async def generate_structured(
-        self, prompt: str, schema: Dict[str, Any]
-    ) -> Dict[str, Any]:
+
+    async def generate_structured(self, prompt: str, schema: Dict[str, Any]) -> Dict[str, Any]:
         return await self.provider.generate_structured(prompt, schema)
-    
-    async def extract_for_ir(
-        self, image_url: str, title: Optional[str] = None
-    ) -> Dict[str, Any]:
+
+    async def extract_for_ir(self, image_url: str, title: Optional[str] = None) -> Dict[str, Any]:
+        self._validate_image_format(image_url)
         text = await self.provider.extract_text(image_url)
         return {"content": text, "title": title, "type": "image_extraction"}
+
+    def _validate_image_format(self, image_url: str) -> None:
+        """Validate image format by checking file extension or URL path.
+
+        Raises ValueError if the format is not supported or size exceeds limit.
+        Data URIs (base64-encoded) are always allowed, but their size is checked.
+        """
+        if not image_url:
+            return
+
+        # Allow data URIs (base64-encoded images), but check size
+        if image_url.startswith("data:"):
+            # Estimate size from base64 payload (base64 is ~4/3 of raw size)
+            try:
+                # data:image/png;base64,<payload>
+                b64_part = image_url.split(",", 1)[1] if "," in image_url else ""
+                estimated_size = len(b64_part) * 3 // 4
+                if estimated_size > self.MAX_IMAGE_SIZE:
+                    raise ValueError(
+                        f"Image size ({estimated_size} bytes) exceeds maximum "
+                        f"allowed size ({self.MAX_IMAGE_SIZE} bytes)"
+                    )
+            except (IndexError, ValueError):
+                pass
+            return
+
+        # Check file extension from URL path
+        import os as _os
+
+        path = image_url.split("?")[0].split("#")[0]  # strip query/fragment
+        _, ext = _os.path.splitext(path.lower())
+        if ext and ext not in self.SUPPORTED_EXTENSIONS:
+            logger.warning(
+                "Image format '%s' may not be supported. Supported formats: %s",
+                ext,
+                sorted(self.SUPPORTED_EXTENSIONS),
+            )
 
 
 # =============================================================================
 # Factory Function
 # =============================================================================
+
 
 def get_vlm_processor() -> VLMProcessor:
     """Get configured VLM processor."""

@@ -1,6 +1,4 @@
-from typing import Any, Callable, Dict, Optional, Type, Union
-
-from unified_ingestion.handlers.base import Handler
+from typing import Any, Dict, Optional
 
 
 class HandlerRegistry:

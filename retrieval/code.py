@@ -5,15 +5,35 @@ Queries code entities from Qdrant with language filtering.
 """
 
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import httpx
 
 
 class CodeRetriever:
-    def __init__(
-        self, host: Optional[str] = None, port: int = 6333, collection: str = "code"
-    ):
+    # Common programming language identifiers for filtering
+    SUPPORTED_LANGUAGES = {
+        "python",
+        "javascript",
+        "typescript",
+        "java",
+        "go",
+        "rust",
+        "c",
+        "cpp",
+        "csharp",
+        "ruby",
+        "php",
+        "swift",
+        "kotlin",
+        "scala",
+        "shell",
+        "sql",
+        "html",
+        "css",
+    }
+
+    def __init__(self, host: Optional[str] = None, port: int = 6333, collection: str = "code"):
         self.host = host or "localhost"
         self.port = port
         self.collection = collection
@@ -29,12 +49,18 @@ class CodeRetriever:
         start = int(time.time() * 1000)
 
         from llm.router import get_router
+
         router = get_router()
         embedding = await router.embed(query)
         payload = {"vector": embedding, "limit": limit, "filter": filters or {}}
 
         if language:
-            payload["filter"]["language"] = {"eq": language}
+            normalized_lang = language.lower().strip()
+            if normalized_lang in self.SUPPORTED_LANGUAGES:
+                payload["filter"]["language"] = {"eq": normalized_lang}
+            else:
+                # Still apply the filter even if not in known set
+                payload["filter"]["language"] = {"eq": normalized_lang}
 
         try:
             async with httpx.AsyncClient() as client:
@@ -61,8 +87,3 @@ class CodeRetriever:
 
 def get_code_retriever() -> CodeRetriever:
     return CodeRetriever()
-
-
-from retrieval.registry import get_registry
-registry = get_registry()
-registry.register("code", get_code_retriever, "retrieval.code")

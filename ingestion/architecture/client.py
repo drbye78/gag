@@ -129,6 +129,7 @@ class ArchitectureClient:
         self,
         directory: str,
     ) -> List[ArchitectureDiagram]:
+        import asyncio
         import glob
 
         if not directory:
@@ -143,8 +144,11 @@ class ArchitectureClient:
         diagrams = []
         for pattern in patterns:
             for filepath in glob.glob(pattern, recursive=True):
-                with open(filepath, "r", errors="ignore") as f:
-                    content = f.read()
+                try:
+                    loop = asyncio.get_event_loop()
+                    content = await loop.run_in_executor(None, self._read_file_sync, filepath)
+                except Exception:
+                    continue
 
                 diagrams.append(
                     ArchitectureDiagram(
@@ -158,6 +162,11 @@ class ArchitectureClient:
                 )
 
         return diagrams
+
+    @staticmethod
+    def _read_file_sync(filepath: str) -> str:
+        with open(filepath, "r", errors="ignore") as f:
+            return f.read()
 
     async def parse_architecture(
         self,

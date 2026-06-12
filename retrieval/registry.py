@@ -130,10 +130,12 @@ def register_retriever(
         def get_docs_retriever():
             return DocsRetriever()
     """
+
     def decorator(factory: Callable[[], Any]) -> Callable[[], Any]:
         registry = get_registry()
         registry.register(name, factory, module_path)
         return factory
+
     return decorator
 
 
@@ -141,8 +143,6 @@ def register_retriever(
 def _load_all_retrievers() -> None:
     """Load all retriever modules to trigger their self-registration."""
     # Core retrievers - always available
-    from retrieval import docs, code, graph, code_graph, ticket, telemetry
-    from retrieval import knowledge
 
     # Optional retrievers - may fail on import due to missing deps
     try:

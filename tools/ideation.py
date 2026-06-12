@@ -1,9 +1,9 @@
 import logging
-from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
+from core.middleware import sanitize_prompt_input
 from tools.base import BaseTool, ToolInput, ToolOutput
 
 logger = logging.getLogger(__name__)
@@ -54,7 +54,7 @@ class IdeaGeneratorTool(BaseTool):
                     "generated_ideas": [idea.model_dump() for idea in ideas],
                     "count": len(ideas),
                 },
-                metadata={"generated": True, "method": "llm"}
+                metadata={"generated": True, "method": "llm"},
             )
         except Exception as e:
             logger.warning(f"LLM generation failed, falling back to KB: {e}")
@@ -65,22 +65,25 @@ class IdeaGeneratorTool(BaseTool):
                     "generated_ideas": ideas,
                     "count": len(ideas),
                 },
-                metadata={"generated": True, "method": "fallback", "error": str(e)}
+                metadata={"generated": True, "method": "fallback", "error": str(e)},
             )
 
     async def _generate_ideas_llm(
-        self,
-        domain: str,
-        constraints: List[str],
-        existing: List[str]
+        self, domain: str, constraints: List[str], existing: List[str]
     ) -> List[GeneratedIdea]:
         try:
             from llm.router import get_router
+
             router = get_router()
 
-            prompt = f"""Generate 5 innovative project ideas for a {domain} system.
-Constraints: {', '.join(constraints) if constraints else 'none'}
-Existing ideas to avoid: {', '.join(existing) if existing else 'none'}
+            # Sanitize user inputs before passing to LLM
+            safe_domain = sanitize_prompt_input(domain)
+            safe_constraints = [sanitize_prompt_input(c) for c in constraints]
+            safe_existing = [sanitize_prompt_input(e) for e in existing]
+
+            prompt = f"""Generate 5 innovative project ideas for a {safe_domain} system.
+Constraints: {", ".join(safe_constraints) if safe_constraints else "none"}
+Existing ideas to avoid: {", ".join(safe_existing) if safe_existing else "none"}
 
 For each idea provide a JSON object with:
 - name: Creative name (max 50 chars)
@@ -92,16 +95,13 @@ For each idea provide a JSON object with:
 
 Respond ONLY with a JSON array of 5 ideas, no other text."""
 
-            response = await router.chat(
-                prompt=prompt,
-                temperature=0.8,
-                max_tokens=2000
-            )
+            response = await router.chat(prompt=prompt, temperature=0.8, max_tokens=2000)
 
             content = response.choices[0]["message"]["content"]
             import json
+
             ideas_data = json.loads(content)
-            
+
             return [GeneratedIdea(**idea) for idea in ideas_data[:5]]
 
         except Exception as e:
@@ -109,48 +109,51 @@ Respond ONLY with a JSON array of 5 ideas, no other text."""
             raise
 
     async def _generate_ideas_fallback(
-        self,
-        domain: str,
-        constraints: List[str],
-        existing: List[str]
+        self, domain: str, constraints: List[str], existing: List[str]
     ) -> List[Dict[str, Any]]:
         try:
-            from core.knowledge.usecases import get_use_case_repository
             from core.knowledge.reference import get_reference_architecture_repository
+            from core.knowledge.usecases import get_use_case_repository
 
             uc_repo = get_use_case_repository()
             ref_repo = get_reference_architecture_repository()
 
             relevant_uc = [
-                uc for uc in uc_repo.list_all()
+                uc
+                for uc in uc_repo.list_all()
                 if domain.lower() in uc.name.lower() or domain.lower() in uc.description.lower()
             ]
 
             relevant_refs = [
-                ref for ref in ref_repo.list_all()
+                ref
+                for ref in ref_repo.list_all()
                 if not constraints or any(p in ref.platforms for p in constraints)
             ]
 
             ideas = []
             for ref in relevant_refs[:3]:
-                ideas.append({
-                    "name": f"{ref.name} for {domain}",
-                    "description": ref.description,
-                    "platforms": ref.platforms,
-                    "technologies": ref.components,
-                    "risk_level": "medium",
-                    "effort_estimate": "M",
-                })
+                ideas.append(
+                    {
+                        "name": f"{ref.name} for {domain}",
+                        "description": ref.description,
+                        "platforms": ref.platforms,
+                        "technologies": ref.components,
+                        "risk_level": "medium",
+                        "effort_estimate": "M",
+                    }
+                )
 
             for uc in relevant_uc[:2]:
-                ideas.append({
-                    "name": uc.name,
-                    "description": uc.description,
-                    "platforms": uc.platforms,
-                    "technologies": uc.technologies,
-                    "risk_level": uc.risk_level or "medium",
-                    "effort_estimate": uc.effort_estimate or "M",
-                })
+                ideas.append(
+                    {
+                        "name": uc.name,
+                        "description": uc.description,
+                        "platforms": uc.platforms,
+                        "technologies": uc.technologies,
+                        "risk_level": uc.risk_level or "medium",
+                        "effort_estimate": uc.effort_estimate or "M",
+                    }
+                )
 
             return ideas[:5]
 
@@ -186,21 +189,23 @@ class BrainstormTool(BaseTool):
                 "expanded_ideas": expanded,
                 "count": len(expanded),
             },
-            metadata={"brainstormed": True, "method": method}
+            metadata={"brainstormed": True, "method": method},
         )
 
     async def _expand_ideas_llm(
-        self,
-        seeds: List[str],
-        focus_areas: List[str],
-        count: int
+        self, seeds: List[str], focus_areas: List[str], count: int
     ) -> List[Dict[str, Any]]:
         from llm.router import get_router
+
         router = get_router()
 
+        # Sanitize user inputs before passing to LLM
+        safe_seeds = [sanitize_prompt_input(s) for s in seeds]
+        safe_focus = [sanitize_prompt_input(f) for f in focus_areas]
+
         prompt = f"""Expand the following ideas with creative variations.
-Seed ideas: {', '.join(seeds)}
-Focus areas: {', '.join(focus_areas) if focus_areas else 'general innovation'}
+Seed ideas: {", ".join(safe_seeds)}
+Focus areas: {", ".join(safe_focus) if safe_focus else "general innovation"}
 Number of variations: {count}
 
 For each variation provide:
@@ -213,26 +218,26 @@ Respond ONLY with JSON array."""
 
         response = await router.chat(prompt=prompt, temperature=0.9, max_tokens=1500)
         import json
+
         content = response.choices[0]["message"]["content"]
         return json.loads(content)[:count]
 
     async def _expand_ideas_fallback(
-        self,
-        seeds: List[str],
-        focus_areas: List[str],
-        count: int
+        self, seeds: List[str], focus_areas: List[str], count: int
     ) -> List[Dict[str, Any]]:
         strategies = ["automation", "optimization", "scaling", "security", "monitoring"]
         expanded = []
 
         for seed in seeds:
-            for strategy in strategies[:count // len(seeds) if seeds else count]:
-                expanded.append({
-                    "name": f"{seed} + {strategy}",
-                    "strategy": strategy,
-                    "description": f"Apply {strategy} to {seed}",
-                    "priority": "high" if strategy in ["security", "scaling"] else "medium",
-                })
+            for strategy in strategies[: count // len(seeds) if seeds else count]:
+                expanded.append(
+                    {
+                        "name": f"{seed} + {strategy}",
+                        "strategy": strategy,
+                        "description": f"Apply {strategy} to {seed}",
+                        "priority": "high" if strategy in ["security", "scaling"] else "medium",
+                    }
+                )
 
         return expanded[:count]
 
@@ -261,19 +266,20 @@ class TechnologyRecommenderTool(BaseTool):
 
         return ToolOutput(
             result={"domain": domain, "recommendations": recommendations},
-            metadata={"recommended": True, "method": method}
+            metadata={"recommended": True, "method": method},
         )
 
     async def _recommend_llm(
-        self,
-        requirements: Dict[str, Any],
-        constraints: Dict[str, Any],
-        domain: str
+        self, requirements: Dict[str, Any], constraints: Dict[str, Any], domain: str
     ) -> List[Dict[str, Any]]:
         from llm.router import get_router
+
         router = get_router()
 
-        prompt = f"""Recommend technology stack for a {domain} system.
+        # Sanitize user inputs before passing to LLM
+        safe_domain = sanitize_prompt_input(domain)
+
+        prompt = f"""Recommend technology stack for a {safe_domain} system.
 Requirements: {requirements}
 Constraints: {constraints}
 
@@ -286,13 +292,11 @@ Respond ONLY with JSON array."""
 
         response = await router.chat(prompt=prompt, temperature=0.3, max_tokens=1500)
         import json
+
         return json.loads(response.choices[0]["message"]["content"])
 
     async def _recommend_fallback(
-        self,
-        requirements: Dict[str, Any],
-        constraints: Dict[str, Any],
-        domain: str
+        self, requirements: Dict[str, Any], constraints: Dict[str, Any], domain: str
     ) -> List[Dict[str, Any]]:
         scale = requirements.get("scale", "medium")
         analytics = requirements.get("analytics", False)
@@ -300,30 +304,36 @@ Respond ONLY with JSON array."""
         recommendations = []
 
         if scale in ["large", "massive"]:
-            recommendations.append({
-                "category": "compute",
-                "options": [
-                    {"name": "AWS Lambda", "score": 0.9},
-                    {"name": "Azure Functions", "score": 0.85},
-                ],
-                "selected": "AWS Lambda",
-            })
+            recommendations.append(
+                {
+                    "category": "compute",
+                    "options": [
+                        {"name": "AWS Lambda", "score": 0.9},
+                        {"name": "Azure Functions", "score": 0.85},
+                    ],
+                    "selected": "AWS Lambda",
+                }
+            )
         else:
-            recommendations.append({
-                "category": "compute",
-                "options": [
-                    {"name": "Kubernetes/EKS", "score": 0.9},
-                    {"name": "Azure AKS", "score": 0.85},
-                ],
-                "selected": "Kubernetes/EKS",
-            })
+            recommendations.append(
+                {
+                    "category": "compute",
+                    "options": [
+                        {"name": "Kubernetes/EKS", "score": 0.9},
+                        {"name": "Azure AKS", "score": 0.85},
+                    ],
+                    "selected": "Kubernetes/EKS",
+                }
+            )
 
         if analytics:
-            recommendations.append({
-                "category": "analytics",
-                "options": [{"name": "BigQuery", "score": 0.9}],
-                "selected": "BigQuery",
-            })
+            recommendations.append(
+                {
+                    "category": "analytics",
+                    "options": [{"name": "BigQuery", "score": 0.9}],
+                    "selected": "BigQuery",
+                }
+            )
 
         return recommendations
 
@@ -347,9 +357,9 @@ class PatternFinderTool(BaseTool):
             result={
                 "context": context,
                 "platform": platform,
-                "patterns": [p.model_dump() if hasattr(p, 'model_dump') else p for p in patterns],
+                "patterns": [p.model_dump() if hasattr(p, "model_dump") else p for p in patterns],
             },
-            metadata={"found": True}
+            metadata={"found": True},
         )
 
     async def _find_patterns(self, context: str, platform: str) -> List[PatternMatch]:
@@ -359,14 +369,18 @@ class PatternFinderTool(BaseTool):
             ref_repo = get_reference_architecture_repository()
             all_patterns = ref_repo.list_all()
 
+            # Sanitize user inputs
+            safe_context = sanitize_prompt_input(context)
+
             if platform:
                 all_patterns = [p for p in all_patterns if platform in p.platforms]
 
-            if context:
+            if safe_context:
                 all_patterns = [
-                    p for p in all_patterns
-                    if context.lower() in p.name.lower()
-                    or context.lower() in p.description.lower()
+                    p
+                    for p in all_patterns
+                    if safe_context.lower() in p.name.lower()
+                    or safe_context.lower() in p.description.lower()
                 ]
 
             return [

@@ -1,8 +1,8 @@
 from ui.knowledge import (
     ComponentType,
     UIComponent,
-    UIService,
     UIComponentKnowledge,
+    UIService,
     get_ui_knowledge_registry,
 )
 
@@ -12,9 +12,24 @@ def _create_azure_knowledge() -> UIComponentKnowledge:
         domain_id="azure",
         display_name="Azure Static Web Apps / Fluent UI",
         supported_element_types=[
-            "button", "input", "select", "table", "form", "card",
-            "navigation", "header", "footer", "tab", "chart", "filter",
-            "checkbox", "radio", "text", "image", "icon", "dialog",
+            "button",
+            "input",
+            "select",
+            "table",
+            "form",
+            "card",
+            "navigation",
+            "header",
+            "footer",
+            "tab",
+            "chart",
+            "filter",
+            "checkbox",
+            "radio",
+            "text",
+            "image",
+            "icon",
+            "dialog",
         ],
     )
 
@@ -136,7 +151,12 @@ def _create_azure_knowledge() -> UIComponentKnowledge:
             service_id="svc-azure-swa",
             name="Static Web Apps",
             service_type="hosting",
-            capabilities=["custom-domain", "authentication", "API-functions", "global-distribution"],
+            capabilities=[
+                "custom-domain",
+                "authentication",
+                "API-functions",
+                "global-distribution",
+            ],
             documentation_url="https://learn.microsoft.com/en-us/azure/static-web-apps/",
         ),
         UIService(

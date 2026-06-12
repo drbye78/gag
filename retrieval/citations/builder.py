@@ -1,10 +1,9 @@
-import re
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List
 
 from retrieval.citations.base import (
-    CitationSource,
-    Citation,
     AnnotatedAnswer,
+    Citation,
+    CitationSource,
     CitationStyle,
 )
 
@@ -39,8 +38,20 @@ class CitationBuilder:
         self,
         results: List[Dict[str, Any]],
     ) -> List[CitationSource]:
+        # Deduplicate by source ID before building citations
+        seen_ids: set = set()
+        deduped_results = []
+        for r in results[: self.max_citations * 2]:
+            source_id = r.get("id", r.get("source", ""))
+            if source_id in seen_ids:
+                continue
+            seen_ids.add(source_id)
+            deduped_results.append(r)
+            if len(deduped_results) >= self.max_citations:
+                break
+
         sources = []
-        for i, r in enumerate(results[: self.max_citations]):
+        for i, r in enumerate(deduped_results):
             source_type = r.get("source", "unknown")
             content = self._extract_content_for_source(r, source_type)
             sources.append(
@@ -111,6 +122,8 @@ class CitationBuilder:
             if sources:
                 diagram_sources = [s for s in sources if s.source_type == "diagram"]
                 if diagram_sources:
-                    diag_parts = [f"[{s.source_name}:{s.content[:100]}...]" for s in diagram_sources[:3]]
+                    diag_parts = [
+                        f"[{s.source_name}:{s.content[:100]}...]" for s in diagram_sources[:3]
+                    ]
                     return f"{answer}\n\nDiagrams: {' '.join(diag_parts)}"
         return answer

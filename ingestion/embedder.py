@@ -1,30 +1,364 @@
+"""
+Embedder - Embedding generation pipeline.
+
+Provides batched embedding generation with provider
+abstraction (OpenAI, Qwen, Ollama, local models).
+Uses persistent httpx clients for connection pooling.
+Includes per-text SHA-256 caching to skip repeated embeddings.
+"""
+
+import asyncio
+import hashlib
+import logging
 import os
+import time
+from collections import OrderedDict
+from enum import Enum
+from typing import Any, Dict, List, Optional
 
-from embeddings.service import EmbeddingService
+import httpx
 
-EmbeddingPipeline = EmbeddingService
+from core.config import get_settings
+from core.text_utils import TextLanguage, detect_language
 
-_pipeline: EmbeddingService | None = None
-
-
-def get_embedding_pipeline() -> EmbeddingService:
-    global _pipeline
-    if _pipeline is None:
-        provider = os.getenv("EMBEDDING_PROVIDER", "openai").lower()
-        _pipeline = EmbeddingService(provider=provider)
-    return _pipeline
+logger = logging.getLogger(__name__)
 
 
-class EmbedderProvider(str):
+class EmbedderProvider(str, Enum):
     OPENAI = "openai"
     QWEN = "qwen"
     OLLAMA = "ollama"
     QDRANT = "qdrant"
 
 
-def get_text_embedder() -> EmbeddingService:
-    return get_embedding_pipeline()
+class EmbeddingPipeline:
+    def __init__(
+        self,
+        provider: str = None,
+        model: Optional[str] = None,
+        batch_size: int = 32,
+        max_concurrent: int = 5,
+        dimensions: int = 1536,
+        cache_capacity: int = 10_000,
+        cache_ttl: int = 86400,  # 24 hours
+    ):
+        # Default to openrouter if not specified
+        self.provider = (provider or os.getenv("EMBEDDING_PROVIDER", "openrouter")).lower()
+        self.dimensions = dimensions
+        if batch_size <= 0:
+            raise ValueError(f"batch_size must be positive, got {batch_size}")
+        self.batch_size = batch_size
+        self.max_concurrent = max_concurrent
+        self._client: Optional[httpx.AsyncClient] = None
+        self._semaphore = httpx.Limits(max_connections=max_concurrent)
+
+        # Embedding cache: text hash → embedding vector
+        self._cache_capacity = cache_capacity
+        self._cache_ttl = cache_ttl
+        self._embedding_cache: OrderedDict[str, tuple] = OrderedDict()  # hash → (vector, timestamp)
+
+        settings = get_settings()
+
+        if self.provider == "openai":
+            self.model = model or "text-embedding-3-small"
+            self.dimensions = 1536
+        elif self.provider == "qwen":
+            self.model = model or "text-embedding-v3"
+            self.dimensions = 1024
+        elif self.provider == "ollama":
+            self.model = model or "bge-m3:latest"
+            self.dimensions = 1024
+        else:
+            self.model = model or "default"
+            self.dimensions = dimensions
+
+    # ------------------------------------------------------------------
+    # Embedding cache helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _text_hash(text: str) -> str:
+        return hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
+
+    def _cache_get(self, text_hash: str) -> Optional[List[float]]:
+        entry = self._embedding_cache.get(text_hash)
+        if entry is None:
+            return None
+        embedding, timestamp = entry
+        if (time.time() - timestamp) > self._cache_ttl:
+            del self._embedding_cache[text_hash]
+            return None
+        self._embedding_cache.move_to_end(text_hash)
+        return embedding
+
+    def _cache_put(self, text_hash: str, embedding: List[float]) -> None:
+        if len(self._embedding_cache) >= self._cache_capacity:
+            self._embedding_cache.popitem(last=False)
+        self._embedding_cache[text_hash] = (embedding, time.time())
+
+    def get_cache_stats(self) -> Dict[str, Any]:
+        return {
+            "size": len(self._embedding_cache),
+            "capacity": self._cache_capacity,
+            "ttl_seconds": self._cache_ttl,
+        }
+
+    def get_model_for_language(self, text: str) -> str:
+        if not text:
+            return self.model
+
+        lang = detect_language(text)
+
+        if lang == TextLanguage.RUSSIAN:
+            if self.provider == "qwen":
+                return "text-embedding-v3"
+            elif self.provider == "ollama":
+                return "nomic-embed-text"
+            return "text-embedding-3-small"
+
+        return self.model
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                limits=self._semaphore,
+                timeout=httpx.Timeout(120.0, connect=10.0),
+            )
+        return self._client
+
+    async def close(self) -> None:
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+
+    async def embed(self, text: str) -> List[float]:
+        results = await self.embed_batch([text])
+        return results[0] if results else []
+
+    async def embed_batch(self, texts: List[str]) -> List[List[float]]:
+        if not texts:
+            return []
+
+        # Deduplicate input texts before embedding
+        seen: Dict[str, int] = {}  # text -> original index
+        unique_texts: List[str] = []
+        unique_indices: List[int] = []
+        for i, text in enumerate(texts):
+            if text in seen:
+                continue
+            seen[text] = i
+            unique_texts.append(text)
+            unique_indices.append(i)
+
+        # Check cache for each unique text
+        cached: Dict[int, List[float]] = {}
+        to_embed: List[str] = []
+        to_embed_indices: List[int] = []
+
+        for i, text in enumerate(unique_texts):
+            text_hash = self._text_hash(text)
+            cached_vec = self._cache_get(text_hash)
+            if cached_vec is not None:
+                cached[unique_indices[i]] = cached_vec
+            else:
+                to_embed.append(text)
+                to_embed_indices.append(unique_indices[i])
+
+        # Embed only the uncached texts
+        fresh_embeddings: List[List[float]] = []
+        if to_embed:
+            if self.provider == "openai":
+                fresh_embeddings = await self._embed_openai(to_embed)
+            elif self.provider == "qwen":
+                fresh_embeddings = await self._embed_qwen(to_embed)
+            elif self.provider == "ollama":
+                fresh_embeddings = await self._embed_ollama(to_embed)
+            elif self.provider in ("openrouter", "or", "google"):
+                fresh_embeddings = await self._embed_openrouter(to_embed)
+            else:
+                raise RuntimeError(
+                    f"Unknown embedding provider: {self.provider}. Use: openai, qwen, ollama, openrouter"
+                )
+
+            # Cache the fresh embeddings
+            for idx, embedding in zip(to_embed_indices, fresh_embeddings):
+                text_hash = self._text_hash(unique_texts[to_embed_indices.index(idx)])
+                self._cache_put(text_hash, embedding)
+
+        # Assemble final result in original order (fill duplicates from seen map)
+        results: List[Optional[List[float]]] = [None] * len(texts)
+        for i, vec in cached.items():
+            results[i] = vec
+        for pos, idx in enumerate(to_embed_indices):
+            results[idx] = fresh_embeddings[pos]
+
+        # Fill in duplicate entries
+        text_to_embedding: Dict[str, List[float]] = {}
+        for i, text in enumerate(texts):
+            if results[i] is not None:
+                text_to_embedding[text] = results[i]
+        for i, text in enumerate(texts):
+            if results[i] is None:
+                results[i] = text_to_embedding.get(text, [])
+
+        return results
+
+    async def _embed_openai(self, texts: List[str]) -> List[List[float]]:
+        settings = get_settings()
+        api_key = settings.llm_api_key or os.getenv("OPENAI_API_KEY", "")
+        if not api_key:
+            raise RuntimeError("OPENAI_API_KEY not configured")
+
+        headers = {"Authorization": f"Bearer {api_key}"}
+        client = await self._get_client()
+
+        resp = await client.post(
+            "https://api.openai.com/v1/embeddings",
+            json={"input": texts, "model": self.model},
+            headers=headers,
+            timeout=120.0,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        embeddings = [d["embedding"] for d in data.get("data", [])]
+
+        if len(embeddings) != len(texts):
+            logger.warning(
+                "OpenAI returned %d embeddings for %d texts",
+                len(embeddings),
+                len(texts),
+            )
+
+        return embeddings
+
+    async def _embed_qwen(self, texts: List[str]) -> List[List[float]]:
+        settings = get_settings()
+        api_key = os.getenv("DASHSCOPE_API_KEY", settings.llm_api_key or "")
+        base_url = os.getenv(
+            "QWEN_EMBED_URL",
+            "https://dashscope.aliyuncs.com/api/v1/services/embeddings/text-embedding/embedding",
+        )
+
+        if not api_key:
+            raise RuntimeError("DASHSCOPE_API_KEY not configured")
+
+        headers = {"Authorization": f"Bearer {api_key}"}
+        client = await self._get_client()
+
+        async def _embed_one(text: str) -> List[float]:
+            resp = await client.post(
+                base_url,
+                json={
+                    "model": self.model,
+                    "input": text,
+                },
+                headers=headers,
+                timeout=60.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return data.get("output", {}).get("embeddings", [{}])[0].get("embedding", [])
+
+        results = await asyncio.gather(
+            *[_embed_one(t) for t in texts],
+            return_exceptions=True,
+        )
+        # Raise the first exception if any; otherwise return embeddings
+        embeddings: List[List[float]] = []
+        for r in results:
+            if isinstance(r, Exception):
+                raise r
+            embeddings.append(r)
+        return embeddings
+
+    async def _embed_ollama(self, texts: List[str]) -> List[List[float]]:
+        base_url = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+        client = await self._get_client()
+
+        async def _embed_one(text: str) -> List[float]:
+            resp = await client.post(
+                f"{base_url}/api/embeddings",
+                json={"model": self.model, "prompt": text},
+                timeout=60.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return data.get("embedding", [])
+
+        results = await asyncio.gather(
+            *[_embed_one(t) for t in texts],
+            return_exceptions=True,
+        )
+        embeddings: List[List[float]] = []
+        for r in results:
+            if isinstance(r, Exception):
+                raise r
+            embeddings.append(r)
+        return embeddings
+
+    async def _embed_openrouter(self, texts: List[str]) -> List[List[float]]:
+        from core.config import get_settings
+
+        settings = get_settings()
+        api_key = settings.llm_api_key or os.getenv("OPENROUTER_API_KEY", "")
+        if not api_key:
+            raise RuntimeError("OPENROUTER_API_KEY not configured")
+
+        model = "openai/text-embedding-3-small"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        client = await self._get_client()
+
+        async def _embed_one(text: str) -> List[float]:
+            resp = await client.post(
+                "https://openrouter.ai/api/v1/embeddings",
+                json={"input": text, "model": model},
+                headers=headers,
+                timeout=60.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return data.get("data", [{}])[0].get("embedding", [])
+
+        results = await asyncio.gather(
+            *[_embed_one(t) for t in texts],
+            return_exceptions=True,
+        )
+        embeddings: List[List[float]] = []
+        for r in results:
+            if isinstance(r, Exception):
+                raise r
+            embeddings.append(r)
+        return embeddings
+
+    async def embed_chunks(self, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        if not chunks:
+            return []
+
+        texts = [c.get("content", "") for c in chunks]
+        embeddings = await self.embed_batch(texts)
+
+        results = []
+        for idx, chunk in enumerate(chunks):
+            embedding = embeddings[idx] if idx < len(embeddings) else []
+            result = {
+                **chunk,
+                "embedding": embedding,
+                "provider": self.provider,
+                "model": self.model,
+            }
+            results.append(result)
+
+        return results
 
 
-def get_embedder() -> EmbeddingService:
-    return get_embedding_pipeline()
+_pipeline: Optional[EmbeddingPipeline] = None
+
+
+def get_embedding_pipeline() -> EmbeddingPipeline:
+    global _pipeline
+    if _pipeline is None:
+        provider = os.getenv("EMBEDDING_PROVIDER", "openai").lower()
+        _pipeline = EmbeddingPipeline(provider=provider)
+    return _pipeline

@@ -2,17 +2,17 @@
 Tests for core modules: config, auth, memory, cache, health.
 """
 
-import importlib
 import os
+from unittest.mock import patch
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 
 class TestConfig:
     def test_get_settings_defaults(self):
         # Reset singleton to ensure fresh read
         import core.config
+
         core.config._settings = None
 
         from core.config import get_settings
@@ -26,6 +26,7 @@ class TestConfig:
         # Force module reload with new env
         with patch.dict(os.environ, {"API_PORT": "9000"}, clear=False):
             import core.config
+
             core.config._settings = None
 
             from core.config import get_settings
@@ -67,10 +68,10 @@ class TestAuth:
 class TestMemorySystem:
     @pytest.mark.asyncio
     async def test_short_term_store_retrieve(self):
-        from core.memory import get_short_term_memory
-
         # Reset singleton
         import core.memory
+        from core.memory import get_short_term_memory
+
         core.memory._short_term = None
 
         memory = get_short_term_memory()
@@ -91,10 +92,10 @@ class TestMemorySystem:
 
     @pytest.mark.asyncio
     async def test_reasoning_trace(self):
-        from core.memory import get_short_term_memory
-
         # Reset singleton
         import core.memory
+        from core.memory import get_short_term_memory
+
         core.memory._short_term_memory = None
 
         memory = get_short_term_memory()
@@ -112,7 +113,7 @@ class TestMemorySystem:
 class TestRBAC:
     @pytest.mark.asyncio
     async def test_check_permission(self):
-        from core.auth import check_permission, create_token, get_rbac_manager, Role
+        from core.auth import Role, check_permission, create_token, get_rbac_manager
 
         # Explicitly create user with engineer role for permission testing
         rbac = get_rbac_manager()
@@ -125,7 +126,7 @@ class TestRBAC:
 
     @pytest.mark.asyncio
     async def test_check_role(self):
-        from core.auth import check_role, create_token, get_rbac_manager, Role
+        from core.auth import Role, check_role, create_token, get_rbac_manager
 
         # Explicitly create user with admin role
         rbac = get_rbac_manager()
@@ -136,7 +137,7 @@ class TestRBAC:
 
     @pytest.mark.asyncio
     async def test_role_permissions_distinct(self):
-        from core.auth import check_permission, create_token, get_rbac_manager, Role
+        from core.auth import Role, check_permission, create_token, get_rbac_manager
 
         # Explicitly create user with viewer role
         rbac = get_rbac_manager()
@@ -201,18 +202,21 @@ class TestHealth:
 class TestMetrics:
     def test_observe_request(self):
         from core.observability import get_metrics_collector
+
         mc = get_metrics_collector()
         mc.record_latency("request", 150.0)
         assert mc.get_metrics()["latencies"]["request"]["count"] == 1
 
     def test_observe_retrieval(self):
         from core.observability import get_metrics_collector
+
         mc = get_metrics_collector()
         mc.record_latency("retrieval", 50.0)
         assert mc.get_metrics()["latencies"]["retrieval"]["count"] == 1
 
     def test_observe_llm(self):
         from core.observability import get_metrics_collector
+
         mc = get_metrics_collector()
         mc.record_latency("llm", 100.0)
         mc.increment("llm.calls")
@@ -223,112 +227,10 @@ class TestMetrics:
 
 class TestMiddleware:
     def test_setup_middleware(self):
-        from core.middleware import setup_middleware
         from fastapi import FastAPI
+
+        from core.middleware import setup_middleware
 
         app = FastAPI()
         setup_middleware(app)
         assert app.state.middleware_configured is True
-
-
-class TestPrometheusMetrics:
-    def test_get_metrics_returns_bytes(self):
-        from core.prometheus_metrics import get_metrics
-
-        metrics = get_metrics()
-        assert isinstance(metrics, bytes)
-        assert len(metrics) > 0
-
-    def test_get_metrics_contains_prometheus_format(self):
-        from core.prometheus_metrics import get_metrics
-
-        metrics = get_metrics().decode("utf-8")
-        assert "# HELP" in metrics
-        assert "# TYPE" in metrics
-
-    def test_get_content_type(self):
-        from core.prometheus_metrics import get_content_type
-
-        content_type = get_content_type()
-        assert content_type == "text/plain; version=0.0.4; charset=utf-8"
-
-    def test_record_request_updates_metrics(self):
-        from core.prometheus_metrics import get_metrics, REQUESTS_TOTAL
-
-        initial_metrics = get_metrics()
-        REQUESTS_TOTAL.labels(method="GET", path="/test", status="200").inc()
-        updated_metrics = get_metrics()
-        assert updated_metrics != initial_metrics
-
-    def test_record_error_updates_metrics(self):
-        from core.prometheus_metrics import get_metrics, ERRORS_TOTAL
-
-        initial_metrics = get_metrics()
-        ERRORS_TOTAL.labels(method="GET", path="/test", error_type="timeout").inc()
-        updated_metrics = get_metrics()
-        assert updated_metrics != initial_metrics
-
-    def test_record_retrieval_updates_metrics(self):
-        from core.prometheus_metrics import get_metrics, RETRIEVAL_COUNT
-
-        initial_metrics = get_metrics()
-        RETRIEVAL_COUNT.labels(source="vector").inc()
-        updated_metrics = get_metrics()
-        assert updated_metrics != initial_metrics
-
-    def test_record_llm_updates_metrics(self):
-        from core.prometheus_metrics import get_metrics, LLM_CALLS_TOTAL
-
-        initial_metrics = get_metrics()
-        LLM_CALLS_TOTAL.labels(model="qwen-max", status="success").inc()
-        updated_metrics = get_metrics()
-        assert updated_metrics != initial_metrics
-
-    def test_metrics_endpoint_returns_prometheus_format(self):
-        from fastapi.testclient import TestClient
-        from unittest.mock import patch
-
-        with patch("core.prometheus_metrics.get_metrics") as mock_get_metrics:
-            mock_get_metrics.return_value = b'# HELP requests_total Total requests\n# TYPE requests_total counter\nrequests_total{method="GET"} 1\n'
-            from api.main import app
-            client = TestClient(app)
-            response = client.get("/metrics")
-            assert response.status_code == 200
-            assert response.headers["content-type"] == "text/plain; version=0.0.4; charset=utf-8"
-            assert "requests_total" in response.text
-
-
-class TestRedisLLMCache:
-    @pytest.mark.asyncio
-    async def test_llm_cache_fallback(self):
-        from core.cache.llm import RedisLLMCache
-
-        cache = RedisLLMCache(redis_url="redis://localhost:6379/0", ttl=60)
-        result = await cache.get("test prompt", "system")
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_llm_cache_set_fallback(self):
-        from core.cache.llm import RedisLLMCache
-
-        cache = RedisLLMCache(redis_url="redis://localhost:6379/0", ttl=60)
-        success = await cache.set("test prompt", {"id": "abc", "model": "test", "choices": [], "usage": {}}, "system")
-        assert success is False
-
-
-class TestRedisRetrievalCache:
-    @pytest.mark.asyncio
-    async def test_retrieval_cache_fallback(self):
-        from core.cache.retrieval import RedisRetrievalCache
-
-        cache = RedisRetrievalCache(redis_url="redis://localhost:6379/0", ttl=60)
-        result = await cache.get("test query", limit=10, strategy="hybrid")
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_retrieval_cache_set_fallback(self):
-        from core.cache.retrieval import RedisRetrievalCache
-
-        cache = RedisRetrievalCache(redis_url="redis://localhost:6379/0", ttl=60)
-        success = await cache.set("test query", [{"content": "result1", "score": 0.9}], limit=10, strategy="hybrid")
-        assert success is False

@@ -1,19 +1,26 @@
 """Metrics collection for observability.
 
-This module is deprecated. Use core.observability.MetricsCollector instead.
-This file exists for backward compatibility and re-exports from observability.
+.. deprecated::
+    Use :mod:`core.observability` directly instead.  This module is
+    kept solely as a thin re-export shim for existing import sites and
+    will be removed in a future release.
 """
 
-from core.observability import MetricsCollector as _MetricsCollector
+import warnings
 
-_metrics_collector: _MetricsCollector | None = None
+warnings.warn(
+    "core.metrics is deprecated — import from core.observability instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
+from core.observability import MetricsCollector as _MetricsCollector
+from core.observability import get_metrics_collector as _get_metrics_collector
 
 
 def get_metrics() -> _MetricsCollector:
-    global _metrics_collector
-    if _metrics_collector is None:
-        _metrics_collector = _MetricsCollector()
-    return _metrics_collector
+    """Return the same MetricsCollector singleton used by observability."""
+    return _get_metrics_collector()
 
 
 def observe_request(method: str, path: str, status: int, duration: float) -> None:

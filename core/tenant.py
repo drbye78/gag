@@ -34,18 +34,6 @@ def clear_tenant() -> None:
     _tenant_region.set(DataRegion.DEFAULT)
 
 
-def set_tenant(tenant_id: str) -> None:
-    _tenant_context.set(tenant_id)
-
-
-def get_tenant() -> Optional[str]:
-    return _tenant_context.get()
-
-
-def clear_tenant() -> None:
-    _tenant_context.set(None)
-
-
 class TenantContext:
     """Context manager for tenant-scoped operations."""
 

@@ -2,8 +2,9 @@
 Tests for RetrieverRegistry - Self-registering retriever factory.
 """
 
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 
 class TestRetrieverRegistry:
@@ -95,7 +96,7 @@ class TestGlobalRegistry:
         assert reg1 is reg2
 
     def test_initialize_registry(self):
-        from retrieval.registry import initialize_registry, get_registry
+        from retrieval.registry import get_registry, initialize_registry
 
         registry = get_registry()
         registry.clear()

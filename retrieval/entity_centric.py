@@ -1,12 +1,35 @@
+import logging
 import re
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, Optional
+
 import httpx
 
+logger = logging.getLogger(__name__)
+
 # Allowlists for parameter validation to prevent Cypher injection
-ALLOWED_ENTITY_TYPES = {"Person", "Company", "Document", "UIElement", "UISketch"}
+ALLOWED_ENTITY_TYPES = {
+    "Service",
+    "Component",
+    "API",
+    "Database",
+    "Queue",
+    "Function",
+    "Module",
+    "Person",
+    "Team",
+    "Repository",
+}
 ALLOWED_RELATIONSHIP_TYPES = {
-    "CONTAINS", "DEPENDS_ON", "IMPLEMENTS", "EXTENDS", "CALLED_BY",
-    "CALLS", "REFERENCES", "HAS_PROPERTY", "LINKED_TO", "RELATED_TO"
+    "CONTAINS",
+    "DEPENDS_ON",
+    "IMPLEMENTS",
+    "EXTENDS",
+    "CALLED_BY",
+    "CALLS",
+    "REFERENCES",
+    "HAS_PROPERTY",
+    "LINKED_TO",
+    "RELATED_TO",
 }
 
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -45,6 +68,13 @@ class EntityCentricRetriever:
     ) -> Dict[str, Any]:
         if entity_type:
             _safe_identifier(entity_type)
+            if entity_type not in ALLOWED_ENTITY_TYPES:
+                logger.warning(
+                    "Entity type '%s' not in allowlist; allowed: %s",
+                    entity_type,
+                    ALLOWED_ENTITY_TYPES,
+                )
+                # Still proceed but log warning - don't block, just warn
         depth_val = _validate_int(depth, "depth", 1, 10)
         limit_val = _validate_int(limit, "limit", 1, 100)
 
@@ -197,7 +227,10 @@ class EntityCentricRetriever:
             async with httpx.AsyncClient() as client:
                 resp = await client.post(
                     f"{self.base_url}/query",
-                    json={"query": cypher, "params": {"name": entity_name, "max_dist": distance_val}},
+                    json={
+                        "query": cypher,
+                        "params": {"name": entity_name, "max_dist": distance_val},
+                    },
                     timeout=30.0,
                 )
                 data = resp.json()

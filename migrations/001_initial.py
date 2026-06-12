@@ -46,8 +46,8 @@ INIT_QDRANT = {
                 "source_id": "keyword",
                 "content_hash": "keyword",
                 "created_at": "datetime",
-                "metadata": "json"
-            }
+                "metadata": "json",
+            },
         },
         {
             "name": "code",
@@ -57,8 +57,8 @@ INIT_QDRANT = {
                 "file_path": "keyword",
                 "language": "keyword",
                 "function_name": "keyword",
-                "class_name": "keyword"
-            }
+                "class_name": "keyword",
+            },
         },
         {
             "name": "diagrams",
@@ -68,22 +68,16 @@ INIT_QDRANT = {
                 "diagram_type": "keyword",
                 "format": "keyword",
                 "entities": "json",
-                "relationships": "json"
-            }
+                "relationships": "json",
+            },
         },
         {
             "name": "ui_sketches",
             "vector_size": 768,
             "distance": "Cosine",
-            "payload_schema": {
-                "sketch_type": "keyword",
-                "components": "json",
-                "layout": "json"
-            }
-        }
+            "payload_schema": {"sketch_type": "keyword", "components": "json", "layout": "json"},
+        },
     ]
 }
 
-DROP_QDRANT = {
-    "collections": ["documents", "code", "diagrams", "ui_sketches"]
-}
+DROP_QDRANT = {"collections": ["documents", "code", "diagrams", "ui_sketches"]}

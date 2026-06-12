@@ -1,26 +1,27 @@
-"""Graph builder for UI sketch understanding - constructs FalkorDB graph nodes and relationships."""
+"""Graph builder for UI sketch understanding - constructs FalkorDB graph nodes and relationships.
+
+Uses parameterized Cypher queries to prevent injection attacks.
+"""
 
 import json
-import re
-from typing import Any, Dict, Tuple
+import logging
+from typing import Any, Dict, List, Tuple
 
 from ui.models import UIExtractionResult
 
+logger = logging.getLogger(__name__)
 
-def _escape_cypher_string(value: str) -> str:
-    """Escape string for Cypher to prevent injection."""
-    if not isinstance(value, str):
-        value = str(value)
-    if not re.match(r'^[A-Za-z0-9_\-]+$', value):
-        raise ValueError(f"Invalid characters in identifier: {value!r}")
-    return value.replace("\\", "\\\\").replace("'", "\\'")
+CypherStatement = Tuple[str, Dict[str, Any]]
 
 
 class UIGraphBuilder:
     """Builds Cypher queries for UI sketch graph construction."""
 
-    def build_cypher(self, result: UIExtractionResult) -> str:
-        """Build complete Cypher for all nodes and relationships."""
+    def build_cypher(self, result: UIExtractionResult) -> List[CypherStatement]:
+        """Build complete Cypher for all nodes and relationships.
+
+        Returns a list of (query, params) tuples for parameterized execution.
+        """
         from ui.issue_tracker import get_issue_tracker
         from ui.pattern_matcher import get_pattern_matcher
 
@@ -28,18 +29,18 @@ class UIGraphBuilder:
         tracker = get_issue_tracker()
         matches = matcher.match_patterns(result)
 
-        parts = []
-        parts.append(self._build_sketch_node_cypher(result))
-        parts.append(self._build_layout_node_cypher(result))
-        parts.append(self._build_element_nodes_cypher(result))
-        parts.append(matcher.build_pattern_cypher(result, matches))
-        parts.append(tracker.build_issues_cypher())
-        return "\n".join(parts)
+        statements: List[CypherStatement] = []
+        statements.extend(self._build_sketch_node_cypher(result))
+        statements.extend(self._build_layout_node_cypher(result))
+        statements.extend(self._build_element_nodes_cypher(result))
+        statements.extend(matcher.build_pattern_cypher(result, matches))
+        statements.extend(tracker.build_issues_cypher())
+        return statements
 
-    def _build_sketch_node_cypher(self, result: UIExtractionResult) -> str:
+    def _build_sketch_node_cypher(self, result: UIExtractionResult) -> List[CypherStatement]:
         """CREATE UISketch node with properties."""
         sketch = result.sketch
-        props = {
+        props: Dict[str, Any] = {
             "sketch_id": sketch.sketch_id,
             "title": sketch.title,
             "source_url": sketch.source_url,
@@ -58,33 +59,34 @@ class UIGraphBuilder:
         if result.ocr_text is not None:
             props["ocr_text"] = result.ocr_text
 
-        props_str = json.dumps(props)
-        return f"CREATE (s:UISketch {props_str})"
+        return [("CREATE (s:UISketch $props)", {"props": props})]
 
-    def _build_layout_node_cypher(self, result: UIExtractionResult) -> str:
+    def _build_layout_node_cypher(self, result: UIExtractionResult) -> List[CypherStatement]:
         """CREATE UILayout node + HAS_LAYOUT relationship."""
         layout = result.layout
-        props = {
+        props: Dict[str, Any] = {
             "layout_id": layout.layout_id,
             "layout_type": layout.layout_type,
             "hierarchy": json.dumps(layout.hierarchy),
             "responsive": layout.responsive,
         }
-        props_str = json.dumps(props)
-        return (
-            f"CREATE (l:UILayout {props_str})\n"
-            f"MATCH (s:UISketch {{sketch_id: '{result.sketch.sketch_id}'}})\n"
-            f"CREATE (s)-[:HAS_LAYOUT]->(l)"
-        )
 
-    def _build_element_nodes_cypher(self, result: UIExtractionResult) -> str:
+        return [
+            ("CREATE (l:UILayout $props)", {"props": props}),
+            (
+                "MATCH (s:UISketch {sketch_id: $sketch_id}) CREATE (s)-[:HAS_LAYOUT]->(l)",
+                {"sketch_id": result.sketch.sketch_id},
+            ),
+        ]
+
+    def _build_element_nodes_cypher(self, result: UIExtractionResult) -> List[CypherStatement]:
         """CREATE UIElement nodes + CONTAINS_ELEMENT relationships."""
         if not result.elements:
-            return ""
+            return []
 
-        parts = []
-        for elem in result.elements:
-            props = {
+        statements: List[CypherStatement] = []
+        for idx, elem in enumerate(result.elements):
+            props: Dict[str, Any] = {
                 "element_id": elem.element_id,
                 "element_type": elem.element_type,
                 "confidence": elem.confidence,
@@ -102,29 +104,49 @@ class UIGraphBuilder:
             if elem.interactions:
                 props["interactions"] = json.dumps(elem.interactions)
 
-            props_str = json.dumps(props)
-            parts.append(
-                f"CREATE (e_{elem.element_id}:UIElement {props_str})\n"
-                f"MATCH (s:UISketch {{sketch_id: '{result.sketch.sketch_id}'}})\n"
-                f"CREATE (s)-[:CONTAINS_ELEMENT {{element_id: '{elem.element_id}'}}]->(e_{elem.element_id})\n"
-                f"MATCH (l:UILayout {{layout_id: '{result.layout.layout_id}'}})\n"
-                f"CREATE (l)-[:CONTAINS_ELEMENT {{element_id: '{elem.element_id}'}}]->(e_{elem.element_id})"
+            element_alias = f"e{idx}"
+            statements.append((f"CREATE ({element_alias}:UIElement $props)", {"props": props}))
+            statements.append(
+                (
+                    f"MATCH (s:UISketch {{sketch_id: $sketch_id}}), "
+                    f"({element_alias}:UIElement {{element_id: $element_id}}) "
+                    f"CREATE (s)-[:CONTAINS_ELEMENT {{element_id: $element_id}}]->({element_alias})",
+                    {
+                        "sketch_id": result.sketch.sketch_id,
+                        "element_id": elem.element_id,
+                    },
+                )
+            )
+            statements.append(
+                (
+                    f"MATCH (l:UILayout {{layout_id: $layout_id}}), "
+                    f"({element_alias}:UIElement {{element_id: $element_id}}) "
+                    f"CREATE (l)-[:CONTAINS_ELEMENT {{element_id: $element_id}}]->({element_alias})",
+                    {
+                        "layout_id": result.layout.layout_id,
+                        "element_id": elem.element_id,
+                    },
+                )
             )
 
-        return "\n".join(parts)
+        return statements
 
-    async def _execute_cypher(self, cypher: str) -> Dict[str, Any]:
-        """Execute Cypher against FalkorDB."""
+    async def _execute_cypher(self, statements: List[CypherStatement]) -> Dict[str, Any]:
+        """Execute parameterized Cypher statements against FalkorDB."""
         try:
             from graph.client import get_falkordb_client
 
             client = get_falkordb_client()
-            response = await client.execute(cypher)
-            return {"success": True, "response": response}
+            responses = []
+            for query, params in statements:
+                response = await client.execute(query, params)
+                responses.append(response)
+            return {"success": True, "responses": responses}
         except Exception as e:
+            logger.exception("Failed to execute Cypher statements")
             return {"success": False, "error": str(e)}
 
     async def build(self, result: UIExtractionResult) -> Dict[str, Any]:
         """Build and execute graph for a UIExtractionResult."""
-        cypher = self.build_cypher(result)
-        return await self._execute_cypher(cypher)
+        statements = self.build_cypher(result)
+        return await self._execute_cypher(statements)

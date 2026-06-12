@@ -14,26 +14,22 @@ Coordinates all ingestion pipelines:
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from ingestion.pipeline import get_ingestion_pipeline
-from git.pipeline import GitIngestionPipeline, get_git_pipeline
-from documents.pipeline import DocumentPipeline, get_document_pipeline
-from ingestion.ticket.pipeline import TicketIngestionPipeline, get_ticket_pipeline
-from ingestion.telemetry.pipeline import (
-    TelemetryIngestionPipeline,
-    get_telemetry_pipeline,
-)
-from ingestion.knowledge_base.pipeline import (
-    KnowledgeBaseIngestionPipeline,
-    get_kb_pipeline,
-)
+from documents.pipeline import get_document_pipeline
+from git.pipeline import get_git_pipeline
 from ingestion.architecture.pipeline import (
-    ArchitectureIngestionPipeline,
     get_architecture_pipeline,
 )
+from ingestion.knowledge_base.pipeline import (
+    get_kb_pipeline,
+)
+from ingestion.pipeline import get_ingestion_pipeline
 from ingestion.requirements.pipeline import (
-    RequirementsIngestionPipeline,
     get_requirements_pipeline,
 )
+from ingestion.telemetry.pipeline import (
+    get_telemetry_pipeline,
+)
+from ingestion.ticket.pipeline import get_ticket_pipeline
 
 
 class IngestionSource(str, Enum):
@@ -68,6 +64,7 @@ class IngestionCoordinator:
         sources: Optional[List[IngestionSource]] = None,
         mode: IngestionMode = IngestionMode.INCREMENTAL,
         config: Optional[Dict[str, Any]] = None,
+        progress_callback: Optional[callable] = None,
     ) -> Dict[str, Any]:
         """Ingest all configured sources.
 
@@ -76,14 +73,16 @@ class IngestionCoordinator:
             mode: Ingestion mode (incremental, full, scheduled).
             config: Per-source configuration dict. Keys should match source enum values.
                     Example: {"git": {"repo_url": "...", "branch": "main"}}
+            progress_callback: Optional callable(progress: float) for incremental updates.
         """
         if not sources:
             sources = list(IngestionSource)
 
         config = config or {}
         results = {}
+        total_sources = len(sources)
 
-        for source in sources:
+        for idx, source in enumerate(sources):
             try:
                 source_config = config.get(source.value, {})
 
@@ -125,9 +124,7 @@ class IngestionCoordinator:
 
                 elif source == IngestionSource.TELEMETRY:
                     query = source_config.get("query", "{app=~.*}")
-                    job = await self.telemetry_pipeline.ingest_loki_logs(
-                        query=query
-                    )
+                    job = await self.telemetry_pipeline.ingest_loki_logs(query=query)
                     results[source.value] = {
                         "job_id": job.job_id,
                         "status": job.status.value,
@@ -143,9 +140,7 @@ class IngestionCoordinator:
 
                 elif source == IngestionSource.ARCHITECTURE:
                     directory = source_config.get("directory", "./docs/architecture")
-                    job = await self.architecture_pipeline.ingest_local(
-                        directory=directory
-                    )
+                    job = await self.architecture_pipeline.ingest_local(directory=directory)
                     results[source.value] = {
                         "job_id": job.job_id,
                         "status": job.status.value,
@@ -163,10 +158,19 @@ class IngestionCoordinator:
             except Exception as e:
                 results[source.value] = {"error": str(e)}
 
+            # Report incremental progress
+            if progress_callback:
+                progress = (idx + 1) / total_sources
+                try:
+                    progress_callback(progress)
+                except Exception:
+                    pass
+
         return {
             "sources": [s.value for s in sources],
             "mode": mode.value,
             "results": results,
+            "progress": 1.0,
         }
 
     async def run_ingestion_job(

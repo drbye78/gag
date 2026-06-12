@@ -5,51 +5,64 @@ Defines request/response schemas and tool definitions
 for MCP interface.
 """
 
+from __future__ import annotations
+
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class MCPRequest(BaseModel):
-    jsonrpc: str
-    id: Optional[str]
-    method: str
-    params: Optional[Dict[str, Any]]
+    jsonrpc: str = Field(..., examples=["2.0"])
+    id: Optional[str] = Field(None, examples=["req-001"])
+    method: str = Field(..., examples=["tools/list"])
+    params: Optional[Dict[str, Any]] = Field(
+        None, examples=[{"name": "search", "arguments": {"query": "k8s"}}]
+    )
 
 
 class MCPResponse(BaseModel):
-    jsonrpc: str = "2.0"
-    id: Optional[str] = None
-    result: Optional[Dict[str, Any]] = None
-    error: Optional[Dict[str, Any]] = None
+    jsonrpc: str = Field("2.0", examples=["2.0"])
+    id: Optional[str] = Field(None, examples=["req-001"])
+    result: Optional[Dict[str, Any]] = Field(None, examples=[{"tools": []}])
+    error: Optional[Dict[str, Any]] = Field(
+        None, examples=[{"code": -32001, "message": "Tool not found"}]
+    )
 
 
 class MCPToolDefinition(BaseModel):
-    name: str
-    description: str
-    input_schema: Dict[str, Any]
+    name: str = Field(..., examples=["search"])
+    description: str = Field(..., examples=["Search across all document and code sources"])
+    input_schema: Dict[str, Any] = Field(
+        ...,
+        examples=[
+            {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}
+        ],
+    )
 
 
 class MCPToolCall(BaseModel):
-    name: str
-    arguments: Dict[str, Any]
+    name: str = Field(..., examples=["search"])
+    arguments: Dict[str, Any] = Field(..., examples=[{"query": "kubernetes deployment"}])
 
 
 class MCPToolResult(BaseModel):
-    content: List[Dict[str, Any]]
-    is_error: Optional[bool]
+    content: List[Dict[str, Any]] = Field(..., examples=[[{"type": "text", "text": "result"}]])
+    is_error: Optional[bool] = Field(None, examples=[False])
 
 
 class MCPInitializeRequest(BaseModel):
-    protocol_version: str
-    capabilities: Dict[str, Any]
-    client_info: Dict[str, Any]
+    protocol_version: str = Field(..., examples=["1.0"])
+    capabilities: Dict[str, Any] = Field(..., examples=[{"tools": True}])
+    client_info: Dict[str, Any] = Field(..., examples=[{"name": "test-client", "version": "1.0"}])
 
 
 class MCPInitializedResponse(BaseModel):
-    protocol_version: str
-    capabilities: Dict[str, Any]
-    server_info: Dict[str, Any]
+    protocol_version: str = Field(..., examples=["1.0"])
+    capabilities: Dict[str, Any] = Field(..., examples=[{"tools": True, "sessions": True}])
+    server_info: Dict[str, Any] = Field(
+        ..., examples=[{"name": "Engineering Intelligence System", "version": "3.2.0"}]
+    )
 
 
 def get_mcp_tools() -> List[MCPToolDefinition]:

@@ -1,7 +1,8 @@
-from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional
+from datetime import datetime, timezone
 from enum import Enum
-from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, Field
 
 
 class UseCaseCategory(str, Enum):
@@ -35,36 +36,36 @@ class UseCase(BaseModel):
     effort_estimate: Optional[str] = Field(None)
     risk_level: Optional[str] = Field(None)
     owner: Optional[str] = Field(None)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class UseCaseRepository:
     def __init__(self):
         self._use_cases: Dict[str, UseCase] = {}
-    
+
     def add(self, use_case: UseCase) -> None:
         self._use_cases[use_case.id] = use_case
-    
+
     def get(self, use_case_id: str) -> Optional[UseCase]:
         return self._use_cases.get(use_case_id)
-    
+
     def find_by_platform(self, platform: str) -> List[UseCase]:
         return [uc for uc in self._use_cases.values() if platform in uc.platforms]
-    
+
     def find_by_category(self, category: UseCaseCategory) -> List[UseCase]:
         return [uc for uc in self._use_cases.values() if uc.category == category]
-    
+
     def find_by_priority(self, priority: UseCasePriority) -> List[UseCase]:
         return [uc for uc in self._use_cases.values() if uc.priority == priority]
-    
+
     def list_all(self) -> List[UseCase]:
         return list(self._use_cases.values())
 
 
 def _create_default_use_cases() -> UseCaseRepository:
     repo = UseCaseRepository()
-    
+
     use_cases = [
         UseCase(
             id="uc-sap-rest-integration",
@@ -144,10 +145,10 @@ def _create_default_use_cases() -> UseCaseRepository:
             requirements={"auto_scaling": True},
         ),
     ]
-    
+
     for uc in use_cases:
         repo.add(uc)
-    
+
     return repo
 
 

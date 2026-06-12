@@ -1,11 +1,10 @@
 import hashlib
 import logging
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict
 
-from documents.diagram_parser import DiagramTypeDetector, DiagramExtractionResult
-from documents.diagram_formats import DrawIOParser, PlantUMLParser, MermaidParser
-
+from documents.diagram_formats import DrawIOParser, MermaidParser, PlantUMLParser
+from documents.diagram_parser import DiagramTypeDetector
 from unified_ingestion.handlers.base import Handler, HandlerResult
 
 logger = logging.getLogger(__name__)
@@ -25,7 +24,9 @@ class DiagramHandler(Handler):
         self._plantuml_parser = PlantUMLParser()
         self._mermaid_parser = MermaidParser()
 
-    async def handle(self, content: bytes, source_id: str, metadata: Dict[str, Any]) -> HandlerResult:
+    async def handle(
+        self, content: bytes, source_id: str, metadata: Dict[str, Any]
+    ) -> HandlerResult:
         filename = metadata.get("filename", "diagram")
         text = content.decode("utf-8")
 
@@ -45,9 +46,7 @@ class DiagramHandler(Handler):
             logger.error("DiagramHandler failed: %s", e)
             return HandlerResult(success=False, error=str(e))
 
-    async def _handle_plantuml(
-        self, text: str, source_id: str, filename: str
-    ) -> HandlerResult:
+    async def _handle_plantuml(self, text: str, source_id: str, filename: str) -> HandlerResult:
         result = self._plantuml_parser.parse(text)
 
         chunks = []
@@ -96,9 +95,7 @@ class DiagramHandler(Handler):
             metadata={"diagram_type": "plantuml"},
         )
 
-    async def _handle_mermaid(
-        self, text: str, source_id: str, filename: str
-    ) -> HandlerResult:
+    async def _handle_mermaid(self, text: str, source_id: str, filename: str) -> HandlerResult:
         result = self._mermaid_parser.parse(text)
 
         chunks = []
@@ -177,9 +174,7 @@ class DiagramHandler(Handler):
             metadata={"diagram_type": diagram_type, "confidence": result.confidence},
         )
 
-    async def _handle_generic(
-        self, text: str, source_id: str, filename: str
-    ) -> HandlerResult:
+    async def _handle_generic(self, text: str, source_id: str, filename: str) -> HandlerResult:
         result = self._parser.extract_from_text(text, "unknown")
 
         chunks = []

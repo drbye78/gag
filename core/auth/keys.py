@@ -2,8 +2,8 @@
 
 import secrets
 from datetime import datetime, timedelta
-from typing import List, Optional
 from enum import Enum
+from typing import List, Optional
 
 
 class KeyType(str, Enum):
@@ -61,6 +61,7 @@ class APIKeyManager:
         if key.expires_at and key.expires_at < datetime.utcnow():
             return False
         import hmac
+
         if not hmac.compare_digest(key.key_hash, secrets.hash_password(key_value)):
             return False
         key.last_used = datetime.utcnow()

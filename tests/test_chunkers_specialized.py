@@ -51,9 +51,9 @@ ENV PYTHONUNBUFFERED=1
             assert "count" in chunk.metadata
 
     def test_chunk_groups_by_type(self, chunker):
-        """Test that instructions are grouped by type."""
+        """Test that single-stage Dockerfiles group instructions by type."""
+        # Single-stage Dockerfile (one FROM) groups by instruction type
         dockerfile_content = """FROM python:3.12
-FROM alpine:latest
 RUN echo "first run"
 RUN echo "second run"
 RUN echo "third run"
@@ -65,11 +65,11 @@ ENV C=3
 """
         result = chunker.chunk(dockerfile_content, "test-grouped")
 
-        # Verify groups: FROM=2, RUN=3, CMD=2, ENV=3
-        instruction_groups = {chunk.metadata["instruction"]: chunk.metadata["count"] for chunk in result.chunks}
+        # Verify groups: RUN=3, CMD=2, ENV=3
+        instruction_groups = {
+            chunk.metadata["instruction"]: chunk.metadata["count"] for chunk in result.chunks
+        }
 
-        assert "FROM" in instruction_groups
-        assert instruction_groups["FROM"] == 2
         assert "RUN" in instruction_groups
         assert instruction_groups["RUN"] == 3
         assert "CMD" in instruction_groups
@@ -80,6 +80,24 @@ ENV C=3
         # Verify content format includes grouped arguments
         for chunk in result.chunks:
             assert chunk.content.startswith(chunk.metadata["instruction"] + ":")
+
+    def test_chunk_multi_stage(self, chunker):
+        """Test that multi-stage Dockerfiles are chunked by stage."""
+        dockerfile_content = """FROM python:3.12 AS builder
+RUN pip install build-tools
+RUN build
+
+FROM alpine:latest
+COPY --from=builder /app /app
+CMD ["/app/run"]
+"""
+        result = chunker.chunk(dockerfile_content, "test-multi-stage")
+
+        # Multi-stage: should have stage-based chunks
+        assert len(result.chunks) >= 2
+        # Each chunk should have 'stage' metadata
+        stage_names = [chunk.metadata.get("stage") for chunk in result.chunks]
+        assert "builder" in stage_names
 
 
 class TestHelmChunker:

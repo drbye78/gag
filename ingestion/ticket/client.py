@@ -85,7 +85,7 @@ class JiraClient:
                     reporter=fields.get("reporter", {}).get("displayName", ""),
                     created_at=fields.get("created", ""),
                     updated_at=fields.get("updated", ""),
-                    labels=[l.get("name", "") for l in fields.get("labels", [])],
+                    labels=self._parse_jira_labels(fields.get("labels", [])),
                     metadata={
                         "issue_type": fields.get("issuetype", {}).get("name", ""),
                         "project": fields.get("project", {}).get("name", ""),
@@ -118,9 +118,22 @@ class JiraClient:
             reporter=fields.get("reporter", {}).get("displayName", ""),
             created_at=fields.get("created", ""),
             updated_at=fields.get("updated", ""),
-            labels=[l.get("name", "") for l in fields.get("labels", [])],
+            labels=self._parse_jira_labels(fields.get("labels", [])),
             metadata={"issue_type": fields.get("issuetype", {}).get("name", "")},
         )
+
+    @staticmethod
+    def _parse_jira_labels(labels: list) -> List[str]:
+        """Parse JIRA labels which can be dicts (API v2) or strings (API v3)."""
+        parsed = []
+        for label in labels:
+            if isinstance(label, str):
+                parsed.append(label)
+            elif isinstance(label, dict):
+                parsed.append(label.get("name", str(label)))
+            else:
+                parsed.append(str(label))
+        return parsed
 
     async def fetch_comments(self, issue_key: str) -> List[Dict[str, Any]]:
         try:
@@ -199,7 +212,7 @@ class GitHubIssuesClient:
                     reporter=issue.get("user", {}).get("login", ""),
                     created_at=issue.get("created_at", ""),
                     updated_at=issue.get("updated_at", ""),
-                    labels=[l for l in issue.get("labels", [])],
+                    labels=[lb for lb in issue.get("labels", [])],
                     metadata={
                         "url": issue.get("html_url", ""),
                         "comments": issue.get("comments", 0),
@@ -233,7 +246,7 @@ class GitHubIssuesClient:
             reporter=data.get("user", {}).get("login", ""),
             created_at=data.get("created_at", ""),
             updated_at=data.get("updated_at", ""),
-            labels=[l for l in data.get("labels", [])],
+            labels=[lb for lb in data.get("labels", [])],
             metadata={
                 "url": data.get("html_url", ""),
                 "comments": data.get("comments", 0),

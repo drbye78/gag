@@ -2,24 +2,37 @@
 
 import asyncio
 import time
-from typing import Callable, Dict, Optional
+from typing import Dict, Optional
 
-from fastapi import Request, HTTPException
+from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from core.config import get_settings
 
 
 class RateLimiter:
+    """In-memory rate limiter using a sliding-window counter.
+
+    NOTE: This implementation uses an in-memory counter, which means rate
+    limits are NOT shared across multiple processes or machines.  For
+    distributed deployments (e.g. multiple API workers behind a load
+    balancer), replace this with a Redis-backed rate limiter so that all
+    instances observe the same counters.
+    """
+
     def __init__(self, requests: int = 100, window: int = 60, max_clients: int = 10000):
         self.requests = requests
         self.window = window
         self.max_clients = max_clients
         self._clients: Dict[str, list] = {}
-        self._tenant_clients: Dict[str, Dict[str, list]] = {}
         self._last_cleanup = time.time()
         self._cleanup_interval = 300
-        self._lock = asyncio.Lock()
+        self._lock: Optional[asyncio.Lock] = None
+
+    def _get_lock(self) -> asyncio.Lock:
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
 
     def _get_client_id(self, request: Request) -> str:
         forwarded = request.headers.get("X-Forwarded-For")
@@ -42,24 +55,22 @@ class RateLimiter:
             return
 
         stale_keys = [
-            cid for cid, timestamps in self._clients.items()
+            cid
+            for cid, timestamps in self._clients.items()
             if not timestamps or (now - timestamps[-1]) > self.window
         ]
         for key in stale_keys:
             del self._clients[key]
 
         if len(self._clients) > self.max_clients:
-            sorted_clients = sorted(
-                self._clients.items(),
-                key=lambda x: x[1][-1] if x[1] else 0
-            )
-            for cid, _ in sorted_clients[:len(self._clients) - self.max_clients]:
+            sorted_clients = sorted(self._clients.items(), key=lambda x: x[1][-1] if x[1] else 0)
+            for cid, _ in sorted_clients[: len(self._clients) - self.max_clients]:
                 del self._clients[cid]
 
         self._last_cleanup = now
 
     async def check(self, request: Request) -> bool:
-        async with self._lock:
+        async with self._get_lock():
             self._cleanup_stale_clients()
             client_id = self._get_client_id(request)
             self._clean_old_requests(client_id)
@@ -87,9 +98,7 @@ def get_rate_limiter() -> RateLimiter:
     global _rate_limiter
     settings = get_settings()
     if _rate_limiter is None:
-        _rate_limiter = RateLimiter(
-            settings.rate_limit_requests, settings.rate_limit_window
-        )
+        _rate_limiter = RateLimiter(settings.rate_limit_requests, settings.rate_limit_window)
     return _rate_limiter
 
 
@@ -101,8 +110,18 @@ def sanitize_input(text: str, max_length: int = 10000) -> str:
 
 
 def sanitize_prompt_input(text: str) -> str:
-    """Remove common prompt injection patterns from user input."""
+    """Remove common prompt injection patterns from user input.
+
+    Applies NFKC Unicode normalization before pattern matching to defeat
+    homoglyph attacks where visually similar Unicode characters are used
+    to bypass regex-based filters (e.g. fullwidth Latin letters, look-alikes).
+    """
     import re
+    import unicodedata
+
+    # Normalize Unicode to composed form so homoglyphs collapse to their
+    # ASCII equivalents before we apply regex filters.
+    text = unicodedata.normalize("NFKC", text)
 
     # Common prompt injection patterns to block/filter
     injection_patterns = [
@@ -149,11 +168,10 @@ class ErrorHandler:
         }
 
     async def handle(self, request: Request, exc: Exception) -> JSONResponse:
-        from core.config import get_settings
-        from core.config import get_logger
+        from core.config import get_logger, get_settings
 
         logger = get_logger("error")
-        logger.error(f"{request.method} {request.url}: {exc}")
+        logger.error("%s %s: %s", request.method, request.url, exc)
 
         if isinstance(exc, HTTPException):
             return JSONResponse(

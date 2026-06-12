@@ -6,10 +6,10 @@ Enables synchronization between code and diagrams:
 - Diagram → Code (extract code from diagram)
 """
 
-import re
 import ast
+import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 
 @dataclass
@@ -42,9 +42,7 @@ class CodeToDiagramConverter:
                             if isinstance(item.target, ast.Name):
                                 name = item.target.id
                                 atype = "any"
-                                if item.annotation and isinstance(
-                                    item.annotation, ast.Name
-                                ):
+                                if item.annotation and isinstance(item.annotation, ast.Name):
                                     atype = item.annotation.id
                                 attrs.append({"name": name, "type": atype})
                         elif isinstance(item, ast.FunctionDef):
@@ -79,9 +77,9 @@ class CodeToDiagramConverter:
                                                 )
 
             from documents.diagram_parser import (
-                PlantUMLGenerator,
                 DiagramExtractionResult,
                 DiagramType,
+                PlantUMLGenerator,
             )
 
             result = DiagramExtractionResult(
@@ -101,9 +99,7 @@ class CodeToDiagramConverter:
                 metadata={"classes": len(classes)},
             )
         except Exception as e:
-            return SyncResult(
-                success=False, direction="code_to_diagram", output="", error=str(e)
-            )
+            return SyncResult(success=False, direction="code_to_diagram", output="", error=str(e))
 
 
 class DiagramToCodeConverter:
@@ -189,6 +185,4 @@ def sync_code_diagram(
         return CodeToDiagramConverter.parse_python_class(code)
     elif diagram:
         return DiagramToCodeConverter.parse_uml_class(diagram)
-    return SyncResult(
-        success=False, direction="unknown", output="", error="No input provided"
-    )
+    return SyncResult(success=False, direction="unknown", output="", error="No input provided")

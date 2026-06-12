@@ -1,7 +1,6 @@
 from collections import deque
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
-import json
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
@@ -90,9 +89,7 @@ class CommunityDetector:
                 component = bfs(entity.id)
 
                 if len(component) >= 2:
-                    key_entities = [
-                        entities[0].name for e in component[:5] if e == entities[0].id
-                    ]
+                    key_entities = [entities[0].name for e in component[:5] if e == entities[0].id]
                     for e in entities:
                         if e.id in component:
                             key_entities.append(e.name)
@@ -157,9 +154,7 @@ class LightweightCommunityDetector:
                         name=f"{etype} cluster",
                         entity_ids=eids,
                         summary=f"Cluster of {len(eids)} {etype} entities",
-                        key_entities=[eids[0], eids[-1]]
-                        if len(eids) > 1
-                        else [eids[0]],
+                        key_entities=[eids[0], eids[-1]] if len(eids) > 1 else [eids[0]],
                     )
                 )
 

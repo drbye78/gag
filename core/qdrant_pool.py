@@ -1,4 +1,5 @@
 """Qdrant connection pooling using shared HttpPool."""
+
 import logging
 from typing import Optional
 
@@ -13,16 +14,15 @@ DEFAULT_KEEPALIVE = 5
 
 
 class QdrantPool:
-
     def __init__(self, url: str, api_key: Optional[str] = None):
         self.url = url.rstrip("/")
         self.api_key = api_key
         self._pool = get_http_pool()
-    
+
     async def get_client(self) -> httpx.AsyncClient:
         await self._pool.start()
         return self._pool.client
-    
+
     async def close(self) -> None:
         await self._pool.stop()
 

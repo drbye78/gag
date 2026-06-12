@@ -15,7 +15,7 @@ from functools import lru_cache
 from typing import List, Optional
 
 try:
-    from langdetect import detect, LangDetectException
+    from langdetect import LangDetectException, detect
 
     LANGDETECT_AVAILABLE = True
 except ImportError:
@@ -27,6 +27,9 @@ except ImportError:
 class TextLanguage(str, Enum):
     RUSSIAN = "ru"
     ENGLISH = "en"
+    GERMAN = "de"
+    FRENCH = "fr"
+    SPANISH = "es"
     UNKNOWN = "unknown"
 
 
@@ -141,6 +144,102 @@ ENGLISH_STOP_WORDS = {
 }
 
 
+GERMAN_STOP_WORDS = {
+    "der",
+    "die",
+    "das",
+    "und",
+    "in",
+    "den",
+    "von",
+    "zu",
+    "das",
+    "mit",
+    "ist",
+    "ein",
+    "eine",
+    "nicht",
+    "auf",
+    "f\u00fcr",
+    "an",
+    "dem",
+    "es",
+    "sich",
+    "auch",
+    "als",
+    "nach",
+    "wie",
+    "oder",
+}
+
+FRENCH_STOP_WORDS = {
+    "le",
+    "la",
+    "les",
+    "de",
+    "des",
+    "un",
+    "une",
+    "du",
+    "et",
+    "en",
+    "est",
+    "que",
+    "qui",
+    "dans",
+    "ce",
+    "il",
+    "ne",
+    "sur",
+    "se",
+    "pas",
+    "plus",
+    "par",
+    "ce",
+    "avec",
+    "son",
+    "cette",
+}
+
+SPANISH_STOP_WORDS = {
+    "el",
+    "la",
+    "los",
+    "las",
+    "de",
+    "en",
+    "y",
+    "que",
+    "un",
+    "una",
+    "es",
+    "no",
+    "por",
+    "con",
+    "para",
+    "como",
+    "pero",
+    "su",
+    "m\u00e1s",
+    "este",
+    "ya",
+    "entre",
+    "cuando",
+    "muy",
+    "sin",
+}
+
+
+# Unicode ranges for Latin-script language detection
+_german_chars = set("\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df")
+_french_chars = set(
+    "\u00e0\u00e2\u00e7\u00e9\u00e8\u00ea\u00eb\u00ee\u00ef\u00f4\u00f9\u00fb\u00fc\u00c0\u00c2\u00c7\u00c9\u00ca\u00cb\u00ce\u00cf\u00d4\u00d9\u00db\u00dc"
+)
+_spanish_chars = set(
+    "\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1\u00fc\u00bf\u00a1\u00c1\u00c9\u00cd\u00d3\u00da\u00d1"
+)
+
+
 @lru_cache(maxsize=1000)
 def detect_language(text: str, min_confidence: float = 0.5) -> TextLanguage:
     if not text or not text.strip():
@@ -155,6 +254,12 @@ def detect_language(text: str, min_confidence: float = 0.5) -> TextLanguage:
             return TextLanguage.RUSSIAN
         if lang in ("en",):
             return TextLanguage.ENGLISH
+        if lang in ("de",):
+            return TextLanguage.GERMAN
+        if lang in ("fr",):
+            return TextLanguage.FRENCH
+        if lang in ("es",):
+            return TextLanguage.SPANISH
         return TextLanguage.UNKNOWN
     except LangDetectException:
         return _detect_by_script(text)
@@ -163,18 +268,32 @@ def detect_language(text: str, min_confidence: float = 0.5) -> TextLanguage:
 def _detect_by_script(text: str) -> TextLanguage:
     cyrillic_count = 0
     latin_count = 0
+    german_count = 0
+    french_count = 0
+    spanish_count = 0
 
     for char in text:
         if "\u0400" <= char <= "\u04ff" or "\u0500" <= char <= "\u052f":
             cyrillic_count += 1
-        elif char.isalpha() and (
-            "a" <= char.lower() <= "z" or "A" <= char.upper() <= "Z"
-        ):
+        elif char.isalpha() and ("a" <= char.lower() <= "z" or "A" <= char.upper() <= "Z"):
             latin_count += 1
+        if char in _german_chars:
+            german_count += 1
+        if char in _french_chars:
+            french_count += 1
+        if char in _spanish_chars:
+            spanish_count += 1
 
     if cyrillic_count > latin_count * 2:
         return TextLanguage.RUSSIAN
     if latin_count > cyrillic_count * 2:
+        # Use diacritical markers to distinguish Latin-script languages
+        if german_count > french_count and german_count > spanish_count:
+            return TextLanguage.GERMAN
+        if french_count > german_count and french_count > spanish_count:
+            return TextLanguage.FRENCH
+        if spanish_count > german_count and spanish_count > french_count:
+            return TextLanguage.SPANISH
         return TextLanguage.ENGLISH
 
     return TextLanguage.UNKNOWN
@@ -266,6 +385,12 @@ def is_stop_word(word: str, language: TextLanguage) -> bool:
 
     if language == TextLanguage.RUSSIAN:
         return word_lower in RUSSIAN_STOP_WORDS
+    if language == TextLanguage.GERMAN:
+        return word_lower in GERMAN_STOP_WORDS
+    if language == TextLanguage.FRENCH:
+        return word_lower in FRENCH_STOP_WORDS
+    if language == TextLanguage.SPANISH:
+        return word_lower in SPANISH_STOP_WORDS
 
     return word_lower in ENGLISH_STOP_WORDS
 
@@ -322,6 +447,9 @@ def get_language_name(code: TextLanguage) -> str:
     mapping = {
         TextLanguage.RUSSIAN: "Russian",
         TextLanguage.ENGLISH: "English",
+        TextLanguage.GERMAN: "German",
+        TextLanguage.FRENCH: "French",
+        TextLanguage.SPANISH: "Spanish",
         TextLanguage.UNKNOWN: "Unknown",
     }
     return mapping.get(code, "Unknown")

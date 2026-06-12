@@ -145,7 +145,7 @@ ARCHITECTURE DECISION RECORDS (5+):
 - API Gateway for external APIs
 - Platform-agnostic patterns
 
-REFERENCE ARCHURES (8 patterns):
+REFERENCE ARCHITECTURES (8 patterns):
 - Serverless (AWS Lambda, Azure Functions, GCP Cloud Functions)
 - Microservices (Kubernetes)
 - Event-driven (SNS/SQS, Event Hub)
@@ -246,7 +246,9 @@ class Step(str, Enum):
     GENERATE_PROPOSAL = "generate_proposal"
 
 
-def create_planner_response(intent: str, steps: list, tools: list, pdlc_phases: list = None) -> dict:
+def create_planner_response(
+    intent: str, steps: list, tools: list, pdlc_phases: list = None
+) -> dict:
     return {
         "intent": intent,
         "steps": steps,

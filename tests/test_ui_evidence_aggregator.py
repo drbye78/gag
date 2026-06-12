@@ -41,6 +41,7 @@ class TestEvidenceAggregator:
     @pytest.fixture
     def aggregator(self):
         from ui.evidence_aggregator import EvidenceAggregator
+
         return EvidenceAggregator()
 
     def test_aggregate_vlm_only(self, aggregator):

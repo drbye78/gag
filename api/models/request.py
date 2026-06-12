@@ -140,7 +140,7 @@ class CodeGraphIndexZipRequest(BaseModel):
         max_size = 50 * 1024 * 1024
         decoded = base64.b64decode(v)
         if len(decoded) > max_size:
-            raise ValueError(f"Content exceeds maximum size of {max_size // (1024*1024)}MB")
+            raise ValueError(f"Content exceeds maximum size of {max_size // (1024 * 1024)}MB")
         return v
 
 

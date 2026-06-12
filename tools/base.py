@@ -1,7 +1,7 @@
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
 from enum import Enum
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
 
@@ -59,7 +59,7 @@ class BaseTool(ABC):
 
 class PDLCBaseTool(BaseTool):
     """Base class for PDLC tools with template method pattern.
-    
+
     Implements the try-LLM-fallback pattern common to all PDLC tools.
     Subclasses override _llm_execute() and _fallback() instead of execute().
     """
@@ -86,61 +86,15 @@ class PDLCBaseTool(BaseTool):
 
 class ArchitectureEvaluator(BaseTool):
     name = "architecture_evaluate"
-    description = (
-        "Evaluate architecture design for quality, consistency, and best practices"
-    )
-
-    PATTERNS_SCORES = {
-        "microservices": {"correctness": 0.85, "consistency": 0.9, "best_practices": 0.88},
-        "serverless": {"correctness": 0.9, "consistency": 0.85, "best_practices": 0.92},
-        "monolith": {"correctness": 0.95, "consistency": 0.95, "best_practices": 0.7},
-        "event-driven": {"correctness": 0.82, "consistency": 0.88, "best_practices": 0.85},
-        "cqrs": {"correctness": 0.88, "consistency": 0.82, "best_practices": 0.9},
-        "default": {"correctness": 0.8, "consistency": 0.8, "best_practices": 0.8},
-    }
+    description = "Evaluate architecture design for quality, consistency, and best practices"
 
     async def execute(self, input: ToolInput) -> ToolOutput:
-        architecture_id = input.args.get("architecture_id", "")
-        criteria = input.args.get(
-            "criteria", ["correctness", "consistency", "best_practices"]
+        return ToolOutput(
+            result=None,
+            error="ArchitectureEvaluator requires an LLM provider. "
+                  "Configure LLM_PROVIDER and LLM_API_KEY to enable evaluation.",
+            metadata={"available": False},
         )
-
-        arch_lower = architecture_id.lower()
-        scores = {}
-        for c in criteria:
-            matched = False
-            for pattern, pattern_scores in self.PATTERNS_SCORES.items():
-                if pattern in arch_lower:
-                    scores[c] = pattern_scores.get(c, 0.8)
-                    matched = True
-                    break
-            if not matched:
-                scores[c] = self.PATTERNS_SCORES["default"].get(c, 0.8)
-
-        issues = []
-        recommendations = []
-
-        if scores.get("best_practices", 0) < 0.85:
-            issues.append("Architecture may not follow current best practices")
-            recommendations.append("Consider adopting modern architectural patterns")
-
-        if scores.get("consistency", 0) < 0.85:
-            issues.append("Architecture consistency could be improved")
-            recommendations.append("Standardize component interactions and data flow")
-
-        avg_score = sum(scores.values()) / len(scores) if scores else 0.8
-        if avg_score < 0.75:
-            issues.append("Overall architecture score below threshold")
-            recommendations.append("Review architecture against industry standards")
-
-        result = {
-            "architecture_id": architecture_id,
-            "scores": scores,
-            "issues": issues,
-            "recommendations": recommendations,
-        }
-
-        return ToolOutput(result=result, metadata={"evaluated": True})
 
     def validate_input(self, input: Dict[str, Any]) -> bool:
         return "architecture_id" in input
@@ -172,21 +126,26 @@ class SecurityValidator(BaseTool):
 
         if content:
             import re
+
             for pattern, description in self.VULNERABILITY_PATTERNS:
                 if re.search(pattern, content, re.IGNORECASE):
-                    vulnerabilities.append({
-                        "type": "pattern_match",
-                        "description": description,
-                        "severity": "medium" if "sql" in description.lower() else "low",
-                    })
+                    vulnerabilities.append(
+                        {
+                            "type": "pattern_match",
+                            "description": description,
+                            "severity": "medium" if "sql" in description.lower() else "low",
+                        }
+                    )
 
         if target_type == "code":
             if len(content) > 10000:
-                vulnerabilities.append({
-                    "type": "size_check",
-                    "description": "Large code file may need additional review",
-                    "severity": "info",
-                })
+                vulnerabilities.append(
+                    {
+                        "type": "size_check",
+                        "description": "Large code file may need additional review",
+                        "severity": "info",
+                    }
+                )
 
         passed = len([v for v in vulnerabilities if v.get("severity") != "info"]) == 0
 
@@ -240,10 +199,7 @@ class CostEstimator(BaseTool):
         multiplier = self.TRAFFIC_MULTIPLIERS.get(traffic_estimate, 1.0)
         base_by_arch = self._estimate_by_architecture(architecture_id)
 
-        breakdown = {
-            category: int(base * multiplier)
-            for category, base in base_by_arch.items()
-        }
+        breakdown = {category: int(base * multiplier) for category, base in base_by_arch.items()}
 
         total = sum(breakdown.values())
 
@@ -339,7 +295,7 @@ class ChainReasoningTool(BaseTool):
         facts = input.args.get("facts", [])
 
         try:
-            from retrieval.reasoning import get_reasoning_engine, ReasoningMode
+            from retrieval.reasoning import ReasoningMode, get_reasoning_engine
 
             engine = get_reasoning_engine(ReasoningMode.CHAIN_OF_THOUGHTS)
             result = await engine.reason(query, facts)
@@ -389,15 +345,10 @@ class IterativeReasoningTool(BaseTool):
 
             retriever = get_hybrid_retriever()
 
-            def retriever_fn(q: str) -> List[Dict[str, Any]]:
-                # Sync wrapper for async retriever
-                import asyncio
+            async def retriever_fn(q: str) -> List[Dict[str, Any]]:
                 try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        # If loop is running, we need to handle differently
-                        return []
-                    return asyncio.run(retriever.search(q, limit=10)).get("results", [])
+                    result = await retriever.search(q, limit=10)
+                    return result.get("results", [])
                 except Exception:
                     return []
 
@@ -518,6 +469,7 @@ class KubernetesSearchTool(BaseTool):
     async def execute(self, input: ToolInput) -> ToolOutput:
         try:
             from retrieval.tooling import get_kubernetes_retriever
+
             retriever = get_kubernetes_retriever()
             result = await retriever.search(
                 query=input.args.get("query", ""),
@@ -540,6 +492,7 @@ class HelmSearchTool(BaseTool):
     async def execute(self, input: ToolInput) -> ToolOutput:
         try:
             from retrieval.tooling import get_helm_retriever
+
             retriever = get_helm_retriever()
             result = await retriever.search(
                 query=input.args.get("query", ""),
@@ -561,6 +514,7 @@ class DockerfileSearchTool(BaseTool):
     async def execute(self, input: ToolInput) -> ToolOutput:
         try:
             from retrieval.tooling import get_dockerfile_retriever
+
             retriever = get_dockerfile_retriever()
             result = await retriever.search(
                 query=input.args.get("query", ""),
@@ -582,6 +536,7 @@ class GraphQLSearchTool(BaseTool):
     async def execute(self, input: ToolInput) -> ToolOutput:
         try:
             from retrieval.tooling import get_graphql_retriever
+
             retriever = get_graphql_retriever()
             result = await retriever.search(
                 query=input.args.get("query", ""),
@@ -603,6 +558,7 @@ class IstioSearchTool(BaseTool):
     async def execute(self, input: ToolInput) -> ToolOutput:
         try:
             from retrieval.tooling import get_istio_retriever
+
             retriever = get_istio_retriever()
             result = await retriever.search(
                 query=input.args.get("query", ""),
@@ -625,6 +581,7 @@ class FindCallersTool(BaseTool):
     async def execute(self, input: ToolInput) -> ToolOutput:
         try:
             from retrieval.code_graph import get_code_graph_retriever
+
             retriever = get_code_graph_retriever()
             result = await retriever.find_callers(
                 function_name=input.args.get("function_name", ""),
@@ -645,6 +602,7 @@ class FindCalleesTool(BaseTool):
     async def execute(self, input: ToolInput) -> ToolOutput:
         try:
             from retrieval.code_graph import get_code_graph_retriever
+
             retriever = get_code_graph_retriever()
             result = await retriever.find_callees(
                 function_name=input.args.get("function_name", ""),
@@ -665,6 +623,7 @@ class FindDeadCodeTool(BaseTool):
     async def execute(self, input: ToolInput) -> ToolOutput:
         try:
             from retrieval.code_graph import get_code_graph_retriever
+
             retriever = get_code_graph_retriever()
             result = await retriever.search(
                 query="unused",
@@ -686,6 +645,7 @@ class GetComplexityTool(BaseTool):
     async def execute(self, input: ToolInput) -> ToolOutput:
         try:
             from retrieval.code_graph import get_code_graph_retriever
+
             retriever = get_code_graph_retriever()
             function_name = input.args.get("function_name", "")
             result = await retriever.search(
@@ -708,6 +668,7 @@ class ClassHierarchyTool(BaseTool):
     async def execute(self, input: ToolInput) -> ToolOutput:
         try:
             from retrieval.code_graph import get_code_graph_retriever
+
             retriever = get_code_graph_retriever()
             class_name = input.args.get("class_name", "")
             result = await retriever.search(
@@ -730,6 +691,7 @@ class GetModuleDepsTool(BaseTool):
     async def execute(self, input: ToolInput) -> ToolOutput:
         try:
             from retrieval.code_graph import get_code_graph_retriever
+
             retriever = get_code_graph_retriever()
             module = input.args.get("module", "")
             result = await retriever.search(
@@ -752,6 +714,7 @@ class ExtractFromImageTool(BaseTool):
     async def execute(self, input: ToolInput) -> ToolOutput:
         try:
             from multimodal.vlm import get_vlm_processor
+
             processor = get_vlm_processor()
             result = await processor.extract_for_ir(
                 image_url=input.args.get("image_url", ""),
@@ -771,6 +734,7 @@ class AnalyzeVisualTool(BaseTool):
     async def execute(self, input: ToolInput) -> ToolOutput:
         try:
             from multimodal.vlm import get_vlm_processor
+
             processor = get_vlm_processor()
             result = await processor.analyze_image(
                 image_url=input.args.get("image_url", ""),
@@ -793,6 +757,7 @@ class ParseDocumentAdvancedTool(BaseTool):
     async def execute(self, input: ToolInput) -> ToolOutput:
         try:
             from documents.parse import get_document_parser
+
             parser = get_document_parser()
             file_path = input.args.get("file_path")
             url = input.args.get("url")
@@ -818,6 +783,7 @@ class ColpalSearchTool(BaseTool):
     async def execute(self, input: ToolInput) -> ToolOutput:
         try:
             from documents.colpali import get_colpali_client
+
             client = get_colpali_client()
             if not client:
                 return ToolOutput(result=None, error="ColPali not configured", metadata={})
@@ -843,6 +809,7 @@ class UISketchSearchTool(BaseTool):
     async def execute(self, input: ToolInput) -> ToolOutput:
         try:
             from ui.retriever import get_ui_retriever
+
             retriever = get_ui_retriever()
             if not retriever:
                 return ToolOutput(result=None, error="UI retriever not configured", metadata={})
@@ -897,18 +864,19 @@ class ToolRegistry:
         self.register(ColpalSearchTool())
         self.register(UISketchSearchTool())
         from ui.suggestion_tool import UISuggestionTool
+
         self.register(UISuggestionTool())
         self._register_pdlc_tools()
 
     def _register_pdlc_tools(self):
         try:
+            from tools.day2 import register_day2_tools
+            from tools.deployment import register_deployment_tools
+            from tools.feedback import register_feedback_tools
             from tools.ideation import register_ideation_tools
+            from tools.observability import register_observability_tools
             from tools.requirements import register_requirements_tools
             from tools.testing import register_testing_tools
-            from tools.deployment import register_deployment_tools
-            from tools.observability import register_observability_tools
-            from tools.feedback import register_feedback_tools
-            from tools.day2 import register_day2_tools
 
             register_ideation_tools(self)
             register_requirements_tools(self)
@@ -926,17 +894,34 @@ class ToolRegistry:
     def get(self, name: str) -> Optional[BaseTool]:
         return self._tools.get(name)
 
+    def get_or_raise(self, name: str) -> BaseTool:
+        """Get a tool by name, raising KeyError if not found."""
+        if name not in self._tools:
+            raise KeyError(
+                f"Tool '{name}' not found in registry. Available: {list(self._tools.keys())}"
+            )
+        return self._tools[name]
+
     def list_tools(self) -> List[Dict[str, str]]:
+        return [{"name": t.name, "description": t.description} for t in self._tools.values()]
+
+    # NOTE: L-40 fix - list_tools already returns descriptions above.
+    # The following is a convenience method that returns more detail:
+    def list_tools_detailed(self) -> List[Dict[str, Any]]:
+        """List all tools with full details including phase and input schema."""
         return [
-            {"name": t.name, "description": t.description} for t in self._tools.values()
+            {
+                "name": t.name,
+                "description": t.description,
+                "phase": t.phase.value if hasattr(t.phase, "value") else str(t.phase),
+            }
+            for t in self._tools.values()
         ]
 
     async def execute(self, tool_name: str, args: Dict[str, Any]) -> ToolOutput:
         tool = self.get(tool_name)
         if not tool:
-            return ToolOutput(
-                result=None, error=f"Tool '{tool_name}' not found", metadata={}
-            )
+            return ToolOutput(result=None, error=f"Tool '{tool_name}' not found", metadata={})
 
         if not tool.validate_input(args):
             return ToolOutput(result=None, error="Invalid input for tool", metadata={})
@@ -968,9 +953,7 @@ class ToolRegistry:
         return self._resources.get(name)
 
     def list_prompts(self) -> List[Dict[str, Any]]:
-        return [
-            {"name": name, "description": desc} for name, desc in self._prompts.items()
-        ]
+        return [{"name": name, "description": desc} for name, desc in self._prompts.items()]
 
     def register_prompt(self, name: str, description: str, template: str):
         self._prompts[name] = {"description": description, "template": template}

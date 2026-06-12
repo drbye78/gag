@@ -1,11 +1,6 @@
 """Tests for IRBuilder, including UI graph integration."""
 
-import pytest
-from datetime import datetime
-from unittest.mock import patch, MagicMock
-
 from multimodal.ir_builder import IRBuilder
-from ui.models import UISketch, UIElement, UILayout, UIExtractionResult
 
 
 class TestIRBuilderAddUI:
@@ -24,6 +19,7 @@ class TestIRBuilderAddUI:
 
     def test_add_ui_with_extraction_result(self):
         from multimodal.ir_builder import IRBuilder
+
         builder = IRBuilder()
         result = builder.add_ui("test content", graph_node_id="test-123")
         assert result is not None

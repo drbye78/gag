@@ -1,6 +1,7 @@
-from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional
 from enum import Enum
+from typing import Dict, List, Optional
+
+from pydantic import BaseModel, Field
 
 
 class ReferenceArchitectureType(str, Enum):
@@ -27,26 +28,26 @@ class ReferenceArchitecture(BaseModel):
 class ReferenceArchitectureRepository:
     def __init__(self):
         self._refs: Dict[str, ReferenceArchitecture] = {}
-    
+
     def add(self, ref: ReferenceArchitecture) -> None:
         self._refs[ref.id] = ref
-    
+
     def get(self, ref_id: str) -> Optional[ReferenceArchitecture]:
         return self._refs.get(ref_id)
-    
+
     def find_by_type(self, ref_type: ReferenceArchitectureType) -> List[ReferenceArchitecture]:
         return [r for r in self._refs.values() if r.type == ref_type]
-    
+
     def find_by_platform(self, platform: str) -> List[ReferenceArchitecture]:
         return [r for r in self._refs.values() if platform in r.platforms]
-    
+
     def list_all(self) -> List[ReferenceArchitecture]:
         return list(self._refs.values())
 
 
 def _create_default_references() -> ReferenceArchitectureRepository:
     repo = ReferenceArchitectureRepository()
-    
+
     refs = [
         ReferenceArchitecture(
             id="ref-serverless-aws",
@@ -161,10 +162,10 @@ def _create_default_references() -> ReferenceArchitectureRepository:
             },
         ),
     ]
-    
+
     for ref in refs:
         repo.add(ref)
-    
+
     return repo
 
 

@@ -1,7 +1,8 @@
-from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional
+from datetime import datetime, timezone
 from enum import Enum
-from datetime import datetime
+from typing import Dict, List, Optional
+
+from pydantic import BaseModel, Field
 
 
 class ADRStatus(str, Enum):
@@ -31,36 +32,36 @@ class ADR(BaseModel):
     superseded_by: Optional[str] = Field(None)
     notes: List[str] = Field(default_factory=list)
     owner: Optional[str] = Field(None)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ADRRepository:
     def __init__(self):
         self._adrs: Dict[str, ADR] = {}
-    
+
     def add(self, adr: ADR) -> None:
         self._adrs[adr.id] = adr
-    
+
     def get(self, adr_id: str) -> Optional[ADR]:
         return self._adrs.get(adr_id)
-    
+
     def find_by_status(self, status: ADRStatus) -> List[ADR]:
         return [a for a in self._adrs.values() if a.status == status]
-    
+
     def find_by_platform(self, platform: str) -> List[ADR]:
         return [a for a in self._adrs.values() if platform in a.related_platforms]
-    
+
     def find_by_pattern(self, pattern: str) -> List[ADR]:
         return [a for a in self._adrs.values() if pattern in a.related_patterns]
-    
+
     def list_all(self) -> List[ADR]:
         return list(self._adrs.values())
 
 
 def _create_default_adrs() -> ADRRepository:
     repo = ADRRepository()
-    
+
     adrs = [
         ADR(
             id="adr-001",
@@ -113,10 +114,10 @@ def _create_default_adrs() -> ADRRepository:
             related_platforms=["aws", "azure", "gcp", "tanzu"],
         ),
     ]
-    
+
     for adr in adrs:
         repo.add(adr)
-    
+
     return repo
 
 

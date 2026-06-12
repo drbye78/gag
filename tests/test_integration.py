@@ -2,13 +2,15 @@
 Integration tests for API endpoints and MCP interface.
 """
 
+from unittest.mock import MagicMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 
 def _make_client():
     """Create an ASGI test client for the main app."""
-    from httpx import AsyncClient, ASGITransport
+    from httpx import ASGITransport, AsyncClient
+
     from api.main import app
 
     transport = ASGITransport(app=app)
@@ -36,7 +38,7 @@ class TestAPIEndpoints:
 class TestMCPInterface:
     @pytest.mark.asyncio
     async def test_mcp_initialize(self):
-        from api.mcp import MCPHandler, MCPResponse
+        from api.mcp import MCPHandler
 
         handler = MCPHandler()
         request = MagicMock()
@@ -155,6 +157,7 @@ class TestAuthEndpoints:
         # Git repos endpoint should be accessible (no auth required by default)
         try:
             from git.api import router
+
             assert router is not None
         except ImportError:
             pass  # Skip if not available

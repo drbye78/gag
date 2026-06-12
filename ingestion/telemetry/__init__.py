@@ -1,18 +1,18 @@
 from ingestion.telemetry.client import (
-    PrometheusClient,
     ElasticsearchClient,
     LokiClient,
-    get_prometheus_client,
+    PrometheusClient,
     get_elasticsearch_client,
     get_loki_client,
-)
-from ingestion.telemetry.pipeline import (
-    TelemetryIngestionPipeline,
-    get_telemetry_pipeline,
+    get_prometheus_client,
 )
 from ingestion.telemetry.credentials import (
     TelemetryCredentialManager,
     get_telemetry_credentials,
+)
+from ingestion.telemetry.pipeline import (
+    TelemetryIngestionPipeline,
+    get_telemetry_pipeline,
 )
 
 __all__ = [

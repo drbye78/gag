@@ -1,14 +1,14 @@
 import asyncio
 import logging
 import time
-from typing import Any, Callable, Dict, Optional
-
 from functools import wraps
+from typing import Any, Callable, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
 try:
-    from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+    from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+
     TENANCY_AVAILABLE = True
 except ImportError:
     TENANCY_AVAILABLE = False
@@ -71,11 +71,14 @@ def get_embedding_cache() -> EmbeddingCache:
 
 def with_retry(max_attempts: int = 3, min_wait: float = 1.0, max_wait: float = 10.0):
     if not TENANCY_AVAILABLE:
+
         def noop_decorator(func: Callable) -> Callable:
             @wraps(func)
             async def wrapper(*args: Any, **kwargs: Any):
                 return await func(*args, **kwargs)
+
             return wrapper
+
         return noop_decorator
 
     return retry(

@@ -7,10 +7,9 @@ WebDAV-enabled storage (Nextcloud, SharePoint, etc.).
 
 import logging
 import os
-import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 import httpx
 
@@ -72,6 +71,7 @@ class WebDAVClient:
         url = f"{base}/{path}"
         # SECURITY: Validate the constructed URL for SSRF prevention
         from core.security import validate_url
+
         try:
             validate_url(url)
         except ValueError:
@@ -118,45 +118,60 @@ class WebDAVClient:
 
         except Exception as e:
             import logging
+
             logging.getLogger(__name__).warning("WebDAV list failed: %s", e, exc_info=True)
             return []
 
     def _parse_propfind_response(self, xml: str) -> List[WebDAVFile]:
-        import re
+        import xml.etree.ElementTree as ET
 
         files = []
 
-        responses = re.findall(r"<d:response>(.*?)</d:response>", xml, re.DOTALL)
+        try:
+            root = ET.fromstring(xml)
+        except ET.ParseError:
+            return []
 
-        for resp in responses:
-            href_match = re.search(r"<d:href>(.*?)</d:href>", resp)
-            if not href_match:
+        # Register common WebDAV namespaces
+        ns = {
+            "d": "DAV:",
+            "cs": "http://calendarserver.org/ns/",
+        }
+
+        for response in root.findall("d:response", ns):
+            href_elem = response.find("d:href", ns)
+            if href_elem is None or not href_elem.text:
                 continue
 
-            path = href_match.group(1).strip()
+            path = href_elem.text.strip()
             if path.endswith("/"):
                 path = path[:-1]
 
-            name_match = re.search(r"<d:displayname>(.*?)</d:displayname>", resp)
-            name = name_match.group(1) if name_match else os.path.basename(path)
+            propstat = response.find("d:propstat", ns)
+            if propstat is None:
+                continue
+            prop = propstat.find("d:prop", ns)
+            if prop is None:
+                continue
 
-            size_match = re.search(
-                r"<d:getcontentlength>(.*?)</d:getcontentlength>", resp
-            )
-            size = int(size_match.group(1)) if size_match else 0
+            name_elem = prop.find("d:displayname", ns)
+            name = name_elem.text if name_elem is not None and name_elem.text else os.path.basename(path)
 
-            type_match = re.search(r"<d:getcontenttype>(.*?)</d:getcontenttype>", resp)
-            content_type = (
-                type_match.group(1) if type_match else "application/octet-stream"
-            )
+            size_elem = prop.find("d:getcontentlength", ns)
+            size = int(size_elem.text) if size_elem is not None and size_elem.text else 0
 
-            mod_match = re.search(r"<d:getlastmodified>(.*?)</d:getlastmodified>", resp)
-            modified = mod_match.group(1) if mod_match else None
+            type_elem = prop.find("d:getcontenttype", ns)
+            content_type = type_elem.text if type_elem is not None and type_elem.text else "application/octet-stream"
 
-            is_dir = "<d:collection/>" in resp or "<d:collection>" in resp
+            mod_elem = prop.find("d:getlastmodified", ns)
+            modified = mod_elem.text if mod_elem is not None and mod_elem.text else None
 
-            etag_match = re.search(r"<d:getetag>(.*?)</d:getetag>", resp)
-            etag = etag_match.group(1) if etag_match else None
+            # Collection detection via resourcetype
+            res_type = prop.find("d:resourcetype", ns)
+            is_dir = res_type is not None and res_type.find("d:collection", ns) is not None
+
+            etag_elem = prop.find("d:getetag", ns)
+            etag = etag_elem.text if etag_elem is not None and etag_elem.text else None
 
             files.append(
                 WebDAVFile(
@@ -170,6 +185,7 @@ class WebDAVClient:
                 )
             )
 
+        # Skip first entry (often the collection itself)
         return files[1:]
 
     async def download_file(self, path: str) -> Optional[bytes]:
@@ -260,9 +276,7 @@ class WebDAVClient:
 
         for file in files:
             if file.is_directory:
-                await self._sync_folder_recursive(
-                    file.path, results, extensions, max_files
-                )
+                await self._sync_folder_recursive(file.path, results, extensions, max_files)
             elif not extensions or any(file.name.endswith(ext) for ext in extensions):
                 results.append(file)
 

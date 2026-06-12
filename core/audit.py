@@ -1,13 +1,11 @@
 """Audit logging for compliance."""
 
-import json
 import logging
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, Optional
 
 from pydantic import BaseModel
-
 
 logger = logging.getLogger(__name__)
 
@@ -67,13 +65,19 @@ class AuditLogger:
     def login(self, user_id: str, tenant_id: Optional[str] = None, ip: str = None):
         self.log(AuditEventType.LOGIN, user_id, "auth", "login", True, tenant_id, ip)
 
-    def access_denied(
-        self, user_id: str, resource: str, ip: str = None
-    ):
+    def access_denied(self, user_id: str, resource: str, ip: str = None):
         self.log(AuditEventType.ACCESS_DENIED, user_id, resource, "access", False, ip=ip)
 
     def query(self, user_id: str, query: str, tenant_id: Optional[str] = None):
-        self.log(AuditEventType.QUERY, user_id, "query", "execute", True, tenant_id, metadata={"query": query})
+        self.log(
+            AuditEventType.QUERY,
+            user_id,
+            "query",
+            "execute",
+            True,
+            tenant_id,
+            metadata={"query": query},
+        )
 
 
 _audit_logger: Optional[AuditLogger] = None

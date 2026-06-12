@@ -1,16 +1,16 @@
-from retrieval.rerank.base import RerankProvider, RerankResult, BaseReranker
+from retrieval.rerank.base import BaseReranker, RerankProvider, RerankResult
 from retrieval.rerank.pipeline import (
-    RerankPipeline,
     RerankConfig,
+    RerankPipeline,
     RerankStrategy,
     get_rerank_pipeline,
 )
 from retrieval.rerank.providers import (
-    CohereReranker,
     BGEReranker,
-    SentenceTransformerReranker,
+    CohereReranker,
     JinaReranker,
     LlamaIndexReranker,
+    SentenceTransformerReranker,
 )
 
 __all__ = [

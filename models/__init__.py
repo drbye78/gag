@@ -4,61 +4,60 @@ Models Module - Pydantic schemas for the system.
 Exports: IR, Graph, Retrieval, and MCP schemas.
 """
 
-from models.ir import (
-    IRNode,
-    ArchitectureIR,
-    UIIR,
-    CodeIR,
-    DocumentIR,
-    IRCollection,
-    ArtifactType,
-    ArtifactStatus,
-    ComponentType,
-    Technology,
-)
 from models.graph import (
-    GraphNode,
     GraphEdge,
+    GraphEdgeType,
+    GraphNode,
+    GraphNodeType,
     GraphQuery,
     SubgraphResult,
-    GraphNodeType,
-    GraphEdgeType,
-)
-from models.retrieval import (
-    RetrievalSource,
-    SearchType,
-    Document,
-    CodeEntity,
-    Ticket,
-    TelemetryEvent,
-    Metric,
-    RetrievalResult,
-    RetrievalRequest,
-)
-from models.mcp import (
-    MCPRequest,
-    MCPResponse,
-    MCPToolDefinition,
-    MCPToolCall,
-    MCP_TOOLS,
 )
 from models.graphrag import (
-    EntityType,
-    RelationshipType,
-    EntityNode,
-    RelationshipEdge,
     Community,
+    CommunityResponse,
+    EntityNode,
+    EntitySearchRequest,
+    EntitySearchResponse,
+    EntityType,
     GraphRAGConfig,
     GraphRAGQueryRequest,
     GraphRAGQueryResponse,
-    EntitySearchRequest,
-    EntitySearchResponse,
+    GraphRAGStatsResponse,
+    RelationshipEdge,
     RelationshipSearchRequest,
     RelationshipSearchResponse,
-    CommunityResponse,
-    GraphRAGStatsResponse,
+    RelationshipType,
 )
-
+from models.ir import (
+    UIIR,
+    ArchitectureIR,
+    ArtifactStatus,
+    ArtifactType,
+    CodeIR,
+    ComponentType,
+    DocumentIR,
+    IRCollection,
+    IRNode,
+    Technology,
+)
+from models.mcp import (
+    MCP_TOOLS,
+    MCPRequest,
+    MCPResponse,
+    MCPToolCall,
+    MCPToolDefinition,
+)
+from models.retrieval import (
+    CodeEntity,
+    Document,
+    Metric,
+    RetrievalRequest,
+    RetrievalResult,
+    RetrievalSource,
+    SearchType,
+    TelemetryEvent,
+    Ticket,
+)
 
 __all__ = [
     "IRNode",

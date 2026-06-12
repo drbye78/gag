@@ -1,19 +1,19 @@
+import logging
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List
 
-from ingestion.crossref import get_cross_reference_extractor, CrossReferenceExtractor
+from ingestion.crossref import get_cross_reference_extractor
 from ingestion.structural_chunker import get_structural_chunker
+
+logger = logging.getLogger(__name__)
+from ingestion.graphrag.community_detector import (
+    get_community_detector,
+)
 from ingestion.graphrag.entity_extractor import (
     get_entity_extractor,
-    DocumentEntityExtractor,
 )
 from ingestion.graphrag.relationship_inferrer import (
     get_relationship_inferrer,
-    RelationshipInferrer,
-)
-from ingestion.graphrag.community_detector import (
-    get_community_detector,
-    CommunityDetector,
 )
 from ingestion.indexer import get_graph_indexer, get_vector_indexer
 
@@ -41,9 +41,7 @@ class GraphRAGPipeline:
         self.crossref_extractor = get_cross_reference_extractor()
         self.structural_chunker = get_structural_chunker()
         self.entity_extractor = get_entity_extractor(use_llm=use_llm_extraction)
-        self.relationship_inferrer = get_relationship_inferrer(
-            use_llm=use_llm_extraction
-        )
+        self.relationship_inferrer = get_relationship_inferrer(use_llm=use_llm_extraction)
         self.community_detector = get_community_detector(use_llm=use_llm_extraction)
 
         self.graph_indexer = get_graph_indexer()
@@ -59,52 +57,61 @@ class GraphRAGPipeline:
 
         start = time.time()
 
-        cross_ref_result = self.crossref_extractor.extract(content, source_id)
+        entities: List[Any] = []
+        relationships: List[Any] = []
+        communities: List[Any] = []
+        cross_ref_result: Optional[Any] = None
+        chunk_result: Optional[Any] = None
+        indexed_nodes = False
+        indexed_edges = False
 
-        if self.use_structural_chunking:
-            chunk_result = self.structural_chunker.chunk(content, source_id)
-        else:
-            from ingestion.chunker import get_document_chunker
+        try:
+            cross_ref_result = self.crossref_extractor.extract(content, source_id)
 
-            chunk_result = get_document_chunker().chunk(content, source_id)
+            if self.use_structural_chunking:
+                chunk_result = self.structural_chunker.chunk(content, source_id)
+            else:
+                from ingestion.chunker import get_document_chunker
 
-        entities = []
-        relationships = []
-        communities = []
+                chunk_result = get_document_chunker().chunk(content, source_id)
 
-        if hasattr(self.entity_extractor, "extract"):
-            entity_result = await self.entity_extractor.extract(content, source_id)
-            entities = entity_result.entities
+            if hasattr(self.entity_extractor, "extract"):
+                entity_result = await self.entity_extractor.extract(content, source_id)
+                entities = entity_result.entities
 
-            if entities and hasattr(self.relationship_inferrer, "infer"):
-                rel_result = await self.relationship_inferrer.infer(
-                    entities, content, source_id
-                )
-                relationships = rel_result.relationships
-
-                if hasattr(self.community_detector, "detect"):
-                    comm_result = await self.community_detector.detect(
-                        entities, relationships
+                if entities and hasattr(self.relationship_inferrer, "infer"):
+                    rel_result = await self.relationship_inferrer.infer(
+                        entities, content, source_id
                     )
-                    communities = comm_result.communities
+                    relationships = rel_result.relationships
 
-        await self._index_to_graph(entities, relationships, cross_ref_result.references)
+                    if hasattr(self.community_detector, "detect"):
+                        comm_result = await self.community_detector.detect(entities, relationships)
+                        communities = comm_result.communities
 
-        for chunk in chunk_result.chunks:
-            chunk.metadata["entities"] = [
-                e.id for e in entities if e.name.lower() in chunk.content.lower()
-            ][:10]
+            await self._index_to_graph(entities, relationships, cross_ref_result.references)
 
-        took = int((time.time() - start) * 1000)
-        return GraphRAGResult(
-            source_id=source_id,
-            entities=entities,
-            relationships=relationships,
-            communities=communities,
-            cross_references=cross_ref_result.references,
-            chunks=chunk_result.chunks,
-            took_ms=took,
-        )
+            for chunk in chunk_result.chunks:
+                chunk.metadata["entities"] = [
+                    e.id for e in entities if e.name.lower() in chunk.content.lower()
+                ][:10]
+
+            took = int((time.time() - start) * 1000)
+            return GraphRAGResult(
+                source_id=source_id,
+                entities=entities,
+                relationships=relationships,
+                communities=communities,
+                cross_references=cross_ref_result.references,
+                chunks=chunk_result.chunks,
+                took_ms=took,
+            )
+
+        except Exception as e:
+            logger.error("GraphRAG pipeline failed for %s: %s", source_id, e)
+            # Clean up partial state on failure
+            await self._cleanup_partial_state(source_id, entities, indexed_nodes, indexed_edges)
+            raise
 
     async def _index_to_graph(
         self,
@@ -122,9 +129,7 @@ class GraphRAGPipeline:
                         "name": entity.name,
                         "type": entity.entity_type.value,
                         "description": entity.description,
-                        "source_id": entity.id.split(":")[0]
-                        if ":" in entity.id
-                        else "",
+                        "source_id": entity.id.split(":")[0] if ":" in entity.id else "",
                     },
                 }
             )
@@ -161,6 +166,23 @@ class GraphRAGPipeline:
 
         if edges:
             await self.graph_indexer.index_edges(edges)
+
+    async def _cleanup_partial_state(
+        self,
+        source_id: str,
+        entities: List[Any],
+        indexed_nodes: bool,
+        indexed_edges: bool,
+    ) -> None:
+        """Remove partially indexed data for a failed document."""
+        try:
+            if entities:
+                entity_ids = [e.id for e in entities]
+                cypher = "MATCH (n) WHERE n.id IN $ids DETACH DELETE n"
+                await self.graph_indexer.index_raw(cypher, {"ids": entity_ids})
+            logger.info("Cleaned up partial state for source %s", source_id)
+        except Exception as cleanup_err:
+            logger.warning("Failed to clean up partial state for %s: %s", source_id, cleanup_err)
 
 
 class IncrementalGraphRAGPipeline(GraphRAGPipeline):

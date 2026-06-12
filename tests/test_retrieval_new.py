@@ -2,14 +2,14 @@
 Tests for the new retrieval modules: rerank, citations, entity_aware, iterative.
 """
 
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime
 
 
 class TestRerankProvider:
@@ -45,8 +45,8 @@ class TestRerankConfig:
         assert config.min_score == 0.0
 
     def test_default_providers(self):
-        from retrieval.rerank.pipeline import RerankConfig
         from retrieval.rerank.base import RerankProvider
+        from retrieval.rerank.pipeline import RerankConfig
 
         config = RerankConfig()
         assert config.providers is not None
@@ -55,8 +55,8 @@ class TestRerankConfig:
         assert RerankProvider.LLAMA_INDEX in config.providers
 
     def test_custom_providers(self):
-        from retrieval.rerank.pipeline import RerankConfig, RerankStrategy
         from retrieval.rerank.base import RerankProvider
+        from retrieval.rerank.pipeline import RerankConfig, RerankStrategy
 
         config = RerankConfig(
             strategy=RerankStrategy.SINGLE,
@@ -118,8 +118,8 @@ class TestRerankPipeline:
 
     @pytest.mark.asyncio
     async def test_rerank_with_fallback(self):
-        from retrieval.rerank.pipeline import RerankPipeline
         from retrieval.rerank.base import RerankResult
+        from retrieval.rerank.pipeline import RerankPipeline
 
         pipeline = RerankPipeline()
         mock_results = [
@@ -127,49 +127,41 @@ class TestRerankPipeline:
             {"id": "2", "content": "Content 2", "score": 0.8},
         ]
 
-        with patch(
-            "retrieval.rerank.pipeline.get_available_rerankers", return_value={}
-        ):
+        with patch("retrieval.rerank.pipeline.get_available_rerankers", return_value={}):
             results = await pipeline.rerank("test query", mock_results)
             assert len(results) == 2
             assert isinstance(results[0], RerankResult)
 
     @pytest.mark.asyncio
     async def test_single_strategy(self):
+        from retrieval.rerank.base import RerankProvider
         from retrieval.rerank.pipeline import (
-            RerankPipeline,
             RerankConfig,
+            RerankPipeline,
             RerankStrategy,
         )
-        from retrieval.rerank.base import RerankProvider
 
-        config = RerankConfig(
-            strategy=RerankStrategy.SINGLE, providers=[RerankProvider.COHERE]
-        )
+        config = RerankConfig(strategy=RerankStrategy.SINGLE, providers=[RerankProvider.COHERE])
         pipeline = RerankPipeline(config)
 
         mock_results = [
             {"id": "1", "content": "Content 1", "score": 0.9},
         ]
 
-        with patch(
-            "retrieval.rerank.pipeline.get_available_rerankers", return_value={}
-        ):
+        with patch("retrieval.rerank.pipeline.get_available_rerankers", return_value={}):
             results = await pipeline.rerank("query", mock_results)
             assert len(results) >= 1
 
     @pytest.mark.asyncio
     async def test_cascade_strategy(self):
+        from retrieval.rerank.base import RerankProvider
         from retrieval.rerank.pipeline import (
-            RerankPipeline,
             RerankConfig,
+            RerankPipeline,
             RerankStrategy,
         )
-        from retrieval.rerank.base import RerankProvider
 
-        config = RerankConfig(
-            strategy=RerankStrategy.CASCADE, providers=[RerankProvider.COHERE]
-        )
+        config = RerankConfig(strategy=RerankStrategy.CASCADE, providers=[RerankProvider.COHERE])
         pipeline = RerankPipeline(config)
 
         mock_results = [
@@ -177,33 +169,27 @@ class TestRerankPipeline:
             {"id": "2", "content": "Content 2", "score": 0.8},
         ]
 
-        with patch(
-            "retrieval.rerank.pipeline.get_available_rerankers", return_value={}
-        ):
+        with patch("retrieval.rerank.pipeline.get_available_rerankers", return_value={}):
             results = await pipeline.rerank("query", mock_results)
             assert len(results) >= 1
 
     @pytest.mark.asyncio
     async def test_ensemble_strategy(self):
+        from retrieval.rerank.base import RerankProvider
         from retrieval.rerank.pipeline import (
-            RerankPipeline,
             RerankConfig,
+            RerankPipeline,
             RerankStrategy,
         )
-        from retrieval.rerank.base import RerankProvider
 
-        config = RerankConfig(
-            strategy=RerankStrategy.ENSEMBLE, providers=[RerankProvider.COHERE]
-        )
+        config = RerankConfig(strategy=RerankStrategy.ENSEMBLE, providers=[RerankProvider.COHERE])
         pipeline = RerankPipeline(config)
 
         mock_results = [
             {"id": "1", "content": "Content 1", "score": 0.9},
         ]
 
-        with patch(
-            "retrieval.rerank.pipeline.get_available_rerankers", return_value={}
-        ):
+        with patch("retrieval.rerank.pipeline.get_available_rerankers", return_value={}):
             results = await pipeline.rerank("query", mock_results)
             assert len(results) >= 1
 
@@ -212,14 +198,16 @@ class TestBaseReranker:
     """Tests for BaseReranker abstract class."""
 
     def test_base_reranker_is_abc(self):
-        from retrieval.rerank.base import BaseReranker
         from abc import ABC
+
+        from retrieval.rerank.base import BaseReranker
 
         assert issubclass(BaseReranker, ABC)
 
     def test_rerank_result_dataclass(self):
-        from retrieval.rerank.base import RerankResult
         from dataclasses import is_dataclass
+
+        from retrieval.rerank.base import RerankResult
 
         assert is_dataclass(RerankResult)
 
@@ -348,8 +336,8 @@ class TestCitationBuilder:
     """Tests for CitationBuilder.build() with mock answer."""
 
     def test_build_with_empty_results(self):
-        from retrieval.citations.builder import CitationBuilder
         from retrieval.citations.base import CitationStyle
+        from retrieval.citations.builder import CitationBuilder
 
         builder = CitationBuilder(style=CitationStyle.PARENTHETICAL)
         result = builder.build("Test answer", [])
@@ -358,8 +346,8 @@ class TestCitationBuilder:
         assert result.sources == []
 
     def test_build_with_results(self):
-        from retrieval.citations.builder import CitationBuilder
         from retrieval.citations.base import CitationStyle
+        from retrieval.citations.builder import CitationBuilder
 
         builder = CitationBuilder(style=CitationStyle.PARENTHETICAL)
         mock_results = [
@@ -384,14 +372,15 @@ class TestCitationBuilder:
         assert result.sources[1].content == "Source content 2"
 
     def test_build_with_max_citations(self):
-        from retrieval.citations.builder import CitationBuilder
         from retrieval.citations.base import CitationStyle
+        from retrieval.citations.builder import CitationBuilder
 
         builder = CitationBuilder(style=CitationStyle.PARENTHETICAL, max_citations=2)
         mock_results = [
             {
                 "content": f"Content {i}",
                 "source": "doc",
+                "id": f"doc_{i}",  # Unique ID per source to avoid dedup
                 "source_name": f"Doc {i}",
                 "score": 0.9,
             }
@@ -401,8 +390,8 @@ class TestCitationBuilder:
         assert len(result.sources) == 2
 
     def test_build_footnote_style(self):
-        from retrieval.citations.builder import CitationBuilder
         from retrieval.citations.base import CitationStyle
+        from retrieval.citations.builder import CitationBuilder
 
         builder = CitationBuilder(style=CitationStyle.FOOTNOTE)
         result = builder.build(
@@ -415,8 +404,8 @@ class TestCitationFormatter:
     """Tests for CitationFormatter.format_annotated() and format()."""
 
     def test_format_verbatim(self):
-        from retrieval.citations.formatter import CitationFormatter
         from retrieval.citations.base import CitationSource, CitationStyle
+        from retrieval.citations.formatter import CitationFormatter
 
         sources = [
             CitationSource(
@@ -426,15 +415,13 @@ class TestCitationFormatter:
                 source_name="Test Doc",
             )
         ]
-        result = CitationFormatter.format(
-            "Test answer", sources, CitationStyle.VERBATIM
-        )
+        result = CitationFormatter.format("Test answer", sources, CitationStyle.VERBATIM)
         assert "Test answer" in result
         assert "Sources:" in result
 
     def test_format_parenthetical(self):
-        from retrieval.citations.formatter import CitationFormatter
         from retrieval.citations.base import CitationSource, CitationStyle
+        from retrieval.citations.formatter import CitationFormatter
 
         sources = [
             CitationSource(
@@ -444,15 +431,13 @@ class TestCitationFormatter:
                 source_name="Doc",
             )
         ]
-        result = CitationFormatter.format(
-            "Test answer", sources, CitationStyle.PARENTHETICAL
-        )
+        result = CitationFormatter.format("Test answer", sources, CitationStyle.PARENTHETICAL)
         assert "Test answer" in result
         assert "[1]" in result
 
     def test_format_footnote(self):
-        from retrieval.citations.formatter import CitationFormatter
         from retrieval.citations.base import CitationSource, CitationStyle
+        from retrieval.citations.formatter import CitationFormatter
 
         sources = [
             CitationSource(
@@ -462,14 +447,12 @@ class TestCitationFormatter:
                 source_name="Doc",
             )
         ]
-        result = CitationFormatter.format(
-            "Test answer", sources, CitationStyle.FOOTNOTE
-        )
+        result = CitationFormatter.format("Test answer", sources, CitationStyle.FOOTNOTE)
         assert "Test answer" in result
 
     def test_format_highlight(self):
-        from retrieval.citations.formatter import CitationFormatter
         from retrieval.citations.base import CitationSource, CitationStyle
+        from retrieval.citations.formatter import CitationFormatter
 
         sources = [
             CitationSource(
@@ -479,9 +462,7 @@ class TestCitationFormatter:
                 source_name="Doc",
             )
         ]
-        result = CitationFormatter.format(
-            "Test answer", sources, CitationStyle.HIGHLIGHT
-        )
+        result = CitationFormatter.format("Test answer", sources, CitationStyle.HIGHLIGHT)
         assert "Test answer" in result
         assert "Sources:" in result
 
@@ -606,9 +587,7 @@ class TestEntityAwareReasoningEngine:
         )
 
         engine = EntityAwareReasoningEngine()
-        mock_facts = [
-            {"content": "EntityA is important", "score": 0.9, "source": "doc"}
-        ]
+        mock_facts = [{"content": "EntityA is important", "score": 0.9, "source": "doc"}]
         entity_graph = {
             "EntityA": [EntityRelation("EntityA", "EntityB", "depends_on", 0.7)],
         }
@@ -826,8 +805,8 @@ class TestQueryRefinementStrategies:
     @pytest.mark.asyncio
     async def test_expand_strategy(self):
         from retrieval.reasoning.iterative import (
-            IterativeRetrievalReasoner,
             IterationStrategy,
+            IterativeRetrievalReasoner,
         )
 
         reasoner = IterativeRetrievalReasoner(strategy=IterationStrategy.EXPAND)
@@ -841,40 +820,8 @@ class TestQueryRefinementStrategies:
     @pytest.mark.asyncio
     async def test_focus_strategy(self):
         from retrieval.reasoning.iterative import (
-            IterativeRetrievalReasoner,
             IterationStrategy,
-        )
-
-        reasoner = IterativeRetrievalReasoner(strategy=IterationStrategy.FOCUS)
-
-        def mock_retriever(query: str):
-            return [{"content": "Focused content result", "score": 0.9}]
-
-        result = await reasoner.retrieve("query", mock_retriever)
-        assert result is not None
-
-    @pytest.mark.asyncio
-    async def test_decompose_strategy(self):
-        from retrieval.reasoning.iterative import (
             IterativeRetrievalReasoner,
-            IterationStrategy,
-        )
-
-        reasoner = IterativeRetrievalReasoner(strategy=IterationStrategy.DECOMPOSE)
-
-        def mock_retriever(query: str):
-            return [{"content": "Result", "score": 0.9}]
-
-        result = await reasoner.retrieve(
-            "very long query with many words to decompose", mock_retriever
-        )
-        assert result is not None
-
-    @pytest.mark.asyncio
-    async def test_focus_strategy(self):
-        from retrieval.reasoning.iterative import (
-            IterativeRetrievalReasoner,
-            IterationStrategy,
         )
 
         reasoner = IterativeRetrievalReasoner(strategy=IterationStrategy.FOCUS)
@@ -888,8 +835,8 @@ class TestQueryRefinementStrategies:
     @pytest.mark.asyncio
     async def test_decompose_strategy(self):
         from retrieval.reasoning.iterative import (
-            IterativeRetrievalReasoner,
             IterationStrategy,
+            IterativeRetrievalReasoner,
         )
 
         reasoner = IterativeRetrievalReasoner(strategy=IterationStrategy.DECOMPOSE)
@@ -908,8 +855,8 @@ class TestCalculateFinalConfidence:
 
     def test_calculate_final_confidence_with_results(self):
         from retrieval.reasoning.iterative import (
-            IterativeRetrievalReasoner,
             IterationResult,
+            IterativeRetrievalReasoner,
         )
 
         reasoner = IterativeRetrievalReasoner()

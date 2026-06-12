@@ -28,6 +28,7 @@ SUPPORTED_FORMATS = SUPPORTED_IMAGE_FORMATS | SUPPORTED_DOCUMENT_FORMATS
 def validate_format(file_path: str) -> bool:
     """Check if file format is supported."""
     import os
+
     ext = os.path.splitext(file_path)[1].lower()
     if ext not in SUPPORTED_FORMATS:
         logger.warning(

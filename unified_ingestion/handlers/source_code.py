@@ -3,7 +3,6 @@ import logging
 from typing import Any, Dict
 
 from git.parser import CodeParser, ParsedFile
-
 from unified_ingestion.handlers.base import Handler, HandlerResult
 
 logger = logging.getLogger(__name__)
@@ -35,7 +34,9 @@ class SourceCodeHandler(Handler):
     def __init__(self):
         self._parser = CodeParser()
 
-    async def handle(self, content: bytes, source_id: str, metadata: Dict[str, Any]) -> HandlerResult:
+    async def handle(
+        self, content: bytes, source_id: str, metadata: Dict[str, Any]
+    ) -> HandlerResult:
         try:
             filename = metadata.get("filename", "file")
             text = content.decode("utf-8")
@@ -44,7 +45,9 @@ class SourceCodeHandler(Handler):
 
             chunks = []
             for entity in parsed.entities:
-                chunk_id = hashlib.sha256(f"{source_id}:{entity.entity_id}".encode()).hexdigest()[:16]
+                chunk_id = hashlib.sha256(f"{source_id}:{entity.entity_id}".encode()).hexdigest()[
+                    :16
+                ]
                 chunks.append(
                     {
                         "id": chunk_id,

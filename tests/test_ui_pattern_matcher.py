@@ -2,12 +2,12 @@
 
 from datetime import datetime
 
+from ui.models import UIElement, UIExtractionResult, UILayout, UISketch
 from ui.pattern_matcher import (
+    _STANDARD_PATTERNS,
     UIPatternMatcher,
     get_pattern_matcher,
-    _STANDARD_PATTERNS,
 )
-from ui.models import UIElement, UILayout, UISketch, UIExtractionResult
 
 
 def _make_sample_result(elements=None):

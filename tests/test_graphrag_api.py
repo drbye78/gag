@@ -1,7 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
 
-
 client = None
 
 
@@ -9,6 +8,7 @@ def get_test_client():
     global client
     if client is None:
         from api.main import app
+
         client = TestClient(app)
     return client
 

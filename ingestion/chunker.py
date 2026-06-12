@@ -6,14 +6,14 @@ chunk sizes, overlap, and metadata extraction.
 Language-aware for Russian and English.
 """
 
-import re
 import hashlib
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-from core.text_utils import detect_language, split_sentences, TextLanguage
+from core.text_utils import TextLanguage, detect_language, split_sentences
 
 
 @dataclass
@@ -50,6 +50,11 @@ class DocumentChunker(TextChunker):
         min_chunk_size: int = 100,
         language: str = "auto",
     ):
+        if chunk_overlap >= chunk_size:
+            raise ValueError(
+                f"chunk_overlap ({chunk_overlap}) must be less than "
+                f"chunk_size ({chunk_size}) to avoid infinite loops"
+            )
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         self.min_chunk_size = min_chunk_size
@@ -80,10 +85,85 @@ class DocumentChunker(TextChunker):
         else:
             self._detected_lang = (
                 TextLanguage(self.language)
-                if self.language in ("ru", "en")
+                if self.language in ("ru", "en", "de", "fr", "es")
                 else TextLanguage.UNKNOWN
             )
 
+        # Try paragraph-boundary-aware splitting first
+        paragraphs = re.split(r"\n\s*\n", text)
+        if len(paragraphs) > 1:
+            chunks = self._chunk_by_paragraphs(paragraphs, source_id)
+        else:
+            # Fall back to fixed-size chunking with sentence boundary
+            chunks = self._chunk_fixed_size(text, source_id)
+
+        took = int((time.time() - start) * 1000)
+        return ChunkResult(
+            source_id=source_id,
+            source_type="document",
+            chunks=chunks,
+            total_chars=len(text),
+            took_ms=took,
+        )
+
+    def _chunk_by_paragraphs(self, paragraphs: List[str], source_id: str) -> List[Chunk]:
+        """Group paragraphs into chunks that respect paragraph boundaries."""
+        chunks: List[Chunk] = []
+        current_parts: List[str] = []
+        current_size = 0
+        idx = 0
+        pos = 0
+
+        for para in paragraphs:
+            para_len = len(para)
+            if current_size + para_len > self.chunk_size and current_parts:
+                chunk_text = "\n\n".join(current_parts)
+                if len(chunk_text) >= self.min_chunk_size:
+                    chunk_id = self._make_chunk_id(source_id, idx)
+                    chunks.append(
+                        Chunk(
+                            id=chunk_id,
+                            content=chunk_text,
+                            chunk_index=idx,
+                            start_char=pos,
+                            end_char=pos + len(chunk_text),
+                        )
+                    )
+                    idx += 1
+                    pos += len(chunk_text)
+                # Apply overlap: keep last paragraph if it fits
+                overlap_parts: List[str] = []
+                overlap_size = 0
+                for p in reversed(current_parts):
+                    if overlap_size + len(p) > self.chunk_overlap:
+                        break
+                    overlap_parts.insert(0, p)
+                    overlap_size += len(p)
+                current_parts = overlap_parts
+                current_size = overlap_size
+
+            current_parts.append(para)
+            current_size += para_len + 2  # account for \n\n
+
+        if current_parts:
+            chunk_text = "\n\n".join(current_parts)
+            if len(chunk_text) >= self.min_chunk_size:
+                chunk_id = self._make_chunk_id(source_id, idx)
+                chunks.append(
+                    Chunk(
+                        id=chunk_id,
+                        content=chunk_text,
+                        chunk_index=idx,
+                        start_char=pos,
+                        end_char=pos + len(chunk_text),
+                    )
+                )
+
+        return chunks
+
+    def _chunk_fixed_size(self, text: str, source_id: str) -> List[Chunk]:
+        """Original fixed-size chunking with sentence boundary fallback."""
+        chunks: List[Chunk] = []
         text_len = len(text)
         pos = 0
         idx = 0
@@ -118,14 +198,7 @@ class DocumentChunker(TextChunker):
             pos = new_pos
             idx += 1
 
-        took = int((time.time() - start) * 1000)
-        return ChunkResult(
-            source_id=source_id,
-            source_type="document",
-            chunks=chunks,
-            total_chars=text_len,
-            took_ms=took,
-        )
+        return chunks
 
     def _split_on_sentence_boundary(self, text: str) -> str:
         detected = self._detected_lang or TextLanguage.ENGLISH
@@ -175,11 +248,11 @@ class MarkdownChunker(DocumentChunker):
 
                 overlap_lines = []
                 overlap_size = 0
-                for l in reversed(current_chunk):
+                for line in reversed(current_chunk):
                     if overlap_size >= self.chunk_overlap:
                         break
-                    overlap_lines.insert(0, l)
-                    overlap_size += len(l)
+                    overlap_lines.insert(0, line)
+                    overlap_size += len(line)
                 current_chunk = overlap_lines
                 current_size = overlap_size
 
@@ -525,38 +598,43 @@ def _get_chunker_factory() -> Dict[str, callable]:
 
 def _get_dockerfile_chunker() -> "TextChunker":
     from ingestion.dockerfile_chunker import get_dockerfile_chunker as _factory
+
     return _factory()
 
 
 def _get_istio_chunker() -> "TextChunker":
     from ingestion.istio_chunker import get_istio_chunker as _factory
+
     return _factory()
 
 
 def _get_kubernetes_chunker() -> "TextChunker":
     from ingestion.k8s_chunker import get_kubernetes_chunker as _factory
+
     return _factory()
 
 
 def _get_helm_chunker() -> "TextChunker":
     from ingestion.helm_chunker import get_helm_chunker as _factory
+
     return _factory()
 
 
 def _get_graphql_chunker() -> "TextChunker":
     from ingestion.graphql_chunker import get_graphql_chunker as _factory
+
     return _factory()
 
 
 def get_chunker(type_name: str) -> TextChunker:
     """Factory to instantiate chunker by name.
-    
+
     Args:
         type_name: Chunkers type name (code, dockerfile, istio, kubernetes, helm, graphql, semantic, sentence)
-    
+
     Returns:
         Instantiated chunker
-    
+
     Raises:
         ValueError: If chunker type not found
     """
@@ -570,23 +648,32 @@ def get_chunker_for_file(file_path: str) -> str:
     """Get recommended chunker type for a file based on extension."""
     ext = Path(file_path).suffix.lower()
     chunker_type = CHUNKER_REGISTRY.get(ext, "semantic")
-    
+
     if chunker_type == "semantic":
         file_lower = file_path.lower()
-        if "virtualservice" in file_lower or "destinationrule" in file_lower or \
-           "gateway" in file_lower and "istio" in file_lower or \
-           "serviceentry" in file_lower or "envoyfilter" in file_lower or \
-           "authorizationpolicy" in file_lower or "sidecar" in file_lower:
+        if (
+            "virtualservice" in file_lower
+            or "destinationrule" in file_lower
+            or "gateway" in file_lower
+            and "istio" in file_lower
+            or "serviceentry" in file_lower
+            or "envoyfilter" in file_lower
+            or "authorizationpolicy" in file_lower
+            or "sidecar" in file_lower
+        ):
             return "istio"
         if file_lower.endswith(".yaml") or file_lower.endswith(".yml"):
             try:
-                with open(file_path, 'r') as f:
+                with open(file_path, "r") as f:
                     content = f.read(2000)
-                    if "networking.istio.io" in content or "apiVersion: networking.istio.io" in content:
+                    if (
+                        "networking.istio.io" in content
+                        or "apiVersion: networking.istio.io" in content
+                    ):
                         return "istio"
             except Exception:
                 pass
-    
+
     return chunker_type
 
 
@@ -598,11 +685,11 @@ def get_chunker_from_settings():
     chunk_type = settings.chunking_chunker_type
 
     chunkers = {
-        "semantic": get_semantic_chunker_from_settings,
-        "sentence": get_sentence_chunker_from_settings,
-        "kubernetes": get_kubernetes_chunker,
-        "helm": get_helm_chunker,
-        "graphql": get_graphql_chunker,
+        "semantic": get_document_chunker,
+        "sentence": get_document_chunker,
+        "kubernetes": _get_kubernetes_chunker,
+        "helm": _get_helm_chunker,
+        "graphql": _get_graphql_chunker,
     }
 
     if chunk_type not in chunkers:

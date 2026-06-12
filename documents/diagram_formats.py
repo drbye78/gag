@@ -11,10 +11,9 @@ Parsers for:
 import json
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
-from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from documents.diagram_parser import DiagramType, DiagramExtractionResult
+from documents.diagram_parser import DiagramType
 
 
 @dataclass
@@ -435,6 +434,7 @@ class MermaidParser:
     def _detect_type(self, text: str) -> str:
         for dtype, pattern in self.TYPE_PATTERNS.items():
             import re
+
             if re.search(pattern, text, re.MULTILINE):
                 return dtype
         return "flowchart"
@@ -456,7 +456,14 @@ class MermaidParser:
                 current_class = class_name
 
             elif " <|-- " in line or " *-- " in line or " -- " in line or " --> " in line:
-                parts = line.replace("<|--", "|").replace("*--", "*").replace("--", "|").replace("-->", "|").replace("|", " ").split()
+                parts = (
+                    line.replace("<|--", "|")
+                    .replace("*--", "*")
+                    .replace("--", "|")
+                    .replace("-->", "|")
+                    .replace("|", " ")
+                    .split()
+                )
                 if len(parts) >= 3:
                     relationships.append({"from": parts[0], "to": parts[-1], "type": "association"})
 
@@ -480,12 +487,16 @@ class MermaidParser:
                 parts = line.split("->")
                 if len(parts) >= 2:
                     order += 1
-                    relationships.append({
-                        "from": parts[0].strip(),
-                        "to": parts[1].split(":")[0].strip() if ":" in parts[1] else parts[1].strip(),
-                        "type": "message",
-                        "order": order,
-                    })
+                    relationships.append(
+                        {
+                            "from": parts[0].strip(),
+                            "to": parts[1].split(":")[0].strip()
+                            if ":" in parts[1]
+                            else parts[1].strip(),
+                            "type": "message",
+                            "order": order,
+                        }
+                    )
 
         return entities, relationships
 
@@ -501,13 +512,16 @@ class MermaidParser:
             if "-->" in line:
                 parts = line.split("-->")
                 if len(parts) >= 2:
-                    relationships.append({
-                        "from": parts[0].strip(),
-                        "to": parts[1].strip(),
-                        "type": "flow",
-                    })
+                    relationships.append(
+                        {
+                            "from": parts[0].strip(),
+                            "to": parts[1].strip(),
+                            "type": "flow",
+                        }
+                    )
 
             import re
+
             match = re.match(r"^\s*(\w+)\[([^\]]+)\]", line)
             if match:
                 entities.append({"name": match.group(1), "label": match.group(2), "type": "node"})
@@ -534,11 +548,15 @@ class MermaidParser:
                         rel_type = "1:1"
                     elif "}o" in line or "o{" in line:
                         rel_type = "0:1"
-                    relationships.append({
-                        "from": parts[0].strip(),
-                        "to": parts[1].split("{")[0].strip() if "{" in parts[1] else parts[1].strip(),
-                        "type": rel_type or "relation",
-                    })
+                    relationships.append(
+                        {
+                            "from": parts[0].strip(),
+                            "to": parts[1].split("{")[0].strip()
+                            if "{" in parts[1]
+                            else parts[1].strip(),
+                            "type": rel_type or "relation",
+                        }
+                    )
             elif "{" in line:
                 entity_name = line.split("{")[0].strip()
                 if entity_name:
@@ -558,11 +576,13 @@ class MermaidParser:
             if "-->" in line:
                 parts = line.split("-->")
                 if len(parts) >= 2:
-                    relationships.append({
-                        "from": parts[0].strip(),
-                        "to": parts[1].strip(),
-                        "type": "transition",
-                    })
+                    relationships.append(
+                        {
+                            "from": parts[0].strip(),
+                            "to": parts[1].strip(),
+                            "type": "transition",
+                        }
+                    )
             elif "*" not in line and line and not line.startswith(":"):
                 if line not in ["state", "end"]:
                     entities.append({"name": line, "type": "state"})
@@ -573,6 +593,11 @@ class MermaidParser:
 def parse_mermaid(text: str) -> MermaidParseResult:
     parser = MermaidParser()
     return parser.parse(text)
+
+
+def _is_bpmn_content(content: str) -> bool:
+    """Check if content looks like a BPMN XML document."""
+    return "<bpmn:definitions" in content or "bpmn2" in content[:2000]
 
 
 def detect_format(content: str, filename: str = "") -> DiagramType:
@@ -606,7 +631,13 @@ def detect_format(content: str, filename: str = "") -> DiagramType:
     if content.startswith("@startuml"):
         return DiagramType.PLANTUML
 
-    if "%%{ mermaid }%%" in content or content.startswith("graph") or content.startswith("flowchart") or content.startswith("sequenceDiagram") or content.startswith("classDiagram"):
+    if (
+        "%%{ mermaid }%%" in content
+        or content.startswith("graph")
+        or content.startswith("flowchart")
+        or content.startswith("sequenceDiagram")
+        or content.startswith("classDiagram")
+    ):
         return DiagramType.UNKNOWN  # Mermaid - detect specific type
 
     if "<mxfile" in content or 'xmlns="http://www.drawio.com' in content:
@@ -718,7 +749,7 @@ class BPMNParser:
             ET.register_namespace(prefix, uri)
 
     def _tag(self, tag: str, prefix: str = "bpmn") -> str:
-        return f"{{{BPMN_NS.get(prefix, f'http://www.omg.org/spec/BPMN/20100524/MODEL')}}}{tag}"
+        return f"{{{BPMN_NS.get(prefix, 'http://www.omg.org/spec/BPMN/20100524/MODEL')}}}{tag}"
 
     def _parse_process(self, process: ET.Element, ns: Dict[str, str]) -> Dict[str, Any]:
         result = BPMNParseResult()
@@ -740,8 +771,7 @@ class BPMNParser:
                         "id": lane.get("id", ""),
                         "name": lane.get("name", ""),
                         "flow_node_refs": [
-                            ref.text
-                            for ref in lane.findall(self._tag("flowNodeRef"), ns)
+                            ref.text for ref in lane.findall(self._tag("flowNodeRef"), ns)
                         ],
                     }
                 )
@@ -786,9 +816,7 @@ class BPMNParser:
 
         return result
 
-    def _parse_event(
-        self, elem: ET.Element, trigger_type: str, ns: Dict[str, str]
-    ) -> BPMNElement:
+    def _parse_event(self, elem: ET.Element, trigger_type: str, ns: Dict[str, str]) -> BPMNElement:
         docs = elem.find(self._tag("documentation"), ns)
         documentation = docs.text if docs is not None else ""
 

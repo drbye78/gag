@@ -5,16 +5,25 @@ Provides JWT token management, role-based access control,
 and convenience functions for API-level auth checks.
 """
 
-import logging
-import os
 import hashlib
 import hmac
+import logging
+import os
 import secrets
 import time
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import wraps
-from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+
+try:
+    import argon2
+
+    _ARGON2_AVAILABLE = True
+    _argon2_hasher = argon2.PasswordHasher()
+except ImportError:
+    _ARGON2_AVAILABLE = False
+    _argon2_hasher = None
 
 if TYPE_CHECKING:
     from fastapi import Request
@@ -67,56 +76,26 @@ logger = logging.getLogger(__name__)
 
 
 class RBACManager:
-    def __init__(self, use_sqlite: bool = True):
+    def __init__(self):
         self._users: Dict[str, User] = {}
-        self._failed_attempts: Dict[str, list] = {}
+        self._email_index: Dict[str, str] = {}  # email -> user_id
+        self._failed_attempts: Dict[str, list] = {}  # email -> [timestamps]
         self._max_failed_attempts = 5
-        self._lockout_seconds = 300
-        self._use_sqlite = use_sqlite
-        self._sqlite_store = None
-        if use_sqlite:
-            try:
-                from core.user_store import get_user_store
-                self._sqlite_store = get_user_store()
-                self._load_users_from_sqlite()
-            except Exception as e:
-                logger.warning("SQLite user store unavailable: %s, using in-memory", e)
-                self._use_sqlite = False
-    
-    def _load_users_from_sqlite(self) -> None:
-        if not self._sqlite_store:
-            return
-        for user_dict in self._sqlite_store.list_users():
-            import json
-            user = User(
-                user_id=user_dict["user_id"],
-                email=user_dict["email"],
-                password_hash=user_dict["password_hash"],
-                roles=json.loads(user_dict["roles"]),
-                permissions=json.loads(user_dict["permissions"]),
-                created_at=user_dict["created_at"],
-                last_login=user_dict.get("last_login"),
-                active=bool(user_dict["active"]),
-            )
-            self._users[user.user_id] = user
-    
-    def _save_user_to_sqlite(self, user: User) -> None:
-        if not self._sqlite_store:
-            return
-        import json
-        self._sqlite_store.save({
-            "user_id": user.user_id,
-            "email": user.email,
-            "password_hash": user.password_hash,
-            "roles": json.dumps(user.roles),
-            "permissions": json.dumps(user.permissions),
-            "created_at": user.created_at,
-            "last_login": user.last_login,
-            "active": user.active,
-        })
+        self._lockout_seconds = 300  # 5 minutes
 
     def hash_password(self, password: str) -> str:
-        """Hash password with random salt (not jwt_secret)."""
+        """Hash password with random salt (not jwt_secret).
+
+        Uses argon2 if the argon2-cffi package is available; falls back
+        to PBKDF2-HMAC-SHA256 otherwise.
+        """
+        if _ARGON2_AVAILABLE:
+            return "argon2:" + _argon2_hasher.hash(password)
+
+        logger.warning(
+            "argon2-cffi not installed; falling back to PBKDF2 for password hashing. "
+            "Install argon2-cffi for improved security."
+        )
         salt = secrets.token_bytes(32)
         key = hashlib.pbkdf2_hmac(
             "sha256",
@@ -124,12 +103,20 @@ class RBACManager:
             salt,
             100000,
         )
-        return key.hex() + ":" + salt.hex()
+        return "pbkdf2:" + key.hex() + ":" + salt.hex()
 
     def verify_password(self, password: str, hashed: str) -> bool:
         """Verify password against stored hash."""
         try:
-            key_hex, salt_hex = hashed.rsplit(":", 1)
+            if hashed.startswith("argon2:"):
+                if not _ARGON2_AVAILABLE:
+                    logger.error("argon2 hash stored but argon2-cffi not installed")
+                    return False
+                return _argon2_hasher.verify(hashed[len("argon2:") :], password)
+
+            # Strip optional pbkdf2: prefix for backward compat
+            pbkdf2_part = hashed[len("pbkdf2:") :] if hashed.startswith("pbkdf2:") else hashed
+            key_hex, salt_hex = pbkdf2_part.rsplit(":", 1)
             salt = bytes.fromhex(salt_hex)
             key = hashlib.pbkdf2_hmac(
                 "sha256",
@@ -158,7 +145,7 @@ class RBACManager:
             created_at=time.time(),
         )
         self._users[user_id] = user
-        self._save_user_to_sqlite(user)
+        self._email_index[email] = user_id
         logger.info("User created: %s (%s) with roles %s", user_id, email, user.roles)
         return user
 
@@ -168,16 +155,21 @@ class RBACManager:
         attempts = self._failed_attempts.get(email, [])
         recent = [t for t in attempts if now - t < self._lockout_seconds]
         if len(recent) >= self._max_failed_attempts:
-            logger.error("Account locked out for %s after %d failed attempts", email, self._max_failed_attempts)
+            logger.error(
+                "Account locked out for %s after %d failed attempts",
+                email,
+                self._max_failed_attempts,
+            )
             return None  # Locked out
 
-        for user in self._users.values():
-            if user.email == email and user.active:
-                if self.verify_password(password, user.password_hash):
-                    user.last_login = now
-                    self._failed_attempts.pop(email, None)
-                    logger.info("Successful authentication for %s", email)
-                    return user
+        user_id = self._email_index.get(email)
+        if user_id:
+            user = self._users.get(user_id)
+            if user and user.active and self.verify_password(password, user.password_hash):
+                user.last_login = now
+                self._failed_attempts.pop(email, None)
+                logger.info("Successful authentication for %s", email)
+                return user
 
         # Track failed attempt
         self._failed_attempts.setdefault(email, []).append(now)

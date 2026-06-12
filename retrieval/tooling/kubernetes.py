@@ -1,7 +1,7 @@
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
-import httpx
+from core.pool import get_http_pool
 
 
 class KubernetesRetriever:
@@ -28,6 +28,7 @@ class KubernetesRetriever:
         start = int(time.time() * 1000)
 
         from llm.router import get_router
+
         router = get_router()
         embedding = await router.embed(query)
         payload = {"vector": embedding, "limit": limit, "filter": filters or {}}
@@ -40,14 +41,14 @@ class KubernetesRetriever:
             payload["filter"]["entity_type"] = {"eq": entity_type}
 
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{self.base_url}/collections/{self.collection}/points/search",
-                    json=payload,
-                    timeout=30.0,
-                )
-                response.raise_for_status()
-                data = response.json()
+            pool = get_http_pool()
+            response = await pool.post(
+                f"{self.base_url}/collections/{self.collection}/points/search",
+                json=payload,
+                timeout=30.0,
+            )
+            response.raise_for_status()
+            data = response.json()
         except Exception:
             data = {"result": [], "status": "error"}
 

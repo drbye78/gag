@@ -6,7 +6,7 @@ Run these after deployment to verify the system is operational.
 
 ```bash
 curl http://localhost:8000/health
-# Expected: {"status": "ok", "version": "4.1.0"}
+# Expected: {"status": "ok", "version": "4.2.0"}
 ```
 
 ## Metrics

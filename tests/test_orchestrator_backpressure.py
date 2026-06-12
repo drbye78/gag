@@ -3,8 +3,8 @@ Tests for RetrievalOrchestrator backpressure handling.
 """
 
 import asyncio
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 
 class BackpressureError(Exception):
@@ -96,6 +96,7 @@ class TestBackpressureConfig:
     def test_config_fields_defined_in_source(self):
         import ast
         import inspect
+
         from core.config import Settings
 
         source = inspect.getsource(Settings)
@@ -104,16 +105,16 @@ class TestBackpressureConfig:
         fields = {}
         for node in ast.walk(tree):
             if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-                if hasattr(node, 'value') and node.value:
+                if hasattr(node, "value") and node.value:
                     if isinstance(node.value, ast.Constant):
                         fields[node.target.id] = node.value.value
 
-        assert 'retrieval_max_concurrent' in fields
-        assert fields['retrieval_max_concurrent'] == 10
-        assert 'retrieval_queue_size' in fields
-        assert fields['retrieval_queue_size'] == 50
-        assert 'retrieval_request_timeout' in fields
-        assert fields['retrieval_request_timeout'] == 30
+        assert "retrieval_max_concurrent" in fields
+        assert fields["retrieval_max_concurrent"] == 10
+        assert "retrieval_queue_size" in fields
+        assert fields["retrieval_queue_size"] == 50
+        assert "retrieval_request_timeout" in fields
+        assert fields["retrieval_request_timeout"] == 30
 
     def test_config_from_env(self, monkeypatch):
         monkeypatch.setenv("RETRIEVAL_MAX_CONCURRENT", "5")

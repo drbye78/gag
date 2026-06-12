@@ -1,14 +1,9 @@
-from typing import List, Optional, Callable
 from dataclasses import dataclass
 from enum import Enum
+from typing import List, Optional
 
-from retrieval.rerank.base import BaseReranker, RerankResult, RerankProvider
+from retrieval.rerank.base import RerankProvider, RerankResult
 from retrieval.rerank.providers import (
-    CohereReranker,
-    BGEReranker,
-    SentenceTransformerReranker,
-    JinaReranker,
-    LlamaIndexReranker,
     get_available_rerankers,
 )
 
@@ -153,9 +148,7 @@ class RerankPipeline:
                 source="ensemble",
                 metadata={},
             )
-            for i, (node_id, content, score) in enumerate(
-                ensemble_results[: self.config.top_k]
-            )
+            for i, (node_id, content, score) in enumerate(ensemble_results[: self.config.top_k])
         ]
 
     def _fallback_results(self, results: List[dict]) -> List[RerankResult]:

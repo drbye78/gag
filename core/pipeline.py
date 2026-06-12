@@ -1,15 +1,14 @@
 from typing import Any, Dict, List, Optional
-from models.ir import IRNode, IRFeature, PlatformContext, EnrichedIR
+
+from core.adapters import AdapterInput, AdapterOutput, get_adapter_registry
+from core.constraints import get_constraint_engine
+from core.knowledge.resolver import ResolutionResult, get_resolver
 from core.patterns import (
+    ConstraintViolation,
     PatternMatcher,
     PatternScorer,
-    get_pattern_library,
-    ConstraintViolation,
 )
-from core.constraints import get_constraint_engine
-from core.adapters import AdapterInput, AdapterOutput, get_adapter_registry
-from core.knowledge.resolver import get_resolver, ResolutionResult
-from core.knowledge.graph import get_knowledge_graph
+from models.ir import IRFeature, IRNode, PlatformContext
 
 
 class KnowledgeProcessingPipeline:
@@ -23,7 +22,7 @@ class KnowledgeProcessingPipeline:
         self.constraint_engine = constraint_engine or get_constraint_engine()
         self.adapter_registry = adapter_registry or get_adapter_registry()
         self.pattern_scorer = PatternScorer()
-    
+
     async def process(
         self,
         query: str,
@@ -31,76 +30,71 @@ class KnowledgeProcessingPipeline:
         existing_ir: Optional[IRNode] = None,
     ) -> AdapterOutput:
         features = self._extract_features(existing_ir, query)
-        
+
         pattern_results = self.pattern_matcher.match(features)
-        
+
         violations = self.constraint_engine.evaluate(
-            features.model_dump(),
-            platform_context.platform
+            features.model_dump(), platform_context.platform
         )
-        
+
         adapter = self.adapter_registry.get(platform_context.platform)
         if not adapter:
             adapter = self.adapter_registry.get_default()
-        
+
         adapter_input = AdapterInput(
             ir_features=features,
             pattern_matches=pattern_results,
             constraint_violations=violations,
             platform_context=platform_context,
         )
-        
+
         return adapter.transform_ir_to_platform(adapter_input)
-    
-    def _extract_features(
-        self,
-        ir_node: Optional[IRNode],
-        query: str
-    ) -> IRFeature:
+
+    def _extract_features(self, ir_node: Optional[IRNode], query: str) -> IRFeature:
         features = IRFeature()
-        
+
         if ir_node:
             if hasattr(ir_node, "components") and ir_node.components:
                 features.has_api = True
-            
+
             if hasattr(ir_node, "technologies"):
                 techs = [t.value if hasattr(t, "value") else str(t) for t in ir_node.technologies]
                 features.has_database = any("hana" in t or "postgres" in t for t in techs)
-        
+
         query_lower = query.lower()
-        
+
         if any(kw in query_lower for kw in ["event", "kafka", "async", "message"]):
             features.has_async = True
             features.has_event_driven = True
-        
+
         if any(kw in query_lower for kw in ["auth", "login", "security"]):
             features.has_auth = True
-        
+
         if any(kw in query_lower for kw in ["database", "storage", "hana", "sql"]):
             features.has_database = True
-        
+
         if any(kw in query_lower for kw in ["api", "rest", "graphql", "endpoint"]):
             features.has_api = True
-        
+
         if any(kw in query_lower for kw in ["ui", "web", "frontend", "screen"]):
             features.has_ui = True
-        
+
         if any(kw in query_lower for kw in ["service", "microservice"]):
             features.has_microservices = True
-        
+
         if any(kw in query_lower for kw in ["lambda", "function", "serverless"]):
             features.has_serverless = True
-        
+
         if any(kw in query_lower for kw in ["container", "docker", "kubernetes", "k8s"]):
             features.has_container = True
-        
+
         if any(kw in query_lower for kw in ["scale", "performance", "high availability"]):
             features.scalability_required = True
             features.high_availability_required = True
-        
+
         if any(kw in query_lower for kw in ["multi", "tenant", "saas"]):
             features.multi_tenant = True
-        
+
         return features
 
 
@@ -112,27 +106,79 @@ class ExplanationEngine:
         violations: List[ConstraintViolation],
     ) -> Dict[str, Any]:
         reasoning = []
-        
+
         for rec in output.recommendations[:3]:
-            reasoning.append({
-                "type": "pattern",
-                "recommendation": rec.get("name"),
-                "reason": rec.get("reason", ""),
-            })
-        
+            reasoning.append(
+                {
+                    "type": "pattern",
+                    "recommendation": rec.get("name"),
+                    "reason": rec.get("reason", ""),
+                }
+            )
+
         if violations:
-            reasoning.append({
-                "type": "constraint",
-                "violations": [
-                    {
-                        "message": v.message,
-                        "fix": v.fix_hint,
-                        "severity": v.severity,
-                    }
-                    for v in violations
-                ],
-            })
-        
+            reasoning.append(
+                {
+                    "type": "constraint",
+                    "violations": [
+                        {
+                            "message": v.message,
+                            "fix": v.fix_hint,
+                            "severity": v.severity,
+                        }
+                        for v in violations
+                    ],
+                }
+            )
+
+        # -- Cost summary -------------------------------------------------------
+        if output.cost_estimate is not None:
+            reasoning.append(
+                {
+                    "type": "cost_estimate",
+                    "monthly_min": output.cost_estimate.monthly_min,
+                    "monthly_max": output.cost_estimate.monthly_max,
+                    "currency": output.cost_estimate.currency,
+                    "mid_range": output.cost_estimate.mid_range,
+                    "notes": output.cost_estimate.notes,
+                }
+            )
+
+        # -- Compliance summary -------------------------------------------------
+        if output.compliance_matrix:
+            reasoning.append(
+                {
+                    "type": "compliance_matrix",
+                    "frameworks": [
+                        {
+                            "framework": cm.framework.value,
+                            "level": cm.level.value,
+                            "notes": cm.notes,
+                        }
+                        for cm in output.compliance_matrix
+                    ],
+                }
+            )
+
+        # -- Portfolio summary --------------------------------------------------
+        if output.portfolio_summary:
+            reasoning.append(
+                {
+                    "type": "portfolio_summary",
+                    "portfolios": output.portfolio_summary,
+                    "total_services": sum(output.portfolio_summary.values()),
+                }
+            )
+
+        # -- Required dependencies ----------------------------------------------
+        if output.required_dependencies:
+            reasoning.append(
+                {
+                    "type": "required_dependencies",
+                    "dependencies": output.required_dependencies,
+                }
+            )
+
         return {
             "decision": output.recommendations[0].get("name") if output.recommendations else None,
             "reasoning": reasoning,
@@ -140,6 +186,31 @@ class ExplanationEngine:
             "can_proceed": output.can_deploy,
             "platform_services": list(output.config_templates.keys()),
             "explanation": output.explanation,
+            "cost_estimate": (
+                {
+                    "monthly_min": output.cost_estimate.monthly_min,
+                    "monthly_max": output.cost_estimate.monthly_max,
+                    "currency": output.cost_estimate.currency,
+                    "mid_range": output.cost_estimate.mid_range,
+                    "notes": output.cost_estimate.notes,
+                }
+                if output.cost_estimate is not None
+                else None
+            ),
+            "compliance_matrix": (
+                [
+                    {
+                        "framework": cm.framework.value,
+                        "level": cm.level.value,
+                        "certifications": cm.certifications,
+                        "notes": cm.notes,
+                    }
+                    for cm in output.compliance_matrix
+                ]
+                if output.compliance_matrix
+                else []
+            ),
+            "portfolio_summary": output.portfolio_summary or {},
         }
 
 
@@ -163,44 +234,52 @@ def get_explanation_engine() -> ExplanationEngine:
 
 class UnifiedPipeline:
     """Knowledge-first unified pipeline."""
-    
+
     def __init__(self):
         self.legacy = KnowledgeProcessingPipeline()
         self.resolver = get_resolver()
-    
+
     async def process(self, query: str, platform_context: PlatformContext) -> AdapterOutput:
         resolution = await self.resolver.resolve(query)
-        
+
         if resolution.can_proceed:
-            return await self._transform_to_legacy(resolution, platform_context)
-        
-        return AdapterOutput(
-            recommendations=[{"name": "Fix Required", "reason": resolution.reasoning}],
-            can_deploy=False,
-            confidence=resolution.intent.confidence if resolution.intent else 0.0,
-        )
-    
+            output = await self._transform_to_legacy(resolution, platform_context)
+        else:
+            output = AdapterOutput(
+                recommendations=[{"name": "Fix Required", "reason": resolution.reasoning}],
+                can_deploy=False,
+                confidence=resolution.intent.confidence if resolution.intent else 0.0,
+            )
+
+        # Validate that the adapter produced a proper AdapterOutput instance
+        if not isinstance(output, AdapterOutput):
+            raise TypeError(f"Adapter returned {type(output).__name__}, expected AdapterOutput")
+
+        return output
+
     async def _transform_to_legacy(
-        self,
-        resolution: ResolutionResult,
-        platform_context: PlatformContext
+        self, resolution: ResolutionResult, platform_context: PlatformContext
     ) -> AdapterOutput:
         recommendations = []
         for pattern in resolution.patterns_matched[:5]:
-            recommendations.append({
-                "name": pattern.pattern_name,
-                "reason": pattern.reasoning,
-                "score": pattern.score,
-            })
-        
+            recommendations.append(
+                {
+                    "name": pattern.pattern_name,
+                    "reason": pattern.reasoning,
+                    "score": pattern.score,
+                }
+            )
+
         for violation in resolution.constraint_violations:
-            recommendations.append({
-                "name": "Constraint Violation",
-                "reason": violation.message,
-                "fix": violation.fix,
-                "severity": violation.severity,
-            })
-        
+            recommendations.append(
+                {
+                    "name": "Constraint Violation",
+                    "reason": violation.message,
+                    "fix": violation.fix_hint,
+                    "severity": violation.severity,
+                }
+            )
+
         return AdapterOutput(
             recommendations=recommendations,
             platform=resolution.platform,

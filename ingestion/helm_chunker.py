@@ -1,8 +1,8 @@
-import re
 import hashlib
-import yaml
-from typing import Any, Dict, List
 from dataclasses import dataclass
+from typing import Any, Dict
+
+import yaml
 
 from ingestion.chunker import Chunk, ChunkResult, TextChunker
 
@@ -15,12 +15,18 @@ class HelmResource:
 
 
 class HelmChartChunker(TextChunker):
+    # LIMITATION: This chunker does not handle chart dependencies (sub-charts).
+    # Charts with dependencies (Chart.yaml dependencies field or charts/ directory)
+    # are not recursively processed. TODO: Add sub-chart support by parsing the
+    # charts/ directory and recursively chunking each dependency.
+
     def __init__(self, chunk_size: int = 2000, chunk_overlap: int = 200):
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
 
     def chunk(self, text: str, source_id: str) -> ChunkResult:
         import time
+
         start = time.time()
 
         chunks = []
@@ -28,26 +34,30 @@ class HelmChartChunker(TextChunker):
         chart_meta = self._parse_chart_yaml(text)
         if chart_meta:
             chunk_id = self._make_chunk_id(source_id, 0)
-            chunks.append(Chunk(
-                id=chunk_id,
-                content=f"Chart: {chart_meta.get('name', 'unknown')}\nVersion: {chart_meta.get('version', 'unknown')}",
-                chunk_index=0,
-                start_char=0,
-                end_char=0,
-                metadata={"type": "chart_metadata", **chart_meta},
-            ))
+            chunks.append(
+                Chunk(
+                    id=chunk_id,
+                    content=f"Chart: {chart_meta.get('name', 'unknown')}\nVersion: {chart_meta.get('version', 'unknown')}",
+                    chunk_index=0,
+                    start_char=0,
+                    end_char=0,
+                    metadata={"type": "chart_metadata", **chart_meta},
+                )
+            )
 
         values = self._parse_values_yaml(text)
         if values:
             chunk_id = self._make_chunk_id(source_id, 1)
-            chunks.append(Chunk(
-                id=chunk_id,
-                content=self._format_values(values),
-                chunk_index=1,
-                start_char=0,
-                end_char=0,
-                metadata={"type": "values"},
-            ))
+            chunks.append(
+                Chunk(
+                    id=chunk_id,
+                    content=self._format_values(values),
+                    chunk_index=1,
+                    start_char=0,
+                    end_char=0,
+                    metadata={"type": "values"},
+                )
+            )
 
         taken = int((time.time() - start) * 1000)
         return ChunkResult(

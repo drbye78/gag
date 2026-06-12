@@ -1,8 +1,9 @@
-from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional, Set
-from enum import Enum
-from datetime import datetime
 import uuid
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Any, Dict, List, Optional, Set
+
+from pydantic import BaseModel, Field
 
 
 class NodeType(str, Enum):
@@ -36,7 +37,7 @@ class KnowledgeNode(BaseModel):
     deprecated: bool = Field(False)
     source: str = Field("")
     confidence: float = Field(1.0, ge=0.0, le=1.0)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class KnowledgeEdge(BaseModel):
@@ -47,7 +48,7 @@ class KnowledgeEdge(BaseModel):
     weight: float = Field(1.0, ge=0.0, le=1.0)
     conditions: Dict[str, Any] = Field(default_factory=dict)
     confidence: float = Field(1.0, ge=0.0, le=1.0)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class KnowledgeGraph(BaseModel):
@@ -69,8 +70,25 @@ class KnowledgeGraph(BaseModel):
         self.by_name[key].add(node.id)
 
     def add_edge(self, edge: KnowledgeEdge) -> None:
-        if edge.source_id in self.nodes and edge.target_id in self.nodes:
-            self.edges.append(edge)
+        import logging
+
+        _log = logging.getLogger(__name__)
+
+        if edge.source_id not in self.nodes:
+            _log.warning(
+                "add_edge skipped: source node '%s' does not exist (edge_id=%s)",
+                edge.source_id,
+                edge.id,
+            )
+            return
+        if edge.target_id not in self.nodes:
+            _log.warning(
+                "add_edge skipped: target node '%s' does not exist (edge_id=%s)",
+                edge.target_id,
+                edge.id,
+            )
+            return
+        self.edges.append(edge)
 
     def find_by_type(self, node_type: NodeType) -> List[KnowledgeNode]:
         ids = self.by_type.get(node_type, set())
@@ -82,21 +100,18 @@ class KnowledgeGraph(BaseModel):
         return [self.nodes[nid] for nid in ids if nid in self.nodes]
 
     def find_related(
-        self,
-        node_id: str,
-        edge_types: List[EdgeType] = None,
-        depth: int = 1
+        self, node_id: str, edge_types: List[EdgeType] = None, depth: int = 1
     ) -> List[KnowledgeNode]:
         if depth == 0 or node_id not in self.nodes:
             return []
-        
+
         visited = set()
-        
+
         def _recurse(current_id: str, current_depth: int) -> List[str]:
             if current_id in visited:
                 return []
             visited.add(current_id)
-            
+
             related_ids = set()
             for edge in self.edges:
                 if edge.source_id == current_id:
@@ -105,7 +120,7 @@ class KnowledgeGraph(BaseModel):
                 elif edge.target_id == current_id and edge.type == EdgeType.DEPENDS_ON:
                     if edge_types is None or edge.type in edge_types:
                         related_ids.add(edge.source_id)
-            
+
             result = []
             for rid in related_ids:
                 if rid in self.nodes:
@@ -113,7 +128,7 @@ class KnowledgeGraph(BaseModel):
                     if current_depth > 1:
                         result.extend(_recurse(rid, current_depth - 1))
             return result
-        
+
         related_ids = _recurse(node_id, depth)
         return [self.nodes[rid] for rid in related_ids if rid in self.nodes]
 
@@ -136,20 +151,26 @@ def _load_default_knowledge(graph: KnowledgeGraph) -> None:
     platforms = [
         ("sap", "SAP BTP", "sap,cloud,enterprise"),
         ("tanzu", "VMware Tanzu", "vmware,cloud-native,kubernetes"),
-        ("powerplatform", "Microsoft Power Platform", "powerapps,powerautomate,dataverse,copilotstudio"),
+        (
+            "powerplatform",
+            "Microsoft Power Platform",
+            "powerapps,powerautomate,dataverse,copilotstudio",
+        ),
         ("aws", "Amazon Web Services", "aws,cloud,serverless,lambda"),
         ("azure", "Microsoft Azure", "azure,cloud,functions"),
         ("gcp", "Google Cloud Platform", "gcp,cloud,serverless"),
     ]
-    
+
     for pid, name, keywords in platforms:
-        graph.add_node(KnowledgeNode(
-            id=pid,
-            name=name,
-            type=NodeType.PLATFORM,
-            properties={"keywords": keywords.split(",")},
-        ))
-    
+        graph.add_node(
+            KnowledgeNode(
+                id=pid,
+                name=name,
+                type=NodeType.PLATFORM,
+                properties={"keywords": keywords.split(",")},
+            )
+        )
+
     services = [
         ("xsuaa", "SAP XSUAA", "sap", "authentication,authorization"),
         ("hana", "SAP HANA", "sap", "database,in-memory"),
@@ -164,22 +185,26 @@ def _load_default_knowledge(graph: KnowledgeGraph) -> None:
         ("gcf", "GCP Cloud Functions", "gcp", "serverless,functions"),
         ("firestore", "GCP Firestore", "gcp", "nosql,database"),
     ]
-    
+
     for sid, name, platform, desc in services:
-        graph.add_node(KnowledgeNode(
-            id=sid,
-            name=name,
-            type=NodeType.SERVICE,
-            properties={"platform": platform, "description": desc},
-        ))
-        
+        graph.add_node(
+            KnowledgeNode(
+                id=sid,
+                name=name,
+                type=NodeType.SERVICE,
+                properties={"platform": platform, "description": desc},
+            )
+        )
+
         parent = platform if platform != "powerplatform" else "powerplatform"
-        graph.add_edge(KnowledgeEdge(
-            source_id=parent,
-            target_id=sid,
-            type=EdgeType.PROVIDES,
-        ))
-    
+        graph.add_edge(
+            KnowledgeEdge(
+                source_id=parent,
+                target_id=sid,
+                type=EdgeType.PROVIDES,
+            )
+        )
+
     technologies = [
         ("rest", "REST API"),
         ("graphql", "GraphQL"),
@@ -190,10 +215,12 @@ def _load_default_knowledge(graph: KnowledgeGraph) -> None:
         ("postgresql", "PostgreSQL"),
         ("redis", "Redis"),
     ]
-    
+
     for tid, name in technologies:
-        graph.add_node(KnowledgeNode(
-            id=tid,
-            name=name,
-            type=NodeType.TECHNOLOGY,
-        ))
+        graph.add_node(
+            KnowledgeNode(
+                id=tid,
+                name=name,
+                type=NodeType.TECHNOLOGY,
+            )
+        )

@@ -7,8 +7,6 @@ Comprehensive technical documentation for the Engineering Intelligence System.
 | Document | Description |
 |----------|-------------|
 | [01-ingestion-pipeline.md](01-ingestion-pipeline.md) | Data ingestion, parsers, chunkers, indexers, embeddings |
-| [unified_ingestion.md](unified_ingestion.md) | Unified artifact ingestion, platform extension architecture |
-| [platform-adapter-development.md](platform-adapter-development.md) | Creating platform adapters (boilerplate + guide) |
 | [02-retrieval-pipeline.md](02-retrieval-pipeline.md) | Multi-source retrieval, hybrid strategies, fusion, reranking |
 | [03-orchestration-agents.md](03-orchestration-agents.md) | Orchestration engine, agents, execution modes, memory |
 | [04-code-understanding.md](04-code-understanding.md) | Entity extraction, relationships, code graph, MCP tools |
@@ -51,10 +49,9 @@ Comprehensive technical documentation for the Engineering Intelligence System.
 ### Commands
 
 ```bash
-./eis.py start                   # Start API
-./eis.py setup                 # Initialize configuration
-./eis.py test                   # Run tests
-./eis.py check                  # Lint + type check
+./eis api                    # Start API
+./eis test                   # Run tests
+./eis check                  # Lint + type check
 docker-compose up -d         # Full stack
 ```
 
@@ -74,4 +71,4 @@ EMBEDDER_PROVIDER=openai
 
 ## Version
 
-Current version: **4.1.0**
+Current version: **4.2.0**

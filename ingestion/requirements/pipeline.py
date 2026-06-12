@@ -5,12 +5,10 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from ingestion.requirements.client import (
-    RequirementsClient,
-    JiraRequirementsClient,
     ConfluenceRequirementsClient,
+    JiraRequirementsClient,
     LocalRequirementsClient,
     Requirement,
-    get_requirements_client,
 )
 
 
@@ -79,9 +77,7 @@ class RequirementsIngestionPipeline:
 
         try:
             job.status = RequirementsJobStatus.FETCHING
-            requirements = await self.jira_client.fetch_requirements(
-                issue_type, max_results
-            )
+            requirements = await self.jira_client.fetch_requirements(issue_type, max_results)
             job.req_count = len(requirements)
 
             job.status = RequirementsJobStatus.PROCESSING
@@ -116,9 +112,7 @@ class RequirementsIngestionPipeline:
 
         try:
             job.status = RequirementsJobStatus.FETCHING
-            requirements = await self.confluence_client.fetch_requirements(
-                space_key, label
-            )
+            requirements = await self.confluence_client.fetch_requirements(space_key, label)
             job.req_count = len(requirements)
 
             job.status = RequirementsJobStatus.PROCESSING
@@ -172,9 +166,7 @@ class RequirementsIngestionPipeline:
 
         return job
 
-    def _process_requirements(
-        self, requirements: List[Requirement]
-    ) -> List[Dict[str, Any]]:
+    def _process_requirements(self, requirements: List[Requirement]) -> List[Dict[str, Any]]:
         processed = []
         for req in requirements:
             processed.append(

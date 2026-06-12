@@ -1,7 +1,7 @@
-from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
-from enum import Enum
 import re
+from dataclasses import dataclass
+from enum import Enum
+from typing import Dict, List, Optional
 
 
 class CrossRefType(str, Enum):
@@ -32,6 +32,36 @@ class CrossRefResult:
     took_ms: int
 
 
+class CrossReferenceResolver:
+    """Resolves cross-references across documents with cycle detection."""
+
+    def __init__(self):
+        self._reference_map: Dict[str, List[CrossReference]] = {}
+
+    def add_references(self, result: CrossRefResult) -> None:
+        self._reference_map[result.source_id] = result.references
+
+    def resolve(self, source_id: str, visited: Optional[set] = None) -> List[CrossReference]:
+        """Resolve all cross-references starting from source_id, detecting cycles."""
+        if visited is None:
+            visited = set()
+
+        if source_id in visited:
+            return []
+
+        visited.add(source_id)
+
+        refs = self._reference_map.get(source_id, [])
+        resolved = list(refs)
+
+        for ref in refs:
+            if ref.target_id and ref.target_id in self._reference_map:
+                child_refs = self.resolve(ref.target_id, visited)
+                resolved.extend(child_refs)
+
+        return resolved
+
+
 class CrossReferenceExtractor:
     def extract(self, text: str, source_id: str) -> CrossRefResult:
         import time
@@ -54,9 +84,7 @@ class CrossReferenceExtractor:
             took_ms=took,
         )
 
-    def _extract_markdown_links(
-        self, text: str, source_id: str
-    ) -> List[CrossReference]:
+    def _extract_markdown_links(self, text: str, source_id: str) -> List[CrossReference]:
         refs = []
         pattern = r"\[([^\]]+)\]\(([^)]+)\)"
 

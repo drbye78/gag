@@ -1,26 +1,30 @@
-from unified_ingestion.handlers.base import Handler, HandlerResult, Chunk
-from unified_ingestion.handlers.document import DocumentHandler
-from unified_ingestion.handlers.markdown import MarkdownHandler
-from unified_ingestion.handlers.source_code import SourceCodeHandler
-from unified_ingestion.handlers.config import ConfigHandler
-from unified_ingestion.handlers.text import TextHandler
-from unified_ingestion.handlers.k8s import K8sHandler
-from unified_ingestion.handlers.diagram import DiagramHandler
-from unified_ingestion.handlers.bpmn import BPMNHandler
-from unified_ingestion.handlers.api_spec import APISpecHandler
-from unified_ingestion.handlers.graphql import GraphQLHandler
 from unified_ingestion.core.types import ArtifactType
+from unified_ingestion.handlers.api_spec import APISpecHandler
+from unified_ingestion.handlers.base import Chunk, Handler, HandlerResult
+from unified_ingestion.handlers.bpmn import BPMNHandler
+from unified_ingestion.handlers.config import ConfigHandler
+from unified_ingestion.handlers.diagram import DiagramHandler
+from unified_ingestion.handlers.document import DocumentHandler
+from unified_ingestion.handlers.graphql import GraphQLHandler
+from unified_ingestion.handlers.k8s import K8sHandler
+from unified_ingestion.handlers.markdown import MarkdownHandler
 from unified_ingestion.handlers.registry import get_handler_registry
+from unified_ingestion.handlers.source_code import SourceCodeHandler
+from unified_ingestion.handlers.text import TextHandler
 
 try:
-    from unified_ingestion.optimize import with_retry, get_metrics_collector
+    from unified_ingestion.optimize import get_metrics_collector, with_retry
+
     OPTIMIZE_AVAILABLE = True
 except ImportError:
     OPTIMIZE_AVAILABLE = False
+
     def with_retry(max_attempts: int = 3):
         def decorator(func):
             return func
+
         return decorator
+
 
 _document_handler = DocumentHandler()
 _markdown_handler = MarkdownHandler()

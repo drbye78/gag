@@ -2,19 +2,18 @@ import asyncio
 import hashlib
 import logging
 import os
-import zipfile
 import uuid
+import zipfile
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
-from pydantic import field_validator
+from pydantic import BaseModel, field_validator
 
 from core.auth import require_authenticated
+from unified_ingestion.core.job import ArtifactJob, JobStatus
 from unified_ingestion.core.registry import get_job_registry
 from unified_ingestion.core.types import ArtifactType
-from unified_ingestion.core.job import ArtifactJob, JobStatus
-from unified_ingestion.handlers import register_handlers, get_handler
+from unified_ingestion.handlers import get_handler, register_handlers
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +92,9 @@ class FormatInfo(BaseModel):
     extensions: List[str]
 
 
-router = APIRouter(prefix="/artifacts", tags=["artifacts"], dependencies=[Depends(require_authenticated)])
+router = APIRouter(
+    prefix="/artifacts", tags=["artifacts"], dependencies=[Depends(require_authenticated)]
+)
 
 
 @router.post("/ingest", response_model=IngestResponse)
@@ -226,7 +227,7 @@ async def ingest_zip(request: ZipIngestRequest):
                     continue
                 info = zf.getinfo(name)
                 if info.file_size > max_size:
-                    raise HTTPException(400, f"File {name} exceeds {max_size//1024//1024}MB")
+                    raise HTTPException(400, f"File {name} exceeds {max_size // 1024 // 1024}MB")
                 content = zf.read(name)
                 artifact_type = request.artifact_type
 
@@ -281,13 +282,22 @@ async def ingest_git(request: GitIngestRequest):
 
     try:
         import tempfile
-        import shutil
 
         with tempfile.TemporaryDirectory() as tmpdir:
             import subprocess
 
             result = subprocess.run(
-                ["git", "clone", "--depth", str(request.depth), "--branch", request.branch, "--single-branch", request.repo_url, tmpdir],
+                [
+                    "git",
+                    "clone",
+                    "--depth",
+                    str(request.depth),
+                    "--branch",
+                    request.branch,
+                    "--single-branch",
+                    request.repo_url,
+                    tmpdir,
+                ],
                 capture_output=True,
                 text=True,
             )
@@ -449,20 +459,48 @@ async def cancel_job(job_id: str):
 @router.get("/formats")
 async def list_formats():
     formats = [
-        {"type": "document", "description": "PDF, DOCX, PPTX, XLSX", "extensions": [".pdf", ".docx", ".pptx", ".xlsx"]},
-        {"type": "markdown", "description": "Markdown with frontmatter", "extensions": [".md", ".markdown"]},
-        {"type": "source_code", "description": "Source code (Python, JS, Go, etc)", "extensions": [".py", ".js", ".ts", ".go", ".rs", ".java"]},
-        {"type": "config", "description": "Configuration files", "extensions": [".json", ".yaml", ".yml", ".toml", ".env"]},
-        {"type": "text", "description": "Plain text, CSV, TSV", "extensions": [".txt", ".csv", ".tsv"]},
+        {
+            "type": "document",
+            "description": "PDF, DOCX, PPTX, XLSX",
+            "extensions": [".pdf", ".docx", ".pptx", ".xlsx"],
+        },
+        {
+            "type": "markdown",
+            "description": "Markdown with frontmatter",
+            "extensions": [".md", ".markdown"],
+        },
+        {
+            "type": "source_code",
+            "description": "Source code (Python, JS, Go, etc)",
+            "extensions": [".py", ".js", ".ts", ".go", ".rs", ".java"],
+        },
+        {
+            "type": "config",
+            "description": "Configuration files",
+            "extensions": [".json", ".yaml", ".yml", ".toml", ".env"],
+        },
+        {
+            "type": "text",
+            "description": "Plain text, CSV, TSV",
+            "extensions": [".txt", ".csv", ".tsv"],
+        },
         {"type": "k8s", "description": "Kubernetes manifests", "extensions": [".yaml", ".yml"]},
         {"type": "helm", "description": "Helm charts", "extensions": ["Chart.yaml", "values.yaml"]},
         {"type": "dockerfile", "description": "Dockerfiles", "extensions": ["Dockerfile"]},
         {"type": "istio", "description": "Istio resources", "extensions": [".yaml"]},
         {"type": "diagram", "description": "Architecture diagrams", "extensions": [".svg", ".png"]},
-        {"type": "plantuml", "description": "PlantUML diagrams", "extensions": [".puml", ".plantuml"]},
+        {
+            "type": "plantuml",
+            "description": "PlantUML diagrams",
+            "extensions": [".puml", ".plantuml"],
+        },
         {"type": "mermaid", "description": "Mermaid diagrams", "extensions": [".mmd", ".mermaid"]},
         {"type": "bpmn", "description": "BPMN 2.0", "extensions": [".bpmn", ".xml"]},
-        {"type": "api_spec", "description": "OpenAPI/Swagger specs", "extensions": [".json", ".yaml", ".yml"]},
+        {
+            "type": "api_spec",
+            "description": "OpenAPI/Swagger specs",
+            "extensions": [".json", ".yaml", ".yml"],
+        },
         {"type": "graphql", "description": "GraphQL schemas", "extensions": [".graphql", ".gql"]},
     ]
     return {"formats": formats}
@@ -475,14 +513,16 @@ async def list_artifact_types():
 
 try:
     from unified_ingestion.optimize import (
-        get_metrics_collector,
-        get_health_checker,
-        format_error,
         IngestionError,
+        format_error,
+        get_health_checker,
+        get_metrics_collector,
     )
+
     OPTIMIZE_AVAILABLE = True
 except ImportError:
     OPTIMIZE_AVAILABLE = False
+
     def format_error(error: Exception) -> dict:
         return {"error": str(type(error).__name__), "message": str(error)}
 

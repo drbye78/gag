@@ -1,61 +1,64 @@
 import logging
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
+
+from fastapi import APIRouter, Depends, HTTPException
 
 logger = logging.getLogger(__name__)
 
+from core.auth import require_authenticated
+from graph.client import get_falkordb_client
 from models.graphrag import (
+    CommunityResponse,
+    EntitySearchResponse,
     GraphRAGQueryRequest,
     GraphRAGQueryResponse,
-    EntitySearchRequest,
-    EntitySearchResponse,
-    RelationshipSearchRequest,
-    RelationshipSearchResponse,
-    CommunityResponse,
     GraphRAGStatsResponse,
+    RelationshipSearchResponse,
 )
 from retrieval.hybrid import get_enhanced_hybrid_retriever
-from graph.client import get_falkordb_client
-from core.auth import require_authenticated
 
-
-router = APIRouter(prefix="/graphrag", tags=["graphrag"], dependencies=[Depends(require_authenticated)])
+router = APIRouter(
+    prefix="/graphrag", tags=["graphrag"], dependencies=[Depends(require_authenticated)]
+)
 
 
 @router.post("/query", response_model=GraphRAGQueryResponse)
 async def graphrag_query(request: GraphRAGQueryRequest):
-    retriever = get_enhanced_hybrid_retriever()
+    try:
+        retriever = get_enhanced_hybrid_retriever()
 
-    result = await retriever.search(
-        request.query,
-        limit=request.max_hops,
-        use_reasoning=True,
-        force_graphrag=True,
-    )
+        result = await retriever.search(
+            request.query,
+            limit=request.max_hops,
+            use_reasoning=True,
+            force_graphrag=True,
+        )
 
-    entities = []
-    if request.include_entities:
-        entity_context = await retriever.link_query_entities(request.query, limit=10)
-        entities = entity_context.get("entities", [])
+        entities = []
+        if request.include_entities:
+            entity_context = await retriever.link_query_entities(request.query, limit=10)
+            entities = entity_context.get("entities", [])
 
-    relationships = []
-    communities = []
-    if request.include_relationships:
-        for e in entities:
-            rel_result = await retriever.graph_retriever.get_connected_nodes(e.get("name", ""))
-            relationships.extend(rel_result.get("connected", []))
+        relationships = []
+        communities = []
+        if request.include_relationships:
+            for e in entities:
+                rel_result = await retriever.graph_retriever.get_connected_nodes(e.get("name", ""))
+                relationships.extend(rel_result.get("connected", []))
 
-    return GraphRAGQueryResponse(
-        query=request.query,
-        answer=result.get("answer", ""),
-        entities=entities,
-        relationships=relationships,
-        communities=communities,
-        confidence=result.get("confidence", 0.0),
-        sources=result.get("results", []),
-        took_ms=result.get("took_ms", 0),
-    )
+        return GraphRAGQueryResponse(
+            query=request.query,
+            answer=result.get("answer", ""),
+            entities=entities,
+            relationships=relationships,
+            communities=communities,
+            confidence=result.get("confidence", 0.0),
+            sources=result.get("results", []),
+            took_ms=result.get("took_ms", 0),
+        )
+    except Exception as e:
+        logger.exception("GraphRAG query failed")
+        raise HTTPException(status_code=500, detail="Internal error processing query")
 
 
 @router.get("/entities", response_model=EntitySearchResponse)
@@ -113,9 +116,9 @@ async def get_entity(entity_id: str):
             "entity": data.get("e", {}),
             "relationships": data.get("relationships", []),
         }
-    except Exception as e:
-        logger.exception("Failed to get entity %s: %s", entity_id, e)
-        raise HTTPException(status_code=404, detail="Entity not found")
+    except Exception:
+        logger.exception("Failed to get entity %s", entity_id)
+        raise HTTPException(status_code=500, detail="Error retrieving entity")
 
 
 @router.get("/relationships", response_model=RelationshipSearchResponse)
@@ -153,9 +156,7 @@ async def list_relationships(
         logger.exception("Failed to list relationships: %s", e)
         relationships = []
 
-    return RelationshipSearchResponse(
-        relationships=relationships, total=len(relationships)
-    )
+    return RelationshipSearchResponse(relationships=relationships, total=len(relationships))
 
 
 @router.get("/communities", response_model=List[CommunityResponse])
@@ -192,7 +193,9 @@ async def list_communities(
                 CommunityResponse(
                     id=c.get("id", ""),
                     name=c.get("name", ""),
-                    members=[{"name": m.get("name", ""), "type": m.get("type", "")} for m in members],
+                    members=[
+                        {"name": m.get("name", ""), "type": m.get("type", "")} for m in members
+                    ],
                     size=len(members),
                 )
             )
@@ -223,9 +226,9 @@ async def get_community(community_id: str):
             members=[{"name": m.get("name", ""), "type": m.get("type", "")} for m in members],
             size=len(members),
         )
-    except Exception as e:
-        logger.exception("Failed to get community %s: %s", community_id, e)
-        raise HTTPException(status_code=404, detail="Community not found")
+    except Exception:
+        logger.exception("Failed to get community %s", community_id)
+        raise HTTPException(status_code=500, detail="Error retrieving community")
 
 
 @router.get("/stats", response_model=GraphRAGStatsResponse)

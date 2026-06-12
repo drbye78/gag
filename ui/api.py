@@ -1,7 +1,7 @@
 """FastAPI router for UI sketch endpoints."""
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -47,9 +47,9 @@ class UISuggestResponse(BaseModel):
 
 @router.post("/analyze", response_model=UIAnalyzeResponse)
 async def analyze_ui(request: UIAnalyzeRequest):
-    from ui.vlm_extractor import VLMUIExtractor
     from ui.evidence_aggregator import EvidenceAggregator
     from ui.graph_builder import UIGraphBuilder
+    from ui.vlm_extractor import VLMUIExtractor
 
     extractor = VLMUIExtractor()
     vlm_schema = await extractor.extract(request.image_url)
@@ -63,6 +63,7 @@ async def analyze_ui(request: UIAnalyzeRequest):
     # Get ColPali visual embedding
     try:
         from ui.colpali_integration import get_ui_visual_indexer
+
         visual_indexer = get_ui_visual_indexer()
         embedding = await visual_indexer.get_embedding(request.image_url)
         if embedding is not None:
@@ -70,7 +71,9 @@ async def analyze_ui(request: UIAnalyzeRequest):
             if emb_attr is not None:
                 emb_tensor = getattr(emb_attr, "numel", lambda: 0)()
                 if emb_tensor and emb_tensor > 0:
-                    visual_embedding_list = emb_attr[0].cpu().tolist() if hasattr(emb_attr[0], "cpu") else None
+                    visual_embedding_list = (
+                        emb_attr[0].cpu().tolist() if hasattr(emb_attr[0], "cpu") else None
+                    )
                     if visual_embedding_list:
                         result = aggregator.aggregate(
                             image_url=request.image_url,
@@ -95,8 +98,12 @@ async def analyze_ui(request: UIAnalyzeRequest):
         format_type=result.sketch.format_type,
         page_type=result.sketch.page_type,
         elements=[
-            UIElementResult(element_id=e.element_id, element_type=e.element_type,
-                           label=e.label, confidence=e.confidence)
+            UIElementResult(
+                element_id=e.element_id,
+                element_type=e.element_type,
+                label=e.label,
+                confidence=e.confidence,
+            )
             for e in result.elements
         ],
         element_count=len(result.elements),
@@ -107,8 +114,8 @@ async def analyze_ui(request: UIAnalyzeRequest):
 
 @router.post("/suggest", response_model=UISuggestResponse)
 async def suggest_implementation(request: UISuggestRequest):
-    from ui.suggestion_tool import UISuggestionTool
     from tools.base import ToolInput
+    from ui.suggestion_tool import UISuggestionTool
 
     if not request.ui_sketch_id and not request.image_url:
         raise HTTPException(status_code=400, detail="Provide ui_sketch_id or image_url")
@@ -161,7 +168,6 @@ class UIBatchResponse(BaseModel):
 @router.post("/ingest", response_model=UIIngestResponse)
 async def ingest_ui(request: UIIngestRequest):
     from ui.pipeline import get_ui_ingestion_pipeline
-    from ui.ingestion_job import get_ui_job_registry
 
     pipeline = get_ui_ingestion_pipeline()
     result = await pipeline.ingest(
@@ -184,7 +190,6 @@ async def ingest_ui(request: UIIngestRequest):
 @router.post("/batch", response_model=UIBatchResponse)
 async def batch_ingest_ui(request: UIBatchRequest):
     from ui.pipeline import get_ui_ingestion_pipeline
-    from ui.ingestion_job import get_ui_job_registry
 
     pipeline = get_ui_ingestion_pipeline()
     results = await pipeline.batch_ingest(request.items)

@@ -3,12 +3,19 @@ Indexer - Vector and graph indexing.
 
 Provides VectorIndexer for Qdrant and GraphIndexer
 for FalkorDB with batched operations and connection pooling.
+
+NOTE: The current Indexer only supports full-document indexing (all chunks
+are upserted in bulk).  Incremental indexing — where only changed documents
+are re-indexed while existing vectors are preserved — is not yet supported.
+A future enhancement should add change-detection (e.g. content hashing or
+timestamps) and a ``delete-then-upsert`` strategy for individual documents.
 """
 
 import logging
 import os
 import time
 import uuid
+from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
@@ -127,9 +134,7 @@ class VectorIndexer:
                 if resp.status_code in (200, 201):
                     indexed += len(batch)
                 else:
-                    errors.append(
-                        f"Batch {i // batch_size} failed: HTTP {resp.status_code}"
-                    )
+                    errors.append(f"Batch {i // batch_size} failed: HTTP {resp.status_code}")
                     logger.error(
                         "Qdrant batch %d failed: HTTP %d",
                         i // batch_size,
@@ -228,13 +233,7 @@ class VectorIndexer:
             client = await self._get_client()
             resp = await client.post(
                 f"{self.base_url}/collections/{self.collection}/points/delete",
-                json={
-                    "filter": {
-                        "must": [
-                            {"key": "source_id", "match": {"value": source_id}}
-                        ]
-                    }
-                },
+                json={"filter": {"must": [{"key": "source_id", "match": {"value": source_id}}]}},
                 timeout=30.0,
             )
             took = int((time.time() - start) * 1000)
@@ -402,43 +401,41 @@ class GraphIndexer:
         for i in range(0, len(nodes), batch_size):
             batch = nodes[i : i + batch_size]
             try:
-                # Build UNWIND query for batch insertion
-                node_data = [
-                    {
-                        "id": n.get("id", str(uuid.uuid4())),
-                        "label": n.get("node_type", "entity"),
-                        "props": n.get("properties", {}),
-                    }
-                    for n in batch
-                ]
+                # Group nodes by validated label for batch insertion
+                # FalkorDB does not support APOC; use UNWIND per label group
+                label_groups: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+                for n in batch:
+                    node_id = n.get("id", str(uuid.uuid4()))
+                    validated_type = _validate_node_type(n.get("node_type", "Entity"))
+                    label_groups[validated_type].append(
+                        {
+                            "id": node_id,
+                            "props": n.get("properties", {}),
+                        }
+                    )
 
-                cypher = """
-                UNWIND $nodes AS node
-                CALL db.labels() YIELD label
-                WITH node
-                CALL apoc.create.node([node.label], node.props) YIELD node AS n
-                RETURN count(n) AS count
-                """
-                # Fallback to simpler MERGE approach since FalkorDB may not have APOC
-                cypher = """
-                UNWIND $nodes AS node
-                MERGE (n:Entity {id: node.id})
-                SET n += node.props
-                WITH n, node
-                CALL apoc.create.addLabels(n, [node.label]) YIELD node AS labeled
-                RETURN count(labeled) AS count
-                """
-
-                params = {"nodes": node_data}
-
+                batch_ok = True
                 client = await self._get_client()
-                resp = await client.post(
-                    f"{self.base_url}/query",
-                    json={"query": cypher, "params": params},
-                    timeout=60.0,
-                )
 
-                if resp.status_code in (200, 201):
+                for label, group_nodes in label_groups.items():
+                    cypher = f"""
+                    UNWIND $nodes AS node
+                    MERGE (n:{label} {{id: node.id}})
+                    SET n += node.props
+                    """
+                    params = {"nodes": group_nodes}
+
+                    resp = await client.post(
+                        f"{self.base_url}/query",
+                        json={"query": cypher, "params": params},
+                        timeout=60.0,
+                    )
+
+                    if resp.status_code not in (200, 201):
+                        batch_ok = False
+                        break
+
+                if batch_ok:
                     indexed += len(batch)
                     for n in batch:
                         nid = n.get("id", "")
@@ -449,10 +446,7 @@ class GraphIndexer:
                     for node in batch:
                         node_id = node.get("id", str(uuid.uuid4()))
                         validated_type = _validate_node_type(node.get("node_type", "Entity"))
-                        cypher = """
-                        MERGE (n:Entity {id: $id})
-                        SET n += $props
-                        """
+                        cypher = f"MERGE (n:{validated_type} {{id: $id}}) SET n += $props"
                         try:
                             await self._execute_cypher(
                                 cypher,
@@ -469,10 +463,7 @@ class GraphIndexer:
                 for node in batch:
                     node_id = node.get("id", str(uuid.uuid4()))
                     validated_type = _validate_node_type(node.get("node_type", "Entity"))
-                    cypher = """
-                    MERGE (n:Entity {id: $id})
-                    SET n += $props
-                    """
+                    cypher = f"MERGE (n:{validated_type} {{id: $id}}) SET n += $props"
                     try:
                         await self._execute_cypher(
                             cypher,
@@ -515,43 +506,52 @@ class GraphIndexer:
         for i in range(0, len(edges), batch_size):
             batch = edges[i : i + batch_size]
             try:
-                edge_data = [
-                    {
-                        "source_id": e.get("source_id"),
-                        "target_id": e.get("target_id"),
-                        "rel_type": e.get("edge_type", "RELATED_TO"),
-                        "props": e.get("properties", {}),
-                    }
-                    for e in batch
-                ]
+                # Group edges by validated relationship type for batch insertion
+                # FalkorDB does not support APOC; use UNWIND per relationship type
+                rel_groups: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+                for e in batch:
+                    validated_rel = _validate_edge_type(e.get("edge_type", "RELATED_TO"))
+                    rel_groups[validated_rel].append(
+                        {
+                            "source_id": e.get("source_id"),
+                            "target_id": e.get("target_id"),
+                            "props": e.get("properties", {}),
+                        }
+                    )
 
-                cypher = """
-                UNWIND $edges AS edge
-                MATCH (a {id: edge.source_id})
-                MATCH (b {id: edge.target_id})
-                CALL apoc.create.relationship(a, edge.rel_type, edge.props, b) YIELD rel
-                RETURN count(rel) AS count
-                """
-
-                params = {"edges": edge_data}
-
+                batch_ok = True
                 client = await self._get_client()
-                resp = await client.post(
-                    f"{self.base_url}/query",
-                    json={"query": cypher, "params": params},
-                    timeout=60.0,
-                )
 
-                if resp.status_code in (200, 201):
+                for rel_type, group_edges in rel_groups.items():
+                    cypher = f"""
+                    UNWIND $edges AS edge
+                    MATCH (a {{id: edge.source_id}})
+                    MATCH (b {{id: edge.target_id}})
+                    MERGE (a)-[r:{rel_type}]->(b)
+                    SET r += edge.props
+                    """
+                    params = {"edges": group_edges}
+
+                    resp = await client.post(
+                        f"{self.base_url}/query",
+                        json={"query": cypher, "params": params},
+                        timeout=60.0,
+                    )
+
+                    if resp.status_code not in (200, 201):
+                        batch_ok = False
+                        break
+
+                if batch_ok:
                     indexed += len(batch)
                 else:
                     # Fallback: individual edge creation
                     for edge in batch:
                         rel_type = _validate_edge_type(edge.get("edge_type", "RELATED_TO"))
-                        cypher = """
-                        MATCH (a {id: $source_id})
-                        MATCH (b {id: $target_id})
-                        MERGE (a)-[r:RELATED_TO]->(b)
+                        cypher = f"""
+                        MATCH (a {{id: $source_id}})
+                        MATCH (b {{id: $target_id}})
+                        MERGE (a)-[r:{rel_type}]->(b)
                         SET r += $props
                         """
                         try:
@@ -571,10 +571,10 @@ class GraphIndexer:
                 logger.warning("Batch edge insert failed, falling back: %s", e)
                 for edge in batch:
                     rel_type = _validate_edge_type(edge.get("edge_type", "RELATED_TO"))
-                    cypher = """
-                    MATCH (a {id: $source_id})
-                    MATCH (b {id: $target_id})
-                    MERGE (a)-[r:RELATED_TO]->(b)
+                    cypher = f"""
+                    MATCH (a {{id: $source_id}})
+                    MATCH (b {{id: $target_id}})
+                    MERGE (a)-[r:{rel_type}]->(b)
                     SET r += $props
                     """
                     try:

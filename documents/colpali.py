@@ -10,14 +10,13 @@ Models:
 - vidore/colSmol-500M (500M, lightweight)
 """
 
-import io
 import base64
+import io
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from PIL import Image
-
 
 COLPALI_AVAILABLE = False
 ColPaliForRetrieval = None
@@ -99,9 +98,7 @@ class ColPaliClient:
 
     def _get_model(self):
         if not self.available:
-            raise RuntimeError(
-                "ColPali not available. Install: pip install colpali-engine"
-            )
+            raise RuntimeError("ColPali not available. Install: pip install colpali-engine")
 
         if self._model is None:
             if "qwen" in self.model_name.lower():
@@ -121,9 +118,7 @@ class ColPaliClient:
 
     def _get_processor(self):
         if not self.available:
-            raise RuntimeError(
-                "ColPali not available. Install: pip install colpali-engine"
-            )
+            raise RuntimeError("ColPali not available. Install: pip install colpali-engine")
 
         if self._processor is None:
             if "qwen" in self.model_name.lower():

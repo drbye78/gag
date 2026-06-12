@@ -6,13 +6,12 @@ Provides /ingest, /ingest/batch, /ingest/codebase,
 """
 
 from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 
-from fastapi import APIRouter, HTTPException, Depends
-
 from core.auth import require_authenticated
-
-from ingestion.pipeline import IngestionPipeline, get_ingestion_pipeline, JobStatus
+from ingestion.pipeline import get_ingestion_pipeline
 
 
 class IngestRequest(BaseModel):
@@ -64,7 +63,9 @@ class JobStatusResponse(BaseModel):
     error: Optional[str]
 
 
-router = APIRouter(prefix="/ingestion", tags=["ingestion"], dependencies=[Depends(require_authenticated)])
+router = APIRouter(
+    prefix="/ingestion", tags=["ingestion"], dependencies=[Depends(require_authenticated)]
+)
 
 
 @router.post("/ingest", response_model=IngestResponse)
@@ -129,13 +130,13 @@ async def list_jobs(limit: int = 50):
     elif limit > 1000:
         limit = 1000
     pipeline = get_ingestion_pipeline()
-    return pipeline.list_jobs(limit)
+    return await pipeline.list_jobs(limit)
 
 
 @router.get("/jobs/{job_id}", response_model=JobStatusResponse)
 async def get_job(job_id: str):
     pipeline = get_ingestion_pipeline()
-    job = pipeline.get_job(job_id)
+    job = await pipeline.get_job(job_id)
 
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -155,7 +156,7 @@ async def get_job(job_id: str):
 @router.delete("/jobs/{job_id}")
 async def cancel_job(job_id: str):
     pipeline = get_ingestion_pipeline()
-    success = pipeline.cancel_job(job_id)
+    success = await pipeline.cancel_job(job_id)
 
     if not success:
         raise HTTPException(status_code=400, detail="Cannot cancel job")

@@ -6,24 +6,25 @@ execution, retry logic, and metrics.
 """
 
 import asyncio
+import copy
+import hashlib
 import logging
+import threading
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, AsyncGenerator, Dict, List, Optional, cast
 
-from agents.planner import ExecutionPlan, ExecutionStep, PlannerAgent
-from agents.retrieval import RetrievalAgent
-from agents.reasoning import ReasoningAgent
 from agents.executor import ToolExecutor
-from agents.registry import _registry as _agent_registry
+from agents.planner import ExecutionPlan, ExecutionStep, PlannerAgent
+from agents.reasoning import ReasoningAgent
+from agents.registry import get_registry
+from agents.retrieval import RetrievalAgent
 from agents.types import AgentType
 from core.memory import (
-    get_memory_system,
-    MemoryScope,
     MemoryTier,
-    get_short_term_memory,
+    get_memory_system,
 )
 
 logger = logging.getLogger(__name__)
@@ -250,20 +251,23 @@ class OrchestrationEngine:
         max_iterations: int = 3,
         max_retries: int = 2,
         parallel_execution: bool = True,
+        orchestration_mode: OrchestrationMode = OrchestrationMode.ITERATIVE,
     ):
         self.max_iterations = max_iterations
         self.max_retries = max_retries
         self.parallel_execution = parallel_execution
+        self.orchestration_mode = orchestration_mode
 
         # Use the agent registry for agent creation; fall back to direct instantiation
         try:
             # Ensure built-in agents are registered
             import agents._register  # noqa: F401
 
-            self.planner = _agent_registry.get_factory(AgentType.PLANNER)()
-            self.retriever = _agent_registry.get_factory(AgentType.RETRIEVAL)()
-            self.reasoner = _agent_registry.get_factory(AgentType.REASONING)()
-            self.executor = _agent_registry.get_factory(AgentType.EXECUTOR)()
+            registry = get_registry()
+            self.planner = registry.get_factory(AgentType.PLANNER)()
+            self.retriever = registry.get_factory(AgentType.RETRIEVAL)()
+            self.reasoner = registry.get_factory(AgentType.REASONING)()
+            self.executor = registry.get_factory(AgentType.EXECUTOR)()
         except (KeyError, ImportError):
             # Fallback if registry not populated or import fails
             self.planner = PlannerAgent()
@@ -315,7 +319,6 @@ class OrchestrationEngine:
                 state.status = StepStatus.COMPLETED
                 break  # Success — exit retry loop
             except Exception as e:
-                from core.errors import OrchestrationError
                 if attempt < self.max_retries:
                     state.retry_count += 1
                     self.metrics["total_retries"] += 1
@@ -387,11 +390,20 @@ class OrchestrationEngine:
     ) -> Optional[str]:
         failed = [s for s in states if s.status == StepStatus.FAILED]
         if failed:
-            return f"Step failed: {failed[0].error}"
+            reason = f"Step failed: {failed[0].error}"
+            # Raise PlanRevision so callers can catch it explicitly
+            raise PlanRevision(
+                reason=reason,
+                new_steps=[s.step for s in states if s.status == StepStatus.PENDING],
+            )
 
         completed = [s for s in states if s.status == StepStatus.COMPLETED]
         if len(completed) < len(plan.steps) / 2:
-            return "Less than 50% steps completed"
+            reason = "Less than 50% steps completed"
+            raise PlanRevision(
+                reason=reason,
+                new_steps=[s.step for s in states if s.status == StepStatus.PENDING],
+            )
 
         return None
 
@@ -409,12 +421,73 @@ class OrchestrationEngine:
                         return True
         return False
 
+    @staticmethod
+    def _serialize_state(state: ExecutionState) -> Dict[str, Any]:
+        """Safely serialize ExecutionState, converting nested objects properly."""
+        return {
+            "step": state.step.to_dict(),
+            "status": state.status.value,
+            "result": state.result,
+            "error": state.error,
+            "started_at": state.started_at,
+            "completed_at": state.completed_at,
+            "retry_count": state.retry_count,
+            "duration_ms": state.duration_ms,
+        }
+
+    async def _get_final_answer(
+        self,
+        all_states: List[ExecutionState],
+        context: Dict[str, Any],
+    ) -> tuple:
+        """Get the final reasoning answer. Returns (answer_state, answer_text)."""
+        final_answer_state = next(
+            (
+                s
+                for s in reversed(all_states)
+                if s.step.step_type == "reason" and s.status == StepStatus.COMPLETED and s.result
+            ),
+            None,
+        )
+        if final_answer_state is None:
+            reasoning_state = ExecutionState(
+                step=ExecutionStep(step_type="reason", action="generate_answer")
+            )
+            final_answer_state = await self._execute_step(reasoning_state, context)
+        return final_answer_state, final_answer_state.result or "No response"
+
     async def execute(
         self,
         query: str,
         ir_context: Optional[Dict[str, Any]] = None,
         max_iterations: Optional[int] = None,
     ) -> Dict[str, Any]:
+        """Execute a query using the configured OrchestrationMode dispatch."""
+        # Dispatch to the appropriate execution strategy based on orchestration_mode
+        mode = self.orchestration_mode
+
+        if mode == OrchestrationMode.BRANCHING:
+            return await self.execute_branching(query, ir_context)
+        elif mode == OrchestrationMode.RECURSIVE:
+            return await self.execute_recursive(query, ir_context)
+        elif mode == OrchestrationMode.PARALLEL:
+            return await self._execute_iterative(query, ir_context, max_iterations, parallel=True)
+        elif mode == OrchestrationMode.SEQUENTIAL:
+            return await self._execute_iterative(query, ir_context, max_iterations, parallel=False)
+        else:
+            # ITERATIVE (default) — uses parallel_execution flag
+            return await self._execute_iterative(
+                query, ir_context, max_iterations, parallel=self.parallel_execution
+            )
+
+    async def _execute_iterative(
+        self,
+        query: str,
+        ir_context: Optional[Dict[str, Any]] = None,
+        max_iterations: Optional[int] = None,
+        parallel: bool = True,
+    ) -> Dict[str, Any]:
+        """Core iterative execution loop used by ITERATIVE/PARALLEL/SEQUENTIAL modes."""
         start_time = time.time()
         max_iterations = max_iterations or self.max_iterations
 
@@ -438,7 +511,7 @@ class OrchestrationEngine:
         for iteration in range(max_iterations):
             context["iteration"] = iteration
 
-            if self.parallel_execution:
+            if parallel:
                 states = await self._execute_plan_parallel(plan, context)
             else:
                 states = await self._execute_plan_sequential(plan, context)
@@ -460,19 +533,25 @@ class OrchestrationEngine:
             if not await self._revision_needed(states, context):
                 break
 
-            should_revise = await self._should_revise(states, plan)
+            try:
+                should_revise = await self._should_revise(states, plan)
+            except PlanRevision as pr:
+                should_revise = pr.reason
+                logger.info("PlanRevision raised: %s", pr.reason)
+
             if should_revise and iteration < max_iterations - 1:
                 new_plan = await self.planner.plan(query, context)
                 plan = new_plan
+            else:
+                # Revision needed but no specific reason or last iteration — stop looping
+                break
 
-        reasoning_state = ExecutionState(
-            step=ExecutionStep(step_type="reason", action="generate_answer")
-        )
-        reasoning_state = await self._execute_step(reasoning_state, context)
+        # Only run final reasoning if no reason step already produced an answer
+        final_answer_state, answer = await self._get_final_answer(all_states, context)
 
         execution_time = int((time.time() - start_time) * 1000)
 
-        has_errors = any(s.error for s in all_states) or reasoning_state.error
+        has_errors = any(s.error for s in all_states) or final_answer_state.error
         self._update_metrics(not has_errors, len(all_states), execution_time)
 
         memory = get_memory_system()
@@ -489,15 +568,16 @@ class OrchestrationEngine:
 
         return {
             "query": query,
-            "answer": reasoning_state.result or "No response",
+            "answer": answer,
             "intent": plan.intent,
             "plan": plan.to_dict(),
             "execution": {
                 "iterations": len(all_states),
-                "steps": [s.__dict__ for s in all_states],
+                "steps": [self._serialize_state(s) for s in all_states],
                 "took_ms": execution_time,
             },
-            "metrics": self.metrics,
+            "metrics": dict(self.metrics),
+            "orchestration_mode": self.orchestration_mode.value,
         }
 
     def _aggregate_results(
@@ -523,12 +603,10 @@ class OrchestrationEngine:
             self.metrics["failed_runs"] += 1
         self.metrics["total_steps_executed"] += steps
 
-        if self.metrics["avg_execution_time_ms"]:
-            self.metrics["avg_execution_time_ms"] = (
-                self.metrics["avg_execution_time_ms"] + time_ms
-            ) / 2
-        else:
-            self.metrics["avg_execution_time_ms"] = float(time_ms)
+        # Proper cumulative average
+        total = self.metrics["total_runs"]
+        prev_avg = self.metrics["avg_execution_time_ms"]
+        self.metrics["avg_execution_time_ms"] = (prev_avg * (total - 1) + time_ms) / total
 
     async def execute_streaming(
         self,
@@ -571,6 +649,7 @@ class OrchestrationEngine:
                     "status": state.status.value,
                     "result": str(state.result)[:500] if state.result else None,
                     "error": state.error,
+                    "iteration": iteration,
                 }
 
                 if state.status == StepStatus.FAILED:
@@ -584,24 +663,31 @@ class OrchestrationEngine:
             if not await self._revision_needed(states, context):
                 break
 
-            should_revise = await self._should_revise(states, plan)
+            try:
+                should_revise = await self._should_revise(states, plan)
+            except PlanRevision as pr:
+                should_revise = pr.reason
+                logger.info("PlanRevision raised (streaming): %s", pr.reason)
+
             if should_revise and iteration < max_iterations - 1:
                 new_plan = await self.planner.plan(query, context)
                 plan = new_plan
                 yield {"type": "plan_revised", "plan": plan.to_dict()}
+            else:
+                break
 
-        reasoning_state = ExecutionState(
-            step=ExecutionStep(step_type="reason", action="generate_answer")
-        )
-        reasoning_state = await self._execute_step(reasoning_state, context)
+        # Only run final reasoning if no reason step already produced an answer
+        final_answer_state, answer = await self._get_final_answer(all_states, context)
 
         execution_time = int((time.time() - start_time) * 1000)
-        self._update_metrics(True, len(all_states), execution_time)
+
+        has_errors = any(s.error for s in all_states) or final_answer_state.error
+        self._update_metrics(not has_errors, len(all_states), execution_time)
 
         yield {
             "type": "complete",
             "query": query,
-            "answer": reasoning_state.result or "No response",
+            "answer": answer,
             "intent": plan.intent,
             "execution": {
                 "iterations": len(all_states),
@@ -635,16 +721,12 @@ class OrchestrationEngine:
         branch_outcomes = await asyncio.gather(*branch_tasks, return_exceptions=True)
 
         valid_results = [
-            cast(Dict[str, Any], r) 
-            for r in branch_outcomes 
-            if not isinstance(r, Exception)
+            cast(Dict[str, Any], r) for r in branch_outcomes if not isinstance(r, Exception)
         ]
 
         merged_context = self._merge_branch_results(valid_results, context)
 
-        final_result = await self.execute(
-            merged_context.get("merged_query", query), ir_context
-        )
+        final_result = await self.execute(merged_context.get("merged_query", query), ir_context)
 
         execution_time = int((time.time() - start_time) * 1000)
 
@@ -663,14 +745,15 @@ class OrchestrationEngine:
     ) -> Dict[str, Any]:
         plan = await self.planner.plan(branch_query, context.get("ir_context", {}))
 
-        branch_context = context.copy()
+        # Deep copy to avoid shared mutable state across parallel branches
+        branch_context = copy.deepcopy(context)
         branch_context["retrieval_results"] = {}
 
         states = await self._execute_plan_parallel(plan, branch_context)
 
         return {
             "query": branch_query,
-            "states": [s.__dict__ for s in states],
+            "states": [self._serialize_state(s) for s in states],
             "result": self._aggregate_results(states),
         }
 
@@ -740,6 +823,7 @@ class OrchestrationEngine:
             "retrieval_results": {},
             "tool_results": [],
             "recursive_depth": 0,
+            "_visited_queries": set(),
         }
 
         final_result = await self._recursive_execute(query, context, depth)
@@ -754,6 +838,11 @@ class OrchestrationEngine:
             "took_ms": execution_time,
         }
 
+    @staticmethod
+    def _query_hash(query: str) -> str:
+        """Compute a stable hash for a query string to detect cycles."""
+        return hashlib.sha256(query.encode()).hexdigest()
+
     async def _recursive_execute(
         self,
         query: str,
@@ -763,9 +852,17 @@ class OrchestrationEngine:
         if remaining_depth <= 0:
             return {"answer": "Maximum recursion depth reached"}
 
+        # Cycle detection: if we've already processed this query, return early
+        qhash = self._query_hash(query)
+        visited: set = context.get("_visited_queries", set())
+        if qhash in visited:
+            return {"answer": "Cycle detected — skipping already-visited query"}
+
         plan = await self.planner.plan(query, context.get("ir_context", {}))
 
-        context["recursive_depth"] += 1
+        # Track depth per-branch using a copy of context to avoid
+        # shared mutation across sibling recursive calls
+        current_depth = context.get("recursive_depth", 0) + 1
 
         states = await self._execute_plan_sequential(plan, context)
 
@@ -775,11 +872,17 @@ class OrchestrationEngine:
             sub_queries = self._extract_sub_queries(aggregated)
 
             if sub_queries and remaining_depth > 1:
+                # Mark the current query as visited before recursing
+                visited.add(qhash)
+
                 sub_results = []
                 for sq in sub_queries[:2]:
-                    sub_result = await self._recursive_execute(
-                        sq, context, remaining_depth - 1
-                    )
+                    # Each sub-query gets its own context copy to avoid
+                    # shared depth counter corruption across siblings
+                    sub_context = dict(context)
+                    sub_context["recursive_depth"] = current_depth
+                    sub_context["_visited_queries"] = set(visited)
+                    sub_result = await self._recursive_execute(sq, sub_context, remaining_depth - 1)
                     sub_results.append(sub_result)
 
                 return {
@@ -789,7 +892,7 @@ class OrchestrationEngine:
 
         return {
             "answer": str(aggregated) if aggregated else "No result",
-            "depth": context["recursive_depth"],
+            "depth": current_depth,
         }
 
     def _extract_sub_queries(
@@ -808,10 +911,13 @@ class OrchestrationEngine:
 
 
 _orchestration_engine: Optional[OrchestrationEngine] = None
+_orchestration_lock = threading.Lock()
 
 
 def get_orchestration_engine() -> OrchestrationEngine:
     global _orchestration_engine
     if _orchestration_engine is None:
-        _orchestration_engine = OrchestrationEngine()
+        with _orchestration_lock:
+            if _orchestration_engine is None:
+                _orchestration_engine = OrchestrationEngine()
     return _orchestration_engine

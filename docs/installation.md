@@ -30,7 +30,7 @@ pip install -e .
 # Start API server
 uvicorn api.main:app --host 0.0.0.0 --port 8000
 # Or use CLI
-./eis.py start
+./eis api
 ```
 
 ### 2. Local Development (Full)
@@ -49,7 +49,7 @@ pip install -e ".[all]"
 pip install -e ".[dev]"
 
 # Verify installation
-./eis.py check
+./eis check
 ```
 
 ### 3. Docker (Recommended)
@@ -148,10 +148,10 @@ export ENABLE_TRACING=true
 python --version  # Should be 3.12+
 
 # Verify dependencies
-./eis.py check
+./eis check
 
 # Run tests
-./eis.py test --unit
+./eis test --unit
 ```
 
 ### Health Check
