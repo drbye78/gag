@@ -333,5 +333,4 @@ python -m pytest tests/ -v
 ---
 
 ## License
-
 MIT License - See [LICENSE](LICENSE) file for details.
