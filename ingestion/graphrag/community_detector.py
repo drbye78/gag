@@ -1,7 +1,9 @@
-from collections import deque
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -19,9 +21,18 @@ class CommunityDetectionResult:
     communities: List[Community]
     total_communities: int
     took_ms: int
+    modularity: float = 0.0
+    algorithm: str = "louvain"
 
 
 class CommunityDetector:
+    """Detects communities using the Louvain algorithm via python-louvain.
+
+    Falls back to connected-components BFS only if networkx/python-louvain
+    are unavailable. The LLM is used only for generating community summaries,
+    not for the community detection itself.
+    """
+
     def __init__(
         self,
         llm_client: Optional[Any] = None,
@@ -42,7 +53,7 @@ class CommunityDetector:
 
             self.llm_client = get_llm_router()
 
-        communities = self._build_communities(entities, relationships)
+        communities, modularity, algorithm = self._build_communities(entities, relationships)
 
         for community in communities:
             await self._generate_summary(community)
@@ -52,13 +63,111 @@ class CommunityDetector:
             communities=communities,
             total_communities=len(communities),
             took_ms=took,
+            modularity=modularity,
+            algorithm=algorithm,
         )
 
     def _build_communities(
         self,
         entities: List[Any],
         relationships: List[Any],
+    ) -> tuple:
+        """Build communities using Louvain algorithm.
+
+        Returns:
+            Tuple of (communities, modularity_score, algorithm_name)
+        """
+        try:
+            import networkx as nx
+            import community as community_louvain
+        except ImportError:
+            logger.warning(
+                "networkx/python-louvain not installed — falling back to "
+                "BFS connected components. Install with: pip install networkx python-louvain"
+            )
+            communities = self._build_communities_bfs_fallback(entities, relationships)
+            return communities, 0.0, "bfs_fallback"
+
+        # Build a networkx graph from entities and relationships
+        graph = nx.Graph()
+
+        # Add all entity nodes (isolated nodes are included)
+        entity_map = {e.id: e for e in entities}
+        for entity in entities:
+            graph.add_node(entity.id)
+
+        # Add edges from relationships
+        for rel in relationships:
+            if rel.source_id in entity_map and rel.target_id in entity_map:
+                # Use confidence as weight if available, default to 1.0
+                weight = getattr(rel, "confidence", 1.0)
+                if graph.has_edge(rel.source_id, rel.target_id):
+                    # Accumulate weight for multi-edges
+                    graph[rel.source_id][rel.target_id]["weight"] += weight
+                else:
+                    graph.add_edge(rel.source_id, rel.target_id, weight=weight)
+
+        # If no edges, fall back to type-based grouping
+        if graph.number_of_edges() == 0:
+            communities = self._build_communities_by_type(entities)
+            return communities, 0.0, "type_grouping"
+
+        # Run Louvain community detection
+        partition = community_louvain.best_partition(graph, weight="weight")
+
+        # Group entities by their community assignment
+        community_groups: Dict[int, List[str]] = {}
+        for entity_id, comm_id in partition.items():
+            community_groups.setdefault(comm_id, []).append(entity_id)
+
+        # Calculate modularity
+        modularity = community_louvain.modularity(partition, graph, weight="weight")
+
+        # Build Community objects
+        communities = []
+        for comm_id, entity_ids in sorted(community_groups.items()):
+            if len(entity_ids) < 1:
+                continue
+
+            # Get entity names for key entities
+            key_entity_names = []
+            for eid in entity_ids[:5]:
+                entity = entity_map.get(eid)
+                if entity:
+                    key_entity_names.append(entity.name)
+
+            # Determine a meaningful name from the dominant entity type
+            entity_types = [
+                entity_map[eid].entity_type.value
+                for eid in entity_ids
+                if eid in entity_map
+            ]
+            dominant_type = max(set(entity_types), key=entity_types.count) if entity_types else "mixed"
+
+            communities.append(
+                Community(
+                    id=f"community_{comm_id}",
+                    name=f"{dominant_type.capitalize()} Community {comm_id}",
+                    entity_ids=entity_ids,
+                    summary="",
+                    key_entities=key_entity_names,
+                    subgraph={
+                        "size": len(entity_ids),
+                        "modularity_contribution": modularity / max(len(community_groups), 1),
+                    },
+                )
+            )
+
+        return communities, modularity, "louvain"
+
+    def _build_communities_bfs_fallback(
+        self,
+        entities: List[Any],
+        relationships: List[Any],
     ) -> List[Community]:
+        """Fallback: BFS connected components (used only if networkx unavailable)."""
+        from collections import deque
+
         adjacency = {e.id: set() for e in entities}
 
         for rel in relationships:
@@ -69,34 +178,27 @@ class CommunityDetector:
         visited = set()
         communities = []
 
-        def bfs(start_id: str) -> List[str]:
-            queue = deque([start_id])
-            component = []
-            visited.add(start_id)
-
-            while queue:
-                node = queue.popleft()
-                component.append(node)
-
-                for neighbor in adjacency[node]:
-                    if neighbor not in visited:
-                        visited.add(neighbor)
-                        queue.append(neighbor)
-
-            return component
-
         for entity in entities:
             if entity.id not in visited:
-                component = bfs(entity.id)
+                # BFS
+                queue = deque([entity.id])
+                component = []
+                visited.add(entity.id)
 
-                if len(component) >= 2:
-                    key_entities = [
-                        entities[0].name for e in component[:5] if e == entities[0].id
-                    ]
-                    for e in entities:
-                        if e.id in component:
-                            key_entities.append(e.name)
-                            if len(key_entities) >= 5:
+                while queue:
+                    node = queue.popleft()
+                    component.append(node)
+                    for neighbor in adjacency.get(node, set()):
+                        if neighbor not in visited:
+                            visited.add(neighbor)
+                            queue.append(neighbor)
+
+                if len(component) >= 1:
+                    key_entities = []
+                    for eid in component[:5]:
+                        for e in entities:
+                            if e.id == eid:
+                                key_entities.append(e.name)
                                 break
 
                     communities.append(
@@ -108,6 +210,35 @@ class CommunityDetector:
                             key_entities=key_entities,
                         )
                     )
+
+        return communities
+
+    def _build_communities_by_type(
+        self,
+        entities: List[Any],
+    ) -> List[Community]:
+        """Group entities by type when no relationships exist."""
+        type_groups: Dict[str, List[str]] = {}
+        entity_map = {e.id: e for e in entities}
+
+        for entity in entities:
+            etype = entity.entity_type.value
+            type_groups.setdefault(etype, []).append(entity.id)
+
+        communities = []
+        for etype, eids in type_groups.items():
+            key_entities = [
+                entity_map[eid].name for eid in eids[:5] if eid in entity_map
+            ]
+            communities.append(
+                Community(
+                    id=f"community_{etype}",
+                    name=f"{etype.capitalize()} cluster",
+                    entity_ids=eids,
+                    summary="",
+                    key_entities=key_entities,
+                )
+            )
 
         return communities
 
@@ -124,12 +255,20 @@ Summary:"""
                 max_tokens=200,
                 temperature=0.3,
             )
-            community.summary = response.text.strip()
+            from core.llm_utils import extract_text
+            summary = extract_text(response)
+            community.summary = summary if summary else f"Community with {len(community.entity_ids)} entities"
         except Exception:
             community.summary = f"Community with {len(community.entity_ids)} entities"
 
 
 class LightweightCommunityDetector:
+    """Deprecated: use CommunityDetector instead.
+
+    This class is kept for backward compatibility but now delegates to
+    the same Louvain-based detection as CommunityDetector.
+    """
+
     def __init__(self):
         pass
 
@@ -142,32 +281,17 @@ class LightweightCommunityDetector:
 
         start = time.time()
 
-        type_groups = {}
-        for entity in entities:
-            if entity.entity_type.value not in type_groups:
-                type_groups[entity.entity_type.value] = []
-            type_groups[entity.entity_type.value].append(entity.id)
-
-        communities = []
-        for etype, eids in type_groups.items():
-            if len(eids) >= 2:
-                communities.append(
-                    Community(
-                        id=f"community_{etype}",
-                        name=f"{etype} cluster",
-                        entity_ids=eids,
-                        summary=f"Cluster of {len(eids)} {etype} entities",
-                        key_entities=[eids[0], eids[-1]]
-                        if len(eids) > 1
-                        else [eids[0]],
-                    )
-                )
+        # Use the same Louvain-based detection
+        detector = CommunityDetector()
+        communities, modularity, algorithm = detector._build_communities(entities, relationships)
 
         took = int((time.time() - start) * 1000)
         return CommunityDetectionResult(
             communities=communities,
             total_communities=len(communities),
             took_ms=took,
+            modularity=modularity,
+            algorithm=algorithm,
         )
 
 

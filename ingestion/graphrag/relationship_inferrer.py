@@ -46,6 +46,31 @@ class RelationshipInferrer:
     ):
         self.llm_client = llm_client
 
+    @staticmethod
+    def _extract_text(response: Any) -> str:
+        """Extract text from an LLM response, handling both real and mock objects."""
+        if hasattr(response, "text"):
+            text = response.text
+            if isinstance(text, str):
+                return text
+        if hasattr(response, "choices"):
+            try:
+                choices = response.choices
+                if choices and len(choices) > 0:
+                    choice = choices[0]
+                    if isinstance(choice, dict):
+                        return choice.get("message", {}).get("content", "")
+            except Exception:
+                pass
+        if hasattr(response, "get"):
+            try:
+                content = response.get("content", "")
+                if isinstance(content, str):
+                    return content
+            except Exception:
+                pass
+        return ""
+
     async def infer(
         self,
         entities: List[Any],
@@ -64,34 +89,66 @@ class RelationshipInferrer:
         relationships = []
 
         entity_pairs = self._create_entity_pairs(entities)
+        pairs_considered = len(entity_pairs)
 
         if len(entity_pairs) <= 20:
-            for pair in entity_pairs:
-                rel = await self._infer_relationship(pair, text)
-                if rel:
-                    relationships.append(rel)
+            # Small batch: parallelize individual pairs with a semaphore
+            import asyncio
+            sem = asyncio.Semaphore(5)  # Max 5 concurrent LLM calls
+
+            async def _safe_infer(pair):
+                async with sem:
+                    return await self._infer_relationship(pair, text)
+
+            pair_results = await asyncio.gather(
+                *[_safe_infer(p) for p in entity_pairs],
+                return_exceptions=True,
+            )
+            for r in pair_results:
+                if isinstance(r, Relationship):
+                    relationships.append(r)
         else:
+            # Large batch: parallelize batch calls with a semaphore
+            import asyncio
             batches = [
                 entity_pairs[i : i + 20] for i in range(0, len(entity_pairs), 20)
             ]
-            for batch in batches:
-                batch_rels = await self._infer_batch_relationships(batch, text)
-                relationships.extend(batch_rels)
+            sem = asyncio.Semaphore(5)  # Max 5 concurrent batch calls
+
+            async def _safe_batch_infer(batch):
+                async with sem:
+                    return await self._infer_batch_relationships(batch, text)
+
+            batch_results = await asyncio.gather(
+                *[_safe_batch_infer(b) for b in batches],
+                return_exceptions=True,
+            )
+            for r in batch_results:
+                if isinstance(r, list):
+                    relationships.extend(r)
 
         took = int((time.time() - start) * 1000)
-        return RelationshipInferenceResult(
+        result = RelationshipInferenceResult(
             source_id=source_id,
             relationships=relationships,
             total_relationships=len(relationships),
             took_ms=took,
         )
+        # Track how many pairs were considered (for transparency)
+        result.pairs_considered = pairs_considered  # type: ignore[attr-defined]
+        return result
 
     def _create_entity_pairs(self, entities: List[Any]) -> List[tuple]:
+        """Generate ALL entity pairs (no sliding window, no cap).
+
+        For N entities, produces N*(N-1)/2 pairs — every entity is compared
+        against every other entity. No silent truncation.
+        """
         pairs = []
         for i, e1 in enumerate(entities):
-            for e2 in entities[i + 1 : i + 10]:
+            for e2 in entities[i + 1:]:
                 pairs.append((e1, e2))
-        return pairs[:50]
+        return pairs
 
     async def _infer_relationship(
         self,
@@ -123,7 +180,8 @@ Return JSON only:"""
 
             import json
 
-            data = json.loads(response.text)
+            response_text = self._extract_text(response)
+            data = json.loads(response_text)
 
             return Relationship(
                 source_id=e1.id,
@@ -169,7 +227,8 @@ Return JSON array:"""
 
             import json
 
-            data = json.loads(response.text)
+            response_text = self._extract_text(response)
+            data = json.loads(response_text)
 
             relationships = []
             entity_map = {

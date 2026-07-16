@@ -6,6 +6,7 @@ chunk sizes, overlap, and metadata extraction.
 Language-aware for Russian and English.
 """
 
+import ast
 import re
 import hashlib
 from abc import ABC, abstractmethod
@@ -320,10 +321,73 @@ class CodeChunker(TextChunker):
         return entities
 
     def _extract_python_entities(self, lines: List[str]) -> List[Dict[str, Any]]:
+        """Extract Python entities using the ast module for accuracy.
+
+        Handles decorators, async functions, nested classes, and methods
+        that the regex-based approach missed.
+        """
+        source = "\n".join(lines)
+
+        entities = []
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            # Fall back to regex if the source has syntax errors
+            return self._extract_python_entities_regex(lines)
+
+        for node in ast.walk(tree):
+            # Only process top-level and class-level definitions
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                # Get the entity name
+                name = node.name
+
+                # Determine entity type
+                if isinstance(node, ast.AsyncFunctionDef):
+                    etype = "async_function"
+                elif isinstance(node, ast.ClassDef):
+                    etype = "class"
+                else:
+                    # Check if it's a method (inside a class)
+                    etype = "method" if self._is_method(tree, node) else "function"
+
+                # Get start line (including decorators)
+                start_line = node.lineno - 1  # ast uses 1-indexed
+                if hasattr(node, "decorator_list") and node.decorator_list:
+                    start_line = node.decorator_list[0].lineno - 1
+
+                # Get end line
+                end_line = getattr(node, "end_lineno", start_line + 1) - 1
+
+                # Extract content
+                content = "\n".join(lines[start_line:end_line + 1])
+                if len(content) > 10:  # Lower threshold for AST-based (more accurate)
+                    entities.append({
+                        "name": name,
+                        "type": etype,
+                        "content": content,
+                        "start_line": start_line,
+                        "end_line": end_line,
+                    })
+
+        # Sort by start line
+        entities.sort(key=lambda e: e["start_line"])
+        return entities
+
+    @staticmethod
+    def _is_method(tree, node):
+        """Check if a FunctionDef is a method (defined inside a class)."""
+        for parent in ast.walk(tree):
+            if isinstance(parent, ast.ClassDef):
+                for child in ast.iter_child_nodes(parent):
+                    if child is node:
+                        return True
+        return False
+
+    def _extract_python_entities_regex(self, lines: List[str]) -> List[Dict[str, Any]]:
+        """Fallback: regex-based entity extraction for files with syntax errors."""
         entities = []
         current_entity = None
         entity_lines = []
-        indent_level = 0
 
         for idx, line in enumerate(lines):
             stripped = line.strip()

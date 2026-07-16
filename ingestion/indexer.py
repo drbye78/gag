@@ -412,22 +412,26 @@ class GraphIndexer:
                     for n in batch
                 ]
 
-                cypher = """
-                UNWIND $nodes AS node
-                CALL db.labels() YIELD label
-                WITH node
-                CALL apoc.create.node([node.label], node.props) YIELD node AS n
-                RETURN count(n) AS count
-                """
-                # Fallback to simpler MERGE approach since FalkorDB may not have APOC
-                cypher = """
-                UNWIND $nodes AS node
-                MERGE (n:Entity {id: node.id})
-                SET n += node.props
-                WITH n, node
-                CALL apoc.create.addLabels(n, [node.label]) YIELD node AS labeled
-                RETURN count(labeled) AS count
-                """
+                # Group nodes by validated label for batch insertion
+                from collections import defaultdict
+                by_label = defaultdict(list)
+                for nd in node_data:
+                    validated = _validate_node_type(nd["label"])
+                    by_label[validated].append(nd)
+
+                cypher_parts = []
+                all_params = {}
+                for label, group in by_label.items():
+                    param_key = f"nodes_{label}"
+                    all_params[param_key] = group
+                    cypher_parts.append(f"""
+                    UNWIND ${param_key} AS node
+                    MERGE (n:`{label}` {{id: node.id}})
+                    SET n += node.props
+                    RETURN count(n) AS count
+                    """)
+                cypher = "\n".join(cypher_parts)
+                params = all_params
 
                 params = {"nodes": node_data}
 
@@ -525,13 +529,28 @@ class GraphIndexer:
                     for e in batch
                 ]
 
-                cypher = """
-                UNWIND $edges AS edge
-                MATCH (a {id: edge.source_id})
-                MATCH (b {id: edge.target_id})
-                CALL apoc.create.relationship(a, edge.rel_type, edge.props, b) YIELD rel
-                RETURN count(rel) AS count
-                """
+                # Group edges by validated relationship type
+                from collections import defaultdict
+                by_rel = defaultdict(list)
+                for ed in edge_data:
+                    validated = _validate_edge_type(ed["rel_type"])
+                    by_rel[validated].append(ed)
+
+                cypher_parts = []
+                all_params = {}
+                for rel_type, group in by_rel.items():
+                    param_key = f"edges_{rel_type}"
+                    all_params[param_key] = group
+                    cypher_parts.append(f"""
+                    UNWIND ${param_key} AS edge
+                    MATCH (a {{id: edge.source_id}})
+                    MATCH (b {{id: edge.target_id}})
+                    MERGE (a)-[r:`{rel_type}`]->(b)
+                    SET r += edge.props
+                    RETURN count(r) AS count
+                    """)
+                cypher = "\n".join(cypher_parts)
+                params = all_params
 
                 params = {"edges": edge_data}
 

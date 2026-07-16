@@ -576,7 +576,7 @@ class HybridRetriever:
                 confidence = reasoning_result.get("confidence", 0.0)
 
                 if confidence < 0.7 and iteration < max_iterations - 1:
-                    refined_query = self._generate_refined_query(
+                    refined_query = await self._generate_refined_query(
                         query=query,
                         current_results=iteration_results,
                         reasoning=reasoning_thinking,
@@ -860,26 +860,46 @@ class HybridRetriever:
 
         return " ".join(parts)
 
-    def _generate_refined_query(
+    async def _generate_refined_query(
         self,
         query: str,
         current_results: List[Dict[str, Any]],
         reasoning: str,
         iteration: int,
     ) -> str:
-        missing_terms = []
+        """Generate a refined query using LLM when available, fallback to keyword expansion."""
+        # Try LLM-based refinement first
+        try:
+            from llm.router import get_router
+            router = get_router()
 
-        if "not found" in reasoning.lower() or "insufficient" in reasoning.lower():
-            if current_results:
-                found_content = " ".join(
-                    r.get("content", "")[:200] for r in current_results[:3]
-                )
-                missing_terms.append(found_content)
+            results_summary = "\n".join(
+                f"- {r.get('content', '')[:150]}" for r in current_results[:3]
+            )
 
+            prompt = f"""Given the original query and the retrieved results, generate a refined query that would find more relevant or missing information.
+
+Original query: {query}
+
+Reasoning from previous iteration: {reasoning[:200]}
+
+Current results:
+{results_summary}
+
+Generate a single refined search query (max 50 words) that addresses gaps in the current results. Return ONLY the query, no explanation:"""
+
+            from core.llm_utils import extract_text
+            response = await router.chat(prompt=prompt, temperature=0.3, max_tokens=100)
+            refined = extract_text(response).strip()
+            if refined and refined != query:
+                return refined[:500]
+        except Exception:
+            pass
+
+        # Fallback: keyword expansion from results
         context_from_results = " ".join(
             r.get("content", "")[:100] for r in current_results[:2]
         )
-
         return f"{query} {context_from_results}".strip()[:500]
 
     def _deduplicate_results(

@@ -54,6 +54,10 @@ sentence-transformers>=2.2.0
 llama-index>=0.10.0
 llama-index-embeddings-huggingface>=0.7.0
 
+# Graph algorithms — required for GraphRAG community detection (Louvain)
+networkx>=3.0
+python-louvain>=0.16
+
 # Redis — required for distributed caching
 redis>=5.0.0
 

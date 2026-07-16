@@ -65,7 +65,7 @@ class IdeaGeneratorTool(BaseTool):
                     "generated_ideas": ideas,
                     "count": len(ideas),
                 },
-                metadata={"generated": True, "method": "fallback", "error": str(e)}
+                metadata={"generated": True, "method": "fallback", "error": str(e)}, reliable=False
             )
 
     async def _generate_ideas_llm(
@@ -98,7 +98,7 @@ Respond ONLY with a JSON array of 5 ideas, no other text."""
                 max_tokens=2000
             )
 
-            content = response.choices[0]["message"]["content"]
+            from core.llm_utils import extract_json_from_response; content = extract_json_from_response(response)
             import json
             ideas_data = json.loads(content)
             
@@ -213,7 +213,7 @@ Respond ONLY with JSON array."""
 
         response = await router.chat(prompt=prompt, temperature=0.9, max_tokens=1500)
         import json
-        content = response.choices[0]["message"]["content"]
+        from core.llm_utils import extract_json_from_response; content = extract_json_from_response(response)
         return json.loads(content)[:count]
 
     async def _expand_ideas_fallback(
@@ -286,7 +286,7 @@ Respond ONLY with JSON array."""
 
         response = await router.chat(prompt=prompt, temperature=0.3, max_tokens=1500)
         import json
-        return json.loads(response.choices[0]["message"]["content"])
+        from core.llm_utils import extract_json_from_response; return extract_json_from_response(response)
 
     async def _recommend_fallback(
         self,

@@ -114,7 +114,17 @@ Return JSON:"""
                 temperature=0.1,
             )
 
-            entities = self._parse_llm_response(response.text)
+            # If parsing fails, retry with a "return only JSON" reprompt
+            entities = self._parse_llm_response(response)
+            if not entities:
+                logger.info("First entity extraction returned no entities, retrying with JSON-only prompt")
+                retry_prompt = prompt + "\n\nIMPORTANT: Return ONLY a valid JSON array. No prose, no markdown fences, no code blocks."
+                response = await self.llm_client.chat(
+                    prompt=retry_prompt,
+                    max_tokens=2000,
+                    temperature=0.0,
+                )
+                entities = self._parse_llm_response(response)
 
             for e in entities:
                 e.id = f"{source_id}:{e.name.lower().replace(' ', '_')}"
@@ -123,35 +133,40 @@ Return JSON:"""
             return entities
 
         except Exception as e:
+            logger.warning("Entity extraction failed for %s: %s", source_id, e)
             return []
 
-    def _parse_llm_response(self, response: str) -> List[ExtractedEntity]:
-        try:
-            data = json.loads(response)
-            if not isinstance(data, list):
-                return []
+    def _parse_llm_response(self, response: Any) -> List[ExtractedEntity]:
+        """Parse LLM response into entities. Handles markdown fences and retries."""
+        from core.llm_utils import extract_json_from_response
 
-            entities = []
-            for item in data:
-                try:
-                    entity_type = EntityType(item.get("type", "concept").lower())
-                except ValueError:
-                    entity_type = EntityType.CONCEPT
-
-                entities.append(
-                    ExtractedEntity(
-                        id="",
-                        name=item.get("name", ""),
-                        entity_type=entity_type,
-                        description=item.get("description", ""),
-                    )
-                )
-
-            return entities
-
-        except json.JSONDecodeError:
+        data = extract_json_from_response(response)
+        if data is None:
             logger.warning("Failed to parse LLM response as JSON, returning empty entities")
             return []
+
+        if not isinstance(data, list):
+            return []
+
+        entities = []
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            try:
+                entity_type = EntityType(item.get("type", "concept").lower())
+            except ValueError:
+                entity_type = EntityType.CONCEPT
+
+            entities.append(
+                ExtractedEntity(
+                    id="",
+                    name=item.get("name", ""),
+                    entity_type=entity_type,
+                    description=item.get("description", ""),
+                )
+            )
+
+        return entities
 
     def _merge_entities(self, entities: List[ExtractedEntity]) -> List[ExtractedEntity]:
         merged = {}

@@ -191,6 +191,9 @@ class QueryResponse(BaseModel):
     answer: str
     sources: List[Dict[str, Any]]
     metadata: Dict[str, Any]
+    validation: Optional[Dict[str, Any]] = None
+    intent: Optional[str] = None
+    reliable: bool = True
 
 
 class HealthResponse(BaseModel):
@@ -293,6 +296,46 @@ async def health():
     )
 
 
+@app.get("/metrics", tags=["public"])
+async def metrics():
+    """Prometheus-compatible metrics endpoint.
+
+    Returns metrics in Prometheus text format for scraping by
+    Prometheus/Grafana/Datadog.
+    """
+    from core.observability import get_metrics_collector
+
+    collector = get_metrics_collector()
+    data = collector.get_metrics()
+
+    lines = []
+    # Latency histograms
+    lines.append("# HELP eis_latency_ms Latency in milliseconds")
+    lines.append("# TYPE eis_latency_ms histogram")
+    for op, stats in data.get("latencies", {}).items():
+        safe_op = op.replace(".", "_").replace("-", "_")
+        lines.append(f'eis_latency_ms{{operation="{safe_op}",percentile="p50"}} {stats["p50"]}')
+        lines.append(f'eis_latency_ms{{operation="{safe_op}",percentile="p95"}} {stats["p95"]}')
+        lines.append(f'eis_latency_ms{{operation="{safe_op}",percentile="p99"}} {stats["p99"]}')
+        lines.append(f'eis_latency_count{{operation="{safe_op}"}} {stats["count"]}')
+
+    # Counters
+    lines.append("# HELP eis_counter_total Counter metrics")
+    lines.append("# TYPE eis_counter_total counter")
+    for key, value in data.get("counters", {}).items():
+        safe_key = key.replace(".", "_").replace("-", "_")
+        lines.append(f'eis_counter_total{{metric="{safe_key}"}} {value}')
+
+    # Gauges
+    lines.append("# HELP eis_gauge Gauge metrics")
+    lines.append("# TYPE eis_gauge gauge")
+    for key, value in data.get("gauges", {}).items():
+        safe_key = key.replace(".", "_").replace("-", "_")
+        lines.append(f'eis_gauge{{metric="{safe_key}"}} {value}')
+
+    return {"metrics": "\n".join(lines), "format": "prometheus_text"}
+
+
 @app.get("/", tags=["public"])
 async def root():
     return {
@@ -326,13 +369,23 @@ async def query(request: QueryRequest):
     from agents.orchestration import get_orchestration_engine
 
     engine = get_orchestration_engine()
-    result = await engine.execute(request.query)
+    result = await engine.execute(
+        request.query,
+        ir_context={},
+        max_iterations=None,
+    )
+
+    validation = result.get("validation", {})
+    reliable = validation.get("valid", True) if validation else True
 
     return QueryResponse(
         query=result["query"],
         answer=result["answer"],
         sources=result.get("retrieval_results", {}).get("results", []),
         metadata=result.get("metadata", {}),
+        validation=validation,
+        intent=result.get("intent"),
+        reliable=reliable,
     )
 
 
@@ -343,9 +396,7 @@ async def mcp(request: models.mcp.MCPRequest):
     handler = get_mcp_handler()
     result = await handler.handle_request(request)
 
-    if result.error:
-        raise HTTPException(status_code=400, detail=result.error)
-
+    # JSON-RPC 2.0: errors are returned in the body with HTTP 200, not as HTTP errors
     return result
 
 

@@ -19,9 +19,8 @@ keywords = [
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: Other/Proprietary License",
+    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
@@ -35,7 +34,9 @@ dependencies = [
     "pyjwt>=2.8.0",
     "python-multipart>=0.0.9",
     "llama-index>=0.10.0",
-    "docling>=2.0.0",
+    "networkx>=3.0",
+    "python-louvain>=0.16",
+    "defusedxml>=0.7.0",
 ]
 
 [project.optional-dependencies]
@@ -161,6 +162,7 @@ markers = [
     "integration: integration tests with real DB",
     "e2e: end-to-end tests",
     "slow: slow running tests",
+    "claim: README claim verification test",
 ]
 filterwarnings = ["ignore::DeprecationWarning", "ignore::PendingDeprecationWarning"]
 

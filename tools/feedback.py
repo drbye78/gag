@@ -60,9 +60,11 @@ Be specific about what user wants."""
                 temperature=0.3,
                 max_tokens=1500
             )
-            
-            content = response.choices[0]["message"]["content"]
-            result = json.loads(content)
+
+            from core.llm_utils import extract_json_from_response
+            result = extract_json_from_response(response)
+            if result is None:
+                raise ValueError("Failed to parse LLM response as JSON")
             result["processed"] = True
             return result
             
@@ -104,8 +106,8 @@ class SentimentAnalyzerTool(PDLCBaseTool):
         analysis = await self._analyze_sentiment_fallback(texts)
         return ToolOutput(
             result={"analysis": analysis},
-            metadata={"analyzed": True, "method": "fallback"}
-        )
+            metadata={"analyzed": True, "method": "fallback"}, reliable=False
+            )
     
     async def _analyze_sentiment_llm(
         self,
@@ -133,8 +135,11 @@ Be nuanced - detect mixed sentiment."""
                 max_tokens=2000
             )
             
-            content = response.choices[0]["message"]["content"]
-            return json.loads(content)
+            from core.llm_utils import extract_json_from_response
+            data = extract_json_from_response(response)
+            if data is None:
+                raise ValueError("Failed to parse LLM response as JSON")
+            return data
             
         except Exception as e:
             logger.error(f"LLM sentiment analysis failed: {e}")
@@ -194,7 +199,7 @@ class MetricTrendAnalyzerTool(BaseTool):
             trends = await self._analyze_trends_fallback(metric, timeframe)
             return ToolOutput(
                 result={"trends": trends},
-                metadata={"analyzed": True, "method": "fallback", "error": str(e)}
+                metadata={"analyzed": True, "method": "fallback", "error": str(e)}, reliable=False
             )
     
     async def _analyze_trends_llm(
@@ -227,8 +232,11 @@ Generate realistic time series data."""
                 max_tokens=2000
             )
             
-            content = response.choices[0]["message"]["content"]
-            return json.loads(content)
+            from core.llm_utils import extract_json_from_response
+            data = extract_json_from_response(response)
+            if data is None:
+                raise ValueError("Failed to parse LLM response as JSON")
+            return data
             
         except Exception as e:
             logger.error(f"LLM trend analysis failed: {e}")
@@ -306,8 +314,11 @@ Assign realistic priority based on request content."""
                 max_tokens=1500
             )
             
-            content = response.choices[0]["message"]["content"]
-            return json.loads(content)
+            from core.llm_utils import extract_json_from_response
+            data = extract_json_from_response(response)
+            if data is None:
+                raise ValueError("Failed to parse LLM response as JSON")
+            return data
             
         except Exception as e:
             logger.error(f"LLM feature tracking failed: {e}")
@@ -347,8 +358,8 @@ class ChurnPredictorTool(PDLCBaseTool):
         prediction = await self._predict_churn_fallback(customer_id)
         return ToolOutput(
             result={"prediction": prediction},
-            metadata={"predicted": True, "method": "fallback"}
-        )
+            metadata={"predicted": True, "method": "fallback"}, reliable=False
+            )
     
     async def _predict_churn_llm(self, customer_id: str) -> Dict[str, Any]:
         try:
@@ -374,8 +385,11 @@ Generate realistic prediction."""
                 max_tokens=1500
             )
             
-            content = response.choices[0]["message"]["content"]
-            return json.loads(content)
+            from core.llm_utils import extract_json_from_response
+            data = extract_json_from_response(response)
+            if data is None:
+                raise ValueError("Failed to parse LLM response as JSON")
+            return data
             
         except Exception as e:
             logger.error(f"LLM churn prediction failed: {e}")

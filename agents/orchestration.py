@@ -17,6 +17,7 @@ from agents.planner import ExecutionPlan, ExecutionStep, PlannerAgent
 from agents.retrieval import RetrievalAgent
 from agents.reasoning import ReasoningAgent
 from agents.executor import ToolExecutor
+from agents.validator import ValidatorAgent
 from agents.registry import _registry as _agent_registry
 from agents.types import AgentType
 from core.memory import (
@@ -135,6 +136,71 @@ class ReasonStepExecutor(StepExecutor):
         tools = context.get("tool_results", [])
         intent = context.get("intent", "explain")
         return await self.reasoner.generate_answer(query, retrieved, tools, intent)
+
+
+class ValidateStepExecutor(StepExecutor):
+    """Validates the reasoning result against retrieved context.
+
+    Runs accuracy, coherence, completeness, and safety checks.
+    If validation fails with ERROR severity, the orchestrator can re-plan.
+    """
+
+    def __init__(self, validator: "ValidatorAgent"):
+        self.validator = validator
+
+    async def execute(self, state: ExecutionState, context: Dict[str, Any]) -> Any:
+        query = context.get("query", "")
+        answer = context.get("reason_result", "") or ""
+        retrieval_results = context.get("retrieval_results", {})
+        retrieved_context: List[Dict[str, Any]] = []
+
+        # Flatten retrieval results into a list of context items
+        if isinstance(retrieval_results, dict):
+            for source, source_data in retrieval_results.items():
+                if isinstance(source_data, dict):
+                    for item in source_data.get("results", []):
+                        if isinstance(item, dict):
+                            retrieved_context.append(item)
+                elif isinstance(source_data, list):
+                    retrieved_context.extend(
+                        item for item in source_data if isinstance(item, dict)
+                    )
+        elif isinstance(retrieval_results, list):
+            retrieved_context = [
+                item for item in retrieval_results if isinstance(item, dict)
+            ]
+
+        # Get reasoning trace from execution states
+        reasoning_trace = [
+            {"step": s.step.step_type, "thinking": str(s.result or "")[:200]}
+            for s in context.get("_all_states", [])
+            if s.status == StepStatus.COMPLETED and s.result
+        ]
+
+        result = await self.validator.validate_response(
+            query=query,
+            response=answer,
+            retrieved_context=retrieved_context,
+            reasoning_trace=reasoning_trace,
+        )
+
+        # Return as dict for JSON serialization
+        return {
+            "valid": result.valid,
+            "score": result.score,
+            "confidence": result.confidence,
+            "issues": [
+                {
+                    "category": issue.category,
+                    "severity": issue.severity,
+                    "message": issue.message,
+                    "evidence": issue.evidence,
+                    "suggestion": issue.suggestion,
+                }
+                for issue in result.issues
+            ],
+            "metadata": result.metadata,
+        }
 
 
 class AnalyzeStepExecutor(StepExecutor):
@@ -264,12 +330,14 @@ class OrchestrationEngine:
             self.retriever = _agent_registry.get_factory(AgentType.RETRIEVAL)()
             self.reasoner = _agent_registry.get_factory(AgentType.REASONING)()
             self.executor = _agent_registry.get_factory(AgentType.EXECUTOR)()
+            self.validator = _agent_registry.get_factory(AgentType.VALIDATOR)()
         except (KeyError, ImportError):
             # Fallback if registry not populated or import fails
             self.planner = PlannerAgent()
             self.retriever = RetrievalAgent()
             self.reasoner = ReasoningAgent()
             self.executor = ToolExecutor()
+            self.validator = ValidatorAgent()
 
         self._executors = self._init_executors()
         self._initialize_metrics()
@@ -279,6 +347,7 @@ class OrchestrationEngine:
             "retrieve": RetrieveStepExecutor(self.retriever),
             "tool": ToolStepExecutor(self.executor),
             "reason": ReasonStepExecutor(self.reasoner),
+            "validate": ValidateStepExecutor(self.validator),
             "analyze": AnalyzeStepExecutor(),
         }
 
@@ -380,6 +449,66 @@ class OrchestrationEngine:
 
         return states
 
+    async def _execute_plan_waves(
+        self,
+        plan: ExecutionPlan,
+        context: Dict[str, Any],
+    ) -> List[ExecutionState]:
+        """Execute plan in dependency-ordered waves.
+
+        Wave 0: retrieve + tool (independent, run in parallel)
+        Wave 1: analyze (needs retrieval)
+        Wave 2: reason (needs retrieval + analyze)
+        Wave 3: validate (needs reason)
+
+        Each wave runs its steps in parallel; results propagate to the
+        next wave via the context dict.
+        """
+        tier_map = {
+            "retrieve": 0,
+            "tool": 0,
+            "analyze": 1,
+            "reason": 2,
+            "validate": 3,
+        }
+
+        # Group steps by tier
+        tiers: Dict[int, List[ExecutionStep]] = {}
+        for step in plan.steps:
+            tier = tier_map.get(step.step_type, 0)
+            tiers.setdefault(tier, []).append(step)
+
+        all_states = []
+        for tier_num in sorted(tiers.keys()):
+            tier_steps = tiers[tier_num]
+            states = []
+            for step in tier_steps:
+                state = ExecutionState(step=step)
+                states.append(state)
+
+            # Run all steps in this tier in parallel
+            tasks = [self._execute_step(s, context) for s in states]
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Propagate results into context for the next tier
+            for step, state in zip(tier_steps, states):
+                context[f"{step.step_type}_result"] = state.result
+                if step.step_type == "retrieve":
+                    # Aggregate retrieval results for downstream steps
+                    if "retrieval_results" not in context:
+                        context["retrieval_results"] = {}
+                    if state.result and isinstance(state.result, dict):
+                        source = state.result.get("source", step.source or "unknown")
+                        context["retrieval_results"][source] = state.result
+                elif step.step_type == "reason":
+                    context["reason_result"] = state.result or ""
+                elif step.step_type == "validate":
+                    context["validation_result"] = state.result
+
+            all_states.extend(states)
+
+        return all_states
+
     async def _should_revise(
         self,
         states: List[ExecutionState],
@@ -439,7 +568,7 @@ class OrchestrationEngine:
             context["iteration"] = iteration
 
             if self.parallel_execution:
-                states = await self._execute_plan_parallel(plan, context)
+                states = await self._execute_plan_waves(plan, context)
             else:
                 states = await self._execute_plan_sequential(plan, context)
 
@@ -470,9 +599,18 @@ class OrchestrationEngine:
         )
         reasoning_state = await self._execute_step(reasoning_state, context)
 
+        # Store the reasoning result so the validate executor can access it
+        context["reason_result"] = reasoning_state.result or ""
+
+        # Run validation after reasoning
+        validation_state = ExecutionState(
+            step=ExecutionStep(step_type="validate", action="validate_response")
+        )
+        validation_state = await self._execute_step(validation_state, context)
+
         execution_time = int((time.time() - start_time) * 1000)
 
-        has_errors = any(s.error for s in all_states) or reasoning_state.error
+        has_errors = any(s.error for s in all_states) or reasoning_state.error or validation_state.error
         self._update_metrics(not has_errors, len(all_states), execution_time)
 
         memory = get_memory_system()
@@ -487,6 +625,15 @@ class OrchestrationEngine:
             tier=MemoryTier.PROJECT,
         )
 
+        # Extract validation result for the response
+        validation_result = validation_state.result if validation_state.result else {
+            "valid": True,
+            "score": 0.0,
+            "confidence": 0.0,
+            "issues": [],
+            "metadata": {},
+        }
+
         return {
             "query": query,
             "answer": reasoning_state.result or "No response",
@@ -497,6 +644,7 @@ class OrchestrationEngine:
                 "steps": [s.__dict__ for s in all_states],
                 "took_ms": execution_time,
             },
+            "validation": validation_result,
             "metrics": self.metrics,
         }
 
@@ -523,12 +671,12 @@ class OrchestrationEngine:
             self.metrics["failed_runs"] += 1
         self.metrics["total_steps_executed"] += steps
 
-        if self.metrics["avg_execution_time_ms"]:
-            self.metrics["avg_execution_time_ms"] = (
-                self.metrics["avg_execution_time_ms"] + time_ms
-            ) / 2
-        else:
-            self.metrics["avg_execution_time_ms"] = float(time_ms)
+        # Running mean (not exponential moving average)
+        total_runs = self.metrics["total_runs"]
+        prev_avg = self.metrics["avg_execution_time_ms"]
+        self.metrics["avg_execution_time_ms"] = (
+            prev_avg * (total_runs - 1) + time_ms
+        ) / total_runs
 
     async def execute_streaming(
         self,

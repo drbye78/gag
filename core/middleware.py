@@ -194,12 +194,58 @@ def get_error_handler() -> ErrorHandler:
     return _error_handler
 
 
+class TraceMiddleware:
+    """ASGI middleware that adds a trace_id to every request and response.
+
+    Generates a unique trace ID per request (or reuses one from the
+    X-Trace-Id header), attaches it to request.state.trace_id, and
+    exposes it in the X-Trace-Id response header.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+
+        import uuid
+
+        # Extract or generate trace ID
+        trace_id = None
+        for key, value in scope.get("headers", []):
+            if key == b"x-trace-id":
+                trace_id = value.decode("utf-8")
+                break
+
+        if not trace_id:
+            trace_id = f"trace-{uuid.uuid4().hex[:12]}"
+
+        # Store trace_id in scope state
+        if "state" not in scope:
+            scope["state"] = {}
+        scope["state"]["trace_id"] = trace_id
+
+        # Inject X-Trace-Id into response headers
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                headers.append((b"x-trace-id", trace_id.encode("utf-8")))
+                message["headers"] = headers
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+
+
 def setup_middleware(app) -> None:
-    """Attach rate limiting and error handling middleware to a FastAPI app."""
+    """Attach trace ID, rate limiting, and error handling middleware to a FastAPI app."""
     from fastapi import FastAPI
 
     if not isinstance(app, FastAPI):
         raise TypeError("setup_middleware expects a FastAPI application")
+
+    # Trace ID middleware — adds X-Trace-Id header to every request/response
+    app.add_middleware(TraceMiddleware)
 
     rate_limiter = get_rate_limiter()
 

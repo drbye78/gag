@@ -202,9 +202,11 @@ class ResultFusion:
         return fused
 
     def _get_result_key(self, result: Dict[str, Any], source: str) -> str:
+        """Deterministic key for deduplication — uses SHA-256, not Python's randomized hash()."""
+        import hashlib
         content = result.get("content", "")
         doc_id = result.get("id", result.get("source_id", ""))
-        return f"{source}:{doc_id}:{hash(content[:100])}"
+        return f"{source}:{doc_id}:{hashlib.sha256(content[:100].encode()).hexdigest()[:16]}"
 
 
 _fusion: Optional[ResultFusion] = None

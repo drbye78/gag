@@ -90,10 +90,19 @@ class GraphRAGPipeline:
 
         await self._index_to_graph(entities, relationships, cross_ref_result.references)
 
+        # Match entities to chunks using word boundaries (not substring)
+        import re as _re
         for chunk in chunk_result.chunks:
-            chunk.metadata["entities"] = [
-                e.id for e in entities if e.name.lower() in chunk.content.lower()
-            ][:10]
+            chunk_lower = chunk.content.lower()
+            matched = []
+            for e in entities:
+                # Use word boundary to avoid false positives (e.g., "AI" matching "available")
+                pattern = r'\b' + _re.escape(e.name.lower()) + r'\b'
+                if _re.search(pattern, chunk_lower):
+                    matched.append(e.id)
+                    if len(matched) >= 10:
+                        break
+            chunk.metadata["entities"] = matched
 
         took = int((time.time() - start) * 1000)
         return GraphRAGResult(

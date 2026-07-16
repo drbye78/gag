@@ -11,6 +11,7 @@ class AgentType(str, Enum):
     REASONING = "reasoning"
     EXECUTOR = "executor"
     ORCHESTRATION = "orchestration"
+    VALIDATOR = "validator"
 
 
 class AgentConfig(BaseModel):

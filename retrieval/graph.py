@@ -22,6 +22,17 @@ def _safe_identifier(name: str) -> str:
     return name
 
 
+def _validate_int(value: Any, name: str, min_val: int = 1, max_val: int = 100) -> int:
+    """Validate an integer parameter for Cypher bounds."""
+    try:
+        int_val = int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"Invalid {name}: must be an integer")
+    if int_val < min_val or int_val > max_val:
+        raise ValueError(f"Invalid {name}: must be between {min_val} and {max_val}")
+    return int_val
+
+
 class QueryType(str, Enum):
     DIRECT = "direct"
     ONE_HOP = "one_hop"
@@ -61,14 +72,16 @@ class GraphRetriever:
             """
             params = {"query": query, "limit": limit}
         else:
-            cypher = """
-            MATCH path = (a)-[r*1..$depth]->(b)
+            # Validate depth and interpolate as literal (Cypher doesn't support parameterized bounds)
+            _validate_int(depth, "depth", 1, 10)
+            cypher = f"""
+            MATCH path = (a)-[r*1..{depth}]->(b)
             WHERE a.name CONTAINS $query
             RETURN path, length(path) as path_length
             ORDER BY path_length
             LIMIT $limit
             """
-            params = {"query": query, "depth": depth, "limit": limit}
+            params = {"query": query, "limit": limit}
 
         if edge_types:
             for et in edge_types:
@@ -165,14 +178,15 @@ class GraphRetriever:
     ) -> Dict[str, Any]:
         start = int(time.time() * 1000)
 
-        cypher = """
-        MATCH path = (a)-[r*1..$max_depth]->(b)
+        _validate_int(max_depth, "max_depth", 1, 10)
+        cypher = f"""
+        MATCH path = (a)-[r*1..{max_depth}]->(b)
         WHERE a.name = $source AND b.name = $target
         RETURN path, length(path) as hops
         ORDER BY hops
         LIMIT 10
         """
-        params = {"source": source, "target": target, "max_depth": max_depth}
+        params = {"source": source, "target": target}
 
         try:
             pool = self._pool

@@ -287,8 +287,8 @@ class IngestionPipeline:
                     "metadata": {
                         **c.metadata,
                         **job.metadata,
-                        "entities": [e.id for e in graphrag_result.entities if e.name.lower() in c.content.lower()][:10],
-                        "entity_names": [e.name for e in graphrag_result.entities if e.name.lower() in c.content.lower()][:10],
+                        "entities": [e.id for e in graphrag_result.entities if __import__('re').search(r'\b' + __import__('re').escape(e.name.lower()) + r'\b', c.content.lower()) is not None][:10],
+                        "entity_names": [e.name for e in graphrag_result.entities if __import__('re').search(r'\b' + __import__('re').escape(e.name.lower()) + r'\b', c.content.lower()) is not None][:10],
                         "community_ids": [c.id for c in graphrag_result.communities],
                     },
                 }
@@ -335,8 +335,20 @@ class IngestionPipeline:
                 )
                 for doc in documents
             ]
-            jobs = await asyncio.gather(*tasks, return_exceptions=True)
-            return [j for j in jobs if isinstance(j, IngestionJob)]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            jobs = []
+            failed = []
+            for i, r in enumerate(results):
+                if isinstance(r, IngestionJob):
+                    jobs.append(r)
+                else:
+                    doc_id = documents[i].get("id", f"doc_{i}")
+                    error_msg = str(r) if isinstance(r, Exception) else "Unknown error"
+                    logger.error("Batch ingestion failed for doc %s: %s", doc_id, error_msg)
+                    failed.append({"doc_id": doc_id, "error": error_msg})
+            if failed:
+                logger.warning("Batch ingestion: %d/%d documents failed", len(failed), len(documents))
+            return jobs  # Note: caller should check len(jobs) vs len(documents)
         else:
             jobs = []
             for doc in documents:

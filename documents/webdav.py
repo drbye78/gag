@@ -122,41 +122,61 @@ class WebDAVClient:
             return []
 
     def _parse_propfind_response(self, xml: str) -> List[WebDAVFile]:
-        import re
+        """Parse PROPFIND XML response using defusedxml (XXE-safe)."""
+        try:
+            from defusedxml import ElementTree as ET
+        except ImportError:
+            import logging
+            logging.getLogger(__name__).error(
+                "defusedxml not installed — WebDAV XML parsing disabled for security"
+            )
+            return []
 
         files = []
 
-        responses = re.findall(r"<d:response>(.*?)</d:response>", xml, re.DOTALL)
+        try:
+            root = ET.fromstring(xml)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("Failed to parse WebDAV XML: %s", e)
+            return []
 
-        for resp in responses:
-            href_match = re.search(r"<d:href>(.*?)</d:href>", resp)
-            if not href_match:
+        # Handle namespaces — WebDAV uses DAV: namespace
+        ns = {"d": "DAV:"}
+
+        for response_elem in root.findall(".//d:response", ns):
+            # Also try without namespace for non-standard servers
+            if response_elem is None:
                 continue
 
-            path = href_match.group(1).strip()
+            href_elem = response_elem.find("d:href", ns)
+            if href_elem is None or href_elem.text is None:
+                continue
+
+            path = href_elem.text.strip()
             if path.endswith("/"):
                 path = path[:-1]
 
-            name_match = re.search(r"<d:displayname>(.*?)</d:displayname>", resp)
-            name = name_match.group(1) if name_match else os.path.basename(path)
+            name_elem = response_elem.find(".//d:displayname", ns)
+            name = name_elem.text if name_elem is not None and name_elem.text else os.path.basename(path)
 
-            size_match = re.search(
-                r"<d:getcontentlength>(.*?)</d:getcontentlength>", resp
-            )
-            size = int(size_match.group(1)) if size_match else 0
+            size_elem = response_elem.find(".//d:getcontentlength", ns)
+            try:
+                size = int(size_elem.text) if size_elem is not None and size_elem.text else 0
+            except ValueError:
+                size = 0
 
-            type_match = re.search(r"<d:getcontenttype>(.*?)</d:getcontenttype>", resp)
-            content_type = (
-                type_match.group(1) if type_match else "application/octet-stream"
-            )
+            type_elem = response_elem.find(".//d:getcontenttype", ns)
+            content_type = type_elem.text if type_elem is not None and type_elem.text else "application/octet-stream"
 
-            mod_match = re.search(r"<d:getlastmodified>(.*?)</d:getlastmodified>", resp)
-            modified = mod_match.group(1) if mod_match else None
+            mod_elem = response_elem.find(".//d:getlastmodified", ns)
+            modified = mod_elem.text if mod_elem is not None and mod_elem.text else None
 
-            is_dir = "<d:collection/>" in resp or "<d:collection>" in resp
+            # Check for collection (directory)
+            is_dir = response_elem.find(".//d:collection", ns) is not None
 
-            etag_match = re.search(r"<d:getetag>(.*?)</d:getetag>", resp)
-            etag = etag_match.group(1) if etag_match else None
+            etag_elem = response_elem.find(".//d:getetag", ns)
+            etag = etag_elem.text if etag_elem is not None and etag_elem.text else None
 
             files.append(
                 WebDAVFile(

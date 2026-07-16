@@ -6,7 +6,13 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-import torch
+
+try:
+    import torch
+except (ImportError, OSError, RuntimeError):
+    torch = None  # type: ignore[assignment]
+
+pytestmark = pytest.mark.skipif(torch is None, reason="torch not available")
 
 
 def _mock_colpali_module(**kwargs):

@@ -162,6 +162,16 @@ class QdrantDocsBackend(DocsBackend):
         self.collection = collection
         self.base_url = f"http://{self.host}:{self.port}"
         self.embedding_provider = embedding_provider or QdrantEmbeddingProvider()
+        self._client: Optional[httpx.AsyncClient] = None
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        """Cached HTTP client with connection pooling."""
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(30.0, connect=10.0),
+                limits=httpx.Limits(max_connections=20, max_keepalive_connections=5),
+            )
+        return self._client
 
     @staticmethod
     def _create_embedding_provider() -> EmbeddingProvider:
@@ -187,30 +197,31 @@ class QdrantDocsBackend(DocsBackend):
             "limit": limit,
             "score_threshold": score_threshold,
             "filter": filters or {},
+            "with_payload": True,
         }
 
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{self.base_url}/collections/{self.collection}/points/search",
-                    json=payload,
-                    timeout=30.0,
-                )
-                response.raise_for_status()
-                data = response.json()
-                return data.get("result", [])
+            client = await self._get_client()
+            response = await client.post(
+                f"{self.base_url}/collections/{self.collection}/points/search",
+                json=payload,
+                timeout=30.0,
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data.get("result", [])
         except Exception as e:
             logger.warning("Error searching Qdrant: %s", e)
             return []
 
     async def get(self, doc_id: str) -> Optional[Dict[str, Any]]:
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"{self.base_url}/collections/{self.collection}/points/{doc_id}"
-                )
-                response.raise_for_status()
-                return response.json().get("result")
+            client = await self._get_client()
+            response = await client.get(
+                f"{self.base_url}/collections/{self.collection}/points/{doc_id}"
+            )
+            response.raise_for_status()
+            return response.json().get("result")
         except Exception as e:
             logger.warning("Error getting doc from Qdrant: %s", e)
             return None

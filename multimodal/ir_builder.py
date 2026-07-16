@@ -94,7 +94,7 @@ class IRBuilder:
             return node
         return None
 
-    def add_ui(
+    async def add_ui(
         self,
         content: str,
         title: Optional[str] = None,
@@ -120,24 +120,20 @@ class IRBuilder:
                     from ui.pattern_matcher import get_pattern_matcher
                     builder = UIGraphBuilder()
                     er = kwargs["extraction_result"]
+                    # Await graph build with timeout — no fire-and-forget, no new_event_loop
                     try:
-                        loop = asyncio.get_running_loop()
-                        task = loop.create_task(builder.build(er))
-                        self._background_tasks.append(task)
-                    except RuntimeError:
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                        try:
-                            loop.run_until_complete(builder.build(er))
-                        finally:
-                            loop.close()
+                        await asyncio.wait_for(builder.build(er), timeout=30.0)
+                    except asyncio.TimeoutError:
+                        logging.getLogger(__name__).warning("UI graph build timed out after 30s")
+                    except Exception as e:
+                        logging.getLogger(__name__).warning("UI graph build failed: %s", e)
                     node.graph_node_id = er.sketch.sketch_id
                     node.element_count = len(er.elements)
                     matcher = get_pattern_matcher()
                     matches = matcher.match_patterns(er)
                     node.pattern_matches = [m.pattern_name for m in matches]
                 except Exception as e:
-                    logging.getLogger(__name__).warning("UI graph build failed: %s", e)
+                    logging.getLogger(__name__).warning("UI IR build failed: %s", e)
             return node
         return None
 
@@ -221,14 +217,20 @@ class IRBuilder:
             for i, node in enumerate(nodes):
                 node.status = ArtifactStatus.INDEXED
 
-            index_result = await vi.index_chunks(
-                [f"{node.id}: {node.content[:200]}" for node in nodes],
-                [node.id for node in nodes],
-                [
-                    node.artifact_type.value if node.artifact_type else "unknown"
-                    for node in nodes
-                ],
-            )
+            # Build chunk dicts in the format VectorIndexer.index_chunks expects
+            chunks_for_indexing = [
+                {
+                    "id": node.id,
+                    "content": f"{node.id}: {node.content[:200]}",
+                    "source_id": source,
+                    "source_type": node.artifact_type.value if node.artifact_type else "unknown",
+                    "chunk_index": i,
+                    "metadata": {"ir_type": node.artifact_type.value if node.artifact_type else "unknown"},
+                    "embedding": embeddings[i] if i < len(embeddings) else [],
+                }
+                for i, node in enumerate(nodes)
+            ]
+            index_result = await vi.index_chunks(chunks_for_indexing, source_tag=source)
             results["indexed"] = (
                 index_result.indexed_count
                 if hasattr(index_result, "indexed_count")

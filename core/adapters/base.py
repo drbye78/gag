@@ -2,8 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
-# Use protocols for dependency inversion - core layer defines interfaces
-from core.protocols import IRFeatureProtocol, PlatformContextProtocol
+# Use concrete models from models.ir (Protocols in core/protocols.py are dead code)
 from core.knowledge.graph import get_knowledge_graph, NodeType, EdgeType
 
 

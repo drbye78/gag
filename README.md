@@ -2,9 +2,9 @@
 
 A production-grade **Cognitive Architecture** for domain-specific reasoning within enterprise AI PDLC pipelines. Goes beyond traditional RAG by combining multimodal understanding, hybrid retrieval (vector + graph + runtime), structured reasoning, tool-augmented decision making, and stateful orchestration.
 
-![Version](https://img.shields.io/badge/version-4.0.0-blue)
+![Version](https://img.shields.io/badge/version-5.0.0-blue)
 ![Python](https://img.shields.io/badge/python-3.12+-green)
-![Tests](https://img.shields.io/badge/tests-560%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-684%20passing-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ---
@@ -83,7 +83,7 @@ This system answers complex engineering questions by reasoning over your codebas
 - **Entity graph cache**: LRU eviction (500 entries, 1h TTL) with REST API for monitoring
 - **4 fusion methods**: RRF, Score-normalized, Weighted, Combined
 - **5 rerank providers**: Cohere, BGE, SentenceTransformers, Jina, LlamaIndex
-- **5 citation styles**: Parenthetical, Verbatim, Footnote, Highlight, Structured, Diagram
+- **6 citation styles**: Parenthetical, Verbatim, Footnote, Highlight, Structured, Diagram
 - **ColBERT support**: Late interaction embeddings for enhanced semantic search
 - **CodeGraphContext integration**: Live indexing, multi-repo switching, bundle loading, graph visualization, Cypher queries
 
@@ -300,7 +300,7 @@ python -m pytest tests/ -v
 ./eis.py test --keyword Health             # Tests matching keyword
 ```
 
-**560 tests, all passing.**
+**684 tests, all passing (662 unit/integration + 22 claim-verification).**
 
 ---
 
@@ -319,8 +319,9 @@ python -m pytest tests/ -v
 
 | Version | Highlights |
 |---|---|
+| **v5.0** | Production-quality refactor: all 22 README claims verified by tests, 17 critical bugs fixed, real LLM reasoning (5 modes), Louvain GraphRAG, ValidatorAgent wired, wave-based orchestration, APOC-free Cypher, /metrics endpoint, TraceMiddleware, 684 tests |
 | **v4.0** | Comprehensive architecture audit (15 modules documented), 560 tests, 119 config fields, ~70 MCP tools, GraphRAG pipeline, ColPali, Confluence/WebDAV integration |
-| **v3.2** | Full PDLC coverage (9 phases, 71 MCP tools), PDLC-aware prompts, platform-agnostic architecture, new tool modules (ideation, requirements, testing, deployment, observability, feedback, day2), MarketAnalysis, MutationTester |
+| **v3.2** | Full PDLC coverage (9 phases, 71 MCP tools), PDLC-aware prompts, platform-agnostic architecture, new tool modules (ideation, requirements, testing, deployment, observability, feedback, day2), MutationTester |
 | **v3.1** | Multi-platform adapters (AWS, Azure, GCP), platform-aware retrieval, knowledge graph integration (use cases, ADRs, reference architectures), 382 tests |
 | **v3.0** | Python 3.12+, pyproject.toml, Diagram Qdrant/FalkorDB indexing, UI sketch retrieval, Mermaid parser, ColPali integration, ColBERT support, Diagram citations |
 | **v2.4** | Entity graph cache, lazy retriever init, config consolidation, input validation, Cypher injection prevention, logging, CORS config, embedding cache |

@@ -26,13 +26,46 @@ from tools.base import ToolRegistry, MCPErrorCode
 
 
 class MCPHandler:
+    MAX_SESSIONS = 1000
+    SESSION_TTL = 3600  # 1 hour
+    MAX_SUBSCRIPTIONS = 500
+    SUBSCRIPTION_TTL = 1800  # 30 minutes
+
     def __init__(self):
-        self.engine = OrchestrationEngine()
+        from agents.orchestration import get_orchestration_engine
+        self.engine = get_orchestration_engine()
         self.tool_registry = ToolRegistry()
         self._request_id: Optional[str] = None
         self._sessions: Dict[str, Dict[str, Any]] = {}
         self._subscriptions: Dict[str, Dict[str, Any]] = {}
         self._rate_limits: Dict[str, List[float]] = {}
+
+    def _evict_expired_sessions(self):
+        """Evict expired sessions and subscriptions."""
+        import time as _time
+        now = _time.time()
+        # Evict expired sessions
+        expired = [
+            sid for sid, s in self._sessions.items()
+            if now - s.get("created_at", 0) > self.SESSION_TTL
+        ]
+        for sid in expired:
+            del self._sessions[sid]
+        # Evict expired subscriptions
+        expired_sub = [
+            sid for sid, s in self._subscriptions.items()
+            if now - s.get("created_at", 0) > self.SUBSCRIPTION_TTL
+        ]
+        for sid in expired_sub:
+            del self._subscriptions[sid]
+        # Enforce max sessions
+        while len(self._sessions) > self.MAX_SESSIONS:
+            oldest = min(self._sessions, key=lambda k: self._sessions[k].get("created_at", 0))
+            del self._sessions[oldest]
+        # Enforce max subscriptions
+        while len(self._subscriptions) > self.MAX_SUBSCRIPTIONS:
+            oldest = min(self._subscriptions, key=lambda k: self._subscriptions[k].get("created_at", 0))
+            del self._subscriptions[oldest]
 
     def _response_id(self) -> Optional[str]:
         return self._request_id or str(uuid.uuid4())
@@ -56,6 +89,7 @@ class MCPHandler:
         return True
 
     async def handle_request(self, request: MCPRequest) -> MCPResponse:
+        self._evict_expired_sessions()
         self._request_id = request.id
         method = request.method
         params = request.params or {}

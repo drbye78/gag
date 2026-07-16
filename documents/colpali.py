@@ -31,7 +31,7 @@ try:
     from transformers import ColPaliForRetrieval, ColPaliProcessor
 
     COLPALI_AVAILABLE = True
-except ImportError:
+except (ImportError, OSError, RuntimeError):
     try:
         import torch
         from colpali_engine.models import ColQwen2, ColQwen2Processor
@@ -39,7 +39,7 @@ except ImportError:
         ColPaliForRetrieval = ColQwen2
         ColPaliProcessor = ColQwen2Processor
         COLPALI_AVAILABLE = True
-    except ImportError:
+    except (ImportError, OSError, RuntimeError):
         torch = None
         ColPaliForRetrieval = None
         ColPaliProcessor = None

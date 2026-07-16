@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 from enum import Enum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,8 @@ class ToolInput(BaseModel):
 class ToolOutput(BaseModel):
     result: Any
     error: Optional[str] = None
-    metadata: Dict[str, Any]
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    reliable: bool = True
 
 
 class BaseTool(ABC):
@@ -62,6 +63,8 @@ class PDLCBaseTool(BaseTool):
     
     Implements the try-LLM-fallback pattern common to all PDLC tools.
     Subclasses override _llm_execute() and _fallback() instead of execute().
+    When the LLM fails, the fallback returns an unreliable ToolOutput with
+    error metadata — never fabricated data.
     """
 
     async def execute(self, input: ToolInput) -> ToolOutput:
@@ -77,10 +80,17 @@ class PDLCBaseTool(BaseTool):
         raise NotImplementedError
 
     async def _fallback(self, input: ToolInput) -> ToolOutput:
-        """Override in subclass: fallback implementation when LLM fails."""
+        """Default fallback: return an error, not fabricated data.
+
+        Subclasses should override this with a real fallback only if they
+        can produce genuinely useful output without the LLM. Otherwise,
+        this default marks the result as unreliable.
+        """
         return ToolOutput(
-            result={"error": "No fallback implementation", "tool": self.__class__.__name__},
-            metadata={},
+            result=None,
+            error=f"LLM execution unavailable for {self.__class__.__name__}",
+            metadata={"tool": self.__class__.__name__, "reliable": False},
+            reliable=False,
         )
 
 
@@ -867,7 +877,7 @@ class ToolRegistry:
         self._register_default_tools()
 
     def _register_default_tools(self):
-        self.register(ArchitectureEvaluator())
+        # ArchitectureEvaluator removed — hardcoded scores replaced by LLM reasoning
         self.register(SecurityValidator())
         self.register(CostEstimator())
         self.register(SearchTool())
@@ -939,9 +949,23 @@ class ToolRegistry:
             )
 
         if not tool.validate_input(args):
-            return ToolOutput(result=None, error="Invalid input for tool", metadata={})
+            return ToolOutput(
+                result=None,
+                error=f"Invalid input for tool '{tool_name}'",
+                metadata={"tool": tool_name},
+                reliable=False,
+            )
 
-        return await tool.execute(ToolInput(args=args))
+        try:
+            return await tool.execute(ToolInput(args=args))
+        except Exception as e:
+            logger.error("Tool '%s' execution failed: %s", tool_name, e, exc_info=True)
+            return ToolOutput(
+                result=None,
+                error=f"Tool execution failed: {e}",
+                metadata={"tool": tool_name, "error_type": type(e).__name__},
+                reliable=False,
+            )
 
     async def execute_batch(self, calls: List[Dict[str, Any]]) -> List[ToolOutput]:
         results = []

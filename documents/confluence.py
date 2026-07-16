@@ -93,17 +93,17 @@ class ConfluenceClient:
         page_id: str,
     ) -> List[Dict[str, Any]]:
         """List all attachments for a page."""
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                f"{self.legacy_url}/content/{page_id}/child/attachment",
-                headers=self._headers,
-                params={"limit": 100},
-                timeout=30.0,
-            )
-            if resp.status_code != 200:
-                return []
-            data = resp.json()
-            return data.get("results", [])
+        client = self._get_client()
+        resp = await client.get(
+            f"{self.legacy_url}/content/{page_id}/child/attachment",
+            headers=self._headers,
+            params={"limit": 100},
+            timeout=30.0,
+        )
+        if resp.status_code != 200:
+            return []
+        data = resp.json()
+        return data.get("results", [])
 
     async def get_attachment(
         self,
@@ -111,15 +111,15 @@ class ConfluenceClient:
         attachment_id: str,
     ) -> Optional[Dict[str, Any]]:
         """Get a specific attachment."""
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                f"{self.legacy_url}/content/{page_id}/child/attachment/{attachment_id}",
-                headers=self._headers,
-                timeout=30.0,
-            )
-            if resp.status_code == 200:
-                return resp.json()
-            return None
+        client = self._get_client()
+        resp = await client.get(
+            f"{self.legacy_url}/content/{page_id}/child/attachment/{attachment_id}",
+            headers=self._headers,
+            timeout=30.0,
+        )
+        if resp.status_code == 200:
+            return resp.json()
+        return None
 
     async def download_attachment(
         self,
@@ -154,25 +154,31 @@ class ConfluenceClient:
             logging.getLogger(__name__).warning(f"SSRF validation failed for {download_url}: {e}")
             return None
 
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                download_url,
-                headers=self._headers,
-                timeout=60.0,
-            )
-            if resp.status_code == 200:
-                return resp.content
-            return None
+        client = self._get_client()
+        resp = await client.get(
+            download_url,
+            headers=self._headers,
+            timeout=60.0,
+        )
+        if resp.status_code == 200:
+            return resp.content
+        return None
 
     def _is_private_ip(self, hostname: str) -> bool:
-        """Check if hostname resolves to a private IP address."""
+        """Check if hostname resolves to a private IP address.
+
+        SECURITY: Must check ALL resolved IPs, not just the first.
+        A hostname that resolves to both public and private IPs enables
+        DNS rebinding attacks — the first lookup returns public (passes
+        the check), then the actual request goes to the private IP.
+        """
         import ipaddress
         try:
             addrs = socket.getaddrinfo(hostname, None)
             for addr in addrs:
                 ip = addr[4][0]
                 network = ipaddress.ip_address(ip)
-                if network.is_private:
+                if network.is_private or network.is_loopback or network.is_link_local:
                     return True
             return False
         except Exception:
@@ -215,47 +221,47 @@ class ConfluenceClient:
     ) -> List[ConfluencePage]:
         children = []
 
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                f"{self.base_url}/pages/{page_id}/children",
-                headers=self._headers,
-                timeout=30.0,
+        client = self._get_client()
+        resp = await client.get(
+            f"{self.base_url}/pages/{page_id}/children",
+            headers=self._headers,
+            timeout=30.0,
+        )
+        if resp.status_code != 200:
+            return children
+
+        data = resp.json()
+        results = data.get("results", [])
+
+        # Fetch all child pages and bodies in parallel to avoid N+1
+        async def _fetch_child(item: dict) -> Optional[ConfluencePage]:
+            child_id = item.get("id")
+            child_page, body = await asyncio.gather(
+                self.get_page(child_id),
+                self.get_page_body(child_id),
             )
-            if resp.status_code != 200:
-                return children
-
-            data = resp.json()
-            results = data.get("results", [])
-
-            # Fetch all child pages and bodies in parallel to avoid N+1
-            async def _fetch_child(item: dict) -> Optional[ConfluencePage]:
-                child_id = item.get("id")
-                child_page, body = await asyncio.gather(
-                    self.get_page(child_id),
-                    self.get_page_body(child_id),
-                )
-                if not child_page:
-                    return None
-                child = ConfluencePage(
-                    page_id=child_id,
-                    title=child_page.get("title", ""),
-                    space_key=child_page.get("spaceId", ""),
-                    content=body or "",
-                    version=child_page.get("version", {}).get("number", 1),
-                )
-                if depth > 1:
-                    child.children = await self.get_page_children(
-                        child_id, depth - 1
-                    )
-                return child
-
-            child_results = await asyncio.gather(
-                *[_fetch_child(item) for item in results],
-                return_exceptions=True,
+            if not child_page:
+                return None
+            child = ConfluencePage(
+                page_id=child_id,
+                title=child_page.get("title", ""),
+                space_key=child_page.get("spaceId", ""),
+                content=body or "",
+                version=child_page.get("version", {}).get("number", 1),
             )
-            for cr in child_results:
-                if isinstance(cr, ConfluencePage):
-                    children.append(cr)
+            if depth > 1:
+                child.children = await self.get_page_children(
+                    child_id, depth - 1
+                )
+            return child
+
+        child_results = await asyncio.gather(
+            *[_fetch_child(item) for item in results],
+            return_exceptions=True,
+        )
+        for cr in child_results:
+            if isinstance(cr, ConfluencePage):
+                children.append(cr)
 
         return children
 
@@ -314,27 +320,27 @@ class ConfluenceClient:
     # ──────────────────────────────────────────────────────────
 
     async def list_spaces(self, limit: int = 25) -> List[Dict[str, Any]]:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                f"{self.base_url}/spaces",
-                headers=self._headers,
-                params={"limit": limit},
-                timeout=30.0,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            return data.get("results", [])
+        client = self._get_client()
+        resp = await client.get(
+            f"{self.base_url}/spaces",
+            headers=self._headers,
+            params={"limit": limit},
+            timeout=30.0,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return data.get("results", [])
 
     async def get_space(self, space_key: str) -> Optional[Dict[str, Any]]:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                f"{self.base_url}/spaces/{space_key}",
-                headers=self._headers,
-                timeout=30.0,
-            )
-            if resp.status_code == 200:
-                return resp.json()
-            return None
+        client = self._get_client()
+        resp = await client.get(
+            f"{self.base_url}/spaces/{space_key}",
+            headers=self._headers,
+            timeout=30.0,
+        )
+        if resp.status_code == 200:
+            return resp.json()
+        return None
 
     async def list_pages(
         self,
@@ -345,39 +351,39 @@ class ConfluenceClient:
         if space_key:
             params["space-id"] = space_key
 
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                f"{self.base_url}/pages",
-                headers=self._headers,
-                params=params,
-                timeout=30.0,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            return data.get("results", [])
+        client = self._get_client()
+        resp = await client.get(
+            f"{self.base_url}/pages",
+            headers=self._headers,
+            params=params,
+            timeout=30.0,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return data.get("results", [])
 
     async def get_page(self, page_id: str) -> Optional[Dict[str, Any]]:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                f"{self.base_url}/pages/{page_id}",
-                headers=self._headers,
-                timeout=30.0,
-            )
-            if resp.status_code == 200:
-                return resp.json()
-            return None
+        client = self._get_client()
+        resp = await client.get(
+            f"{self.base_url}/pages/{page_id}",
+            headers=self._headers,
+            timeout=30.0,
+        )
+        if resp.status_code == 200:
+            return resp.json()
+        return None
 
     async def get_page_body(self, page_id: str) -> Optional[str]:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                f"{self.base_url}/pages/{page_id}/body",
-                headers=self._headers,
-                timeout=30.0,
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                return data.get("representation", {}).get("value", "")
-            return None
+        client = self._get_client()
+        resp = await client.get(
+            f"{self.base_url}/pages/{page_id}/body",
+            headers=self._headers,
+            timeout=30.0,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            return data.get("representation", {}).get("value", "")
+        return None
 
     async def get_page_children(
         self,
@@ -386,48 +392,48 @@ class ConfluenceClient:
     ) -> List[ConfluencePage]:
         children = []
 
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                f"{self.base_url}/pages/{page_id}/children",
-                headers=self._headers,
-                timeout=30.0,
+        client = self._get_client()
+        resp = await client.get(
+            f"{self.base_url}/pages/{page_id}/children",
+            headers=self._headers,
+            timeout=30.0,
+        )
+        if resp.status_code != 200:
+            return children
+
+        data = resp.json()
+        results = data.get("results", [])
+
+        # Fetch all child pages and bodies in parallel to avoid N+1
+        async def _fetch_child(item: dict) -> Optional[ConfluencePage]:
+            child_id = item.get("id")
+            child_page, body = await asyncio.gather(
+                self.get_page(child_id),
+                self.get_page_body(child_id),
             )
-            if resp.status_code != 200:
-                return children
-
-            data = resp.json()
-            results = data.get("results", [])
-
-            # Fetch all child pages and bodies in parallel to avoid N+1
-            async def _fetch_child(item: dict) -> Optional[ConfluencePage]:
-                child_id = item.get("id")
-                child_page, body = await asyncio.gather(
-                    self.get_page(child_id),
-                    self.get_page_body(child_id),
-                )
-                if not child_page:
-                    return None
-                child = ConfluencePage(
-                    page_id=child_id,
-                    title=child_page.get("title", ""),
-                    space_key=child_page.get("spaceId", ""),
-                    content=body or "",
-                    version=child_page.get("version", {}).get("number", 1),
-                )
-                if depth > 1:
-                    grandchildren = await self.get_page_children(
-                        child_id, depth - 1
-                    )
-                    child.children = grandchildren
-                return child
-
-            child_results = await asyncio.gather(
-                *[_fetch_child(item) for item in results],
-                return_exceptions=True,
+            if not child_page:
+                return None
+            child = ConfluencePage(
+                page_id=child_id,
+                title=child_page.get("title", ""),
+                space_key=child_page.get("spaceId", ""),
+                content=body or "",
+                version=child_page.get("version", {}).get("number", 1),
             )
-            for cr in child_results:
-                if isinstance(cr, ConfluencePage):
-                    children.append(cr)
+            if depth > 1:
+                grandchildren = await self.get_page_children(
+                    child_id, depth - 1
+                )
+                child.children = grandchildren
+            return child
+
+        child_results = await asyncio.gather(
+            *[_fetch_child(item) for item in results],
+            return_exceptions=True,
+        )
+        for cr in child_results:
+            if isinstance(cr, ConfluencePage):
+                children.append(cr)
 
         return children
 
@@ -493,16 +499,16 @@ class ConfluenceClient:
         cql: str,
         limit: int = 25,
     ) -> List[Dict[str, Any]]:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                f"{self.base_url}/pages",
-                headers=self._headers,
-                params={"cql": cql, "limit": limit},
-                timeout=30.0,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            return data.get("results", [])
+        client = self._get_client()
+        resp = await client.get(
+            f"{self.base_url}/pages",
+            headers=self._headers,
+            params={"cql": cql, "limit": limit},
+            timeout=30.0,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return data.get("results", [])
 
 
 _confluence_client: Optional[ConfluenceClient] = None

@@ -12,11 +12,9 @@ data:
   LOG_LEVEL: "INFO"
   JSON_FORMAT: "true"
   
-  # Service URLs (internal)
-  QDRANT_URL: "http://qdrant:6333"
-  FALKORDB_URL: "http://falkordb:7379"
+  # Service settings (app reads QDRANT_HOST/PORT and FALKORDB_HOST/PORT)
   REDIS_URL: "redis://redis:6379"
-  
+
   QDRANT_HOST: "qdrant"
   QDRANT_PORT: "6333"
   FALKORDB_HOST: "falkordb"

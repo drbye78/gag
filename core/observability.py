@@ -165,6 +165,10 @@ def get_metrics_collector() -> MetricsCollector:
     return _metrics_collector
 
 
+# Alias for API compatibility — "ObservabilityCollector" is the public name
+ObservabilityCollector = MetricsCollector
+
+
 OTEL_AVAILABLE = False
 try:
     from opentelemetry import trace as _otel_trace

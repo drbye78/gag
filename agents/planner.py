@@ -236,6 +236,7 @@ class PlannerAgent:
             )
 
         plan.add_step(ExecutionStep(step_type="reason", action="generate_answer"))
+        plan.add_step(ExecutionStep(step_type="validate", action="validate_response"))
 
         for tool in tools:
             plan.add_tool(tool)

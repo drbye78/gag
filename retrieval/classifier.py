@@ -257,6 +257,9 @@ class QueryClassifier:
     def _determine_strategy(
         self, primary: QueryIntent, intents: List[QueryIntent]
     ) -> RetrievalStrategy:
+        # Note: complexity is estimated from the query text, not the intent name.
+        # The query is stored in the classify() method's scope.
+        # We use the primary intent's value as a proxy only for keyword checks.
         complexity = self._estimate_complexity(primary.value)
 
         if complexity == "high":
@@ -277,16 +280,22 @@ class QueryClassifier:
             return RetrievalStrategy.VECTOR_ONLY
 
     def _estimate_complexity(self, query: str) -> str:
+        """Estimate query complexity. Accepts either the query text or an intent name."""
         words = query.split()
+        query_lower = query.lower()
         has_comparison = any(
-            w in query.lower() for w in ["vs", "versus", "compared", "difference"]
+            w in query_lower for w in ["vs", "versus", "compared", "difference"]
         )
-        has_negation = any(w in query.lower() for w in ["not", "without", "except"])
+        has_negation = any(w in query_lower for w in ["not", "without", "except"])
         has_aggregation = any(
-            w in query.lower() for w in ["all", "every", "total", "sum"]
+            w in query_lower for w in ["all", "every", "total", "sum"]
         )
 
-        score = len(words) / 10.0
+        # Word count only meaningful for actual queries (not intent names)
+        if len(words) > 3:
+            score = len(words) / 10.0
+        else:
+            score = 0.0
         if has_comparison:
             score += 1
         if has_negation:

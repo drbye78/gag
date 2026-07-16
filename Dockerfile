@@ -16,7 +16,7 @@ EXPOSE 8000
 STOPSIGNAL SIGTERM
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:8000/health', timeout=2)" || exit 1
+    CMD python -c "import httpx; r = httpx.get('http://localhost:8000/health', timeout=2); exit(0 if r.status_code == 200 else 1)" || exit 1
 
 USER 1000:1000
 

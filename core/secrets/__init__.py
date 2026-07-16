@@ -92,17 +92,22 @@ class AWSSecretsManagerProvider(SecretsProvider):
     async def get_secret(self, key: str) -> Optional[str]:
         try:
             import boto3
-            client = boto3.client(
-                "secretsmanager",
-                region_name=self.region,
-                profile_name=self.profile
-            )
-            response = client.get_secret_value(SecretId=key)
-            secret_string = response.get("SecretString")
-            if secret_string:
-                secret_dict = json.loads(secret_string)
-                return secret_dict.get(key)
-            return None
+            import asyncio
+
+            def _fetch():
+                client = boto3.client(
+                    "secretsmanager",
+                    region_name=self.region,
+                    profile_name=self.profile
+                )
+                response = client.get_secret_value(SecretId=key)
+                secret_string = response.get("SecretString")
+                if secret_string:
+                    secret_dict = json.loads(secret_string)
+                    return secret_dict.get(key)
+                return None
+
+            return await asyncio.to_thread(_fetch)
         except Exception as e:
             logger.error("Failed to get AWS secret %s: %s", key, e)
             return None
@@ -146,15 +151,19 @@ class AzureKeyVaultProvider(SecretsProvider):
         if not self.vault_url:
             logger.warning("Azure Key Vault not configured")
             return None
-        
+
         try:
-            from azure.identity import DefaultCredential
-            from azure.keyvault.secrets import SecretClient
-            
-            credential = DefaultCredential(tenant_id=self.tenant_id, client_id=self.client_id)
-            client = SecretClient(vault_url=self.vault_url, credential=credential)
-            secret = client.get_secret(key)
-            return secret.value
+            import asyncio
+
+            def _fetch():
+                from azure.identity import DefaultCredential
+                from azure.keyvault.secrets import SecretClient
+                credential = DefaultCredential(tenant_id=self.tenant_id, client_id=self.client_id)
+                client = SecretClient(vault_url=self.vault_url, credential=credential)
+                secret = client.get_secret(key)
+                return secret.value
+
+            return await asyncio.to_thread(_fetch)
         except Exception as e:
             logger.error("Failed to get Azure secret %s: %s", key, e)
             return None

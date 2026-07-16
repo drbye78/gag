@@ -389,11 +389,8 @@ class MemorySystem:
         elif tier == MemoryTier.PROJECT:
             return self.project_memory.store(self.project, key, value, metadata)
         elif tier == MemoryTier.LONG_TERM:
-            import asyncio
-
-            loop = asyncio.get_running_loop()
-            return await loop.create_task(
-                self.long_term.store(f"project:{self.project}", key, value, metadata)
+            return await self.long_term.store(
+                f"project:{self.project}", key, value, metadata
             )
         return ""
 

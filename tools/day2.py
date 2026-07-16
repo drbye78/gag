@@ -60,8 +60,11 @@ Use HPA/VPA best practices."""
                 max_tokens=1500
             )
             
-            content = response.choices[0]["message"]["content"]
-            return json.loads(content)
+            from core.llm_utils import extract_json_from_response
+            data = extract_json_from_response(response)
+            if data is None:
+                raise ValueError("Failed to parse LLM response as JSON")
+            return data
             
         except Exception as e:
             logger.error(f"LLM autoscaling failed: {e}")
@@ -142,8 +145,11 @@ Generate complete rollout config."""
                 max_tokens=1500
             )
             
-            content = response.choices[0]["message"]["content"]
-            return json.loads(content)
+            from core.llm_utils import extract_json_from_response
+            data = extract_json_from_response(response)
+            if data is None:
+                raise ValueError("Failed to parse LLM response as JSON")
+            return data
             
         except Exception as e:
             logger.error(f"LLM update orchestration failed: {e}")
@@ -184,7 +190,7 @@ class IncidentDetectorTool(BaseTool):
             incidents = await self._detect_incidents_fallback(alerts)
             return ToolOutput(
                 result={"incidents": incidents},
-                metadata={"detected": True, "method": "fallback", "error": str(e)}
+                metadata={"detected": True, "method": "fallback", "error": str(e)}, reliable=False
             )
     
     async def _detect_incidents_llm(
@@ -216,8 +222,11 @@ Group related alerts into single incidents."""
                 max_tokens=2000
             )
             
-            content = response.choices[0]["message"]["content"]
-            return json.loads(content)
+            from core.llm_utils import extract_json_from_response
+            data = extract_json_from_response(response)
+            if data is None:
+                raise ValueError("Failed to parse LLM response as JSON")
+            return data
             
         except Exception as e:
             logger.error(f"LLM incident detection failed: {e}")
@@ -255,7 +264,7 @@ class RootCauseAnalyzerTool(BaseTool):
             rca = await self._analyze_root_cause_fallback(incident_id)
             return ToolOutput(
                 result={"rca": rca},
-                metadata={"analyzed": True, "method": "fallback", "error": str(e)}
+                metadata={"analyzed": True, "method": "fallback", "error": str(e)}, reliable=False
             )
     
     async def _analyze_root_cause_llm(self, incident_id: str) -> Dict[str, Any]:
@@ -283,8 +292,11 @@ Be thorough - don't stop at symptoms."""
                 max_tokens=2000
             )
             
-            content = response.choices[0]["message"]["content"]
-            return json.loads(content)
+            from core.llm_utils import extract_json_from_response
+            data = extract_json_from_response(response)
+            if data is None:
+                raise ValueError("Failed to parse LLM response as JSON")
+            return data
             
         except Exception as e:
             logger.error(f"LLM RCA failed: {e}")
@@ -321,7 +333,7 @@ class RunbookGeneratorTool(BaseTool):
             runbook = await self._generate_runbook_fallback(incident_type)
             return ToolOutput(
                 result={"runbook": runbook},
-                metadata={"generated": True, "method": "fallback", "error": str(e)}
+                metadata={"generated": True, "method": "fallback", "error": str(e)}, reliable=False
             )
     
     async def _generate_runbook_llm(self, incident_type: str) -> Dict[str, Any]:
@@ -350,8 +362,11 @@ Include specific commands and verification steps."""
                 max_tokens=2000
             )
             
-            content = response.choices[0]["message"]["content"]
-            return json.loads(content)
+            from core.llm_utils import extract_json_from_response
+            data = extract_json_from_response(response)
+            if data is None:
+                raise ValueError("Failed to parse LLM response as JSON")
+            return data
             
         except Exception as e:
             logger.error(f"LLM runbook generation failed: {e}")
@@ -424,8 +439,11 @@ Include actual commands for recovery."""
                 max_tokens=1500
             )
             
-            content = response.choices[0]["message"]["content"]
-            return json.loads(content)
+            from core.llm_utils import extract_json_from_response
+            data = extract_json_from_response(response)
+            if data is None:
+                raise ValueError("Failed to parse LLM response as JSON")
+            return data
             
         except Exception as e:
             logger.error(f"LLM backup management failed: {e}")
@@ -467,7 +485,7 @@ class CapacityPlannerTool(BaseTool):
             plan = await self._plan_capacity_fallback(resource, growth_rate)
             return ToolOutput(
                 result={"plan": plan},
-                metadata={"planned": True, "method": "fallback", "error": str(e)}
+                metadata={"planned": True, "method": "fallback", "error": str(e)}, reliable=False
             )
     
     async def _plan_capacity_llm(
@@ -500,8 +518,11 @@ Use realistic scaling patterns."""
                 max_tokens=1500
             )
             
-            content = response.choices[0]["message"]["content"]
-            return json.loads(content)
+            from core.llm_utils import extract_json_from_response
+            data = extract_json_from_response(response)
+            if data is None:
+                raise ValueError("Failed to parse LLM response as JSON")
+            return data
             
         except Exception as e:
             logger.error(f"LLM capacity planning failed: {e}")

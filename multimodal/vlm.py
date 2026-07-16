@@ -287,21 +287,22 @@ class QwenVLProvider(VLMProvider):
     
     async def analyze_image(self, image_url: str, prompt: str) -> Dict[str, Any]:
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    f"{self.base_url}/generation",
-                    headers={"Authorization": f"Bearer {self.api_key}"},
-                    json={
-                        "model": self.model,
-                        "input": {
-                            "image_url": image_url,
-                            "text": prompt,
-                        },
+            client = await self._get_client()
+            # Using cached client
+            resp = await client.post(
+                f"{self.base_url}/generation",
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                json={
+                    "model": self.model,
+                    "input": {
+                        "image_url": image_url,
+                        "text": prompt,
                     },
-                    timeout=60.0,
-                )
-                resp.raise_for_status()
-                return resp.json()
+                },
+                timeout=60.0,
+            )
+            resp.raise_for_status()
+            return resp.json()
         except Exception as e:
             logger.warning("Error analyzing image with Qwen: %s", e)
             return {"error": "Failed to analyze image"}
@@ -338,35 +339,36 @@ class OpenAIVisionProvider(VLMProvider):
     
     async def analyze_image(self, image_url: str, prompt: str) -> Dict[str, Any]:
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    "https://api.openai.com/v1/chat/completions",
-                    headers={"Authorization": f"Bearer {self.api_key}"},
-                    json={
-                        "model": self.model,
-                        "messages": [
-                            {
-                                "role": "user",
-                                "content": [
-                                    {"type": "text", "text": prompt},
-                                    {
-                                        "type": "image_url",
-                                        "image_url": {"url": image_url},
-                                    },
-                                ],
-                            }
-                        ],
-                    },
-                    timeout=60.0,
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                content = (
-                    data.get("choices", [{}])[0]
-                    .get("message", {})
-                    .get("content", "")
-                )
-                return {"output": {"text": content}}
+            client = await self._get_client()
+            # Using cached client
+            resp = await client.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                json={
+                    "model": self.model,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": prompt},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {"url": image_url},
+                                },
+                            ],
+                        }
+                    ],
+                },
+                timeout=60.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            content = (
+                data.get("choices", [{}])[0]
+                .get("message", {})
+                .get("content", "")
+            )
+            return {"output": {"text": content}}
         except Exception as e:
             logger.warning("Error analyzing image with OpenAI: %s", e)
             return {"error": "Failed to analyze image"}
@@ -381,25 +383,26 @@ class OpenAIVisionProvider(VLMProvider):
     ) -> Dict[str, Any]:
         """Generate JSON with OpenAI's response_format parameter."""
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    "https://api.openai.com/v1/chat/completions",
-                    headers={"Authorization": f"Bearer {self.api_key}"},
-                    json={
-                        "model": self.model,
-                        "messages": [{"role": "user", "content": prompt}],
-                        "response_format": {"type": "json_schema", "json_schema": schema},
-                    },
-                    timeout=60.0,
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                content = (
-                    data.get("choices", [{}])[0]
-                    .get("message", {})
-                    .get("content", "")
-                )
-                return {"output": {"text": content}}
+            client = await self._get_client()
+            # Using cached client
+            resp = await client.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                json={
+                    "model": self.model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "response_format": {"type": "json_schema", "json_schema": schema},
+                },
+                timeout=60.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            content = (
+                data.get("choices", [{}])[0]
+                .get("message", {})
+                .get("content", "")
+            )
+            return {"output": {"text": content}}
         except Exception as e:
             logger.warning("Error with structured output: %s", e)
             return await super().generate_structured(prompt, schema)
@@ -447,38 +450,39 @@ class OpenRouterVLMProvider(VLMProvider):
     async def analyze_image(self, image_url: str, prompt: str) -> Dict[str, Any]:
         """Analyze image using OpenRouter API."""
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    f"{self.base_url}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "model": self.model,
-                        "messages": [
-                            {
-                                "role": "user",
-                                "content": [
-                                    {"type": "text", "text": prompt},
-                                    {
-                                        "type": "image_url",
-                                        "image_url": {"url": image_url},
-                                    },
-                                ],
-                            }
-                        ],
-                    },
-                    timeout=90.0,
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                content = (
-                    data.get("choices", [{}])[0]
-                    .get("message", {})
-                    .get("content", "")
-                )
-                return {"output": {"text": content}}
+            client = await self._get_client()
+            # Using cached client
+            resp = await client.post(
+                f"{self.base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self.model,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": prompt},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {"url": image_url},
+                                },
+                            ],
+                        }
+                    ],
+                },
+                timeout=90.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            content = (
+                data.get("choices", [{}])[0]
+                .get("message", {})
+                .get("content", "")
+            )
+            return {"output": {"text": content}}
         except Exception as e:
             logger.warning("Error analyzing image with OpenRouter: %s", e)
             return {"error": f"Failed to analyze image: {e}"}
@@ -496,38 +500,39 @@ class OpenRouterVLMProvider(VLMProvider):
         
         prompt = VLMPrompts.get("VIDEO_ANALYSIS", self.provider_name)
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    f"{self.base_url}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "model": self.model,
-                        "messages": [
-                            {
-                                "role": "user",
-                                "content": [
-                                    {"type": "text", "text": prompt},
-                                    {
-                                        "type": "video_url",
-                                        "video_url": {"url": video_url},
-                                    },
-                                ],
-                            }
-                        ],
-                    },
-                    timeout=120.0,
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                content = (
-                    data.get("choices", [{}])[0]
-                    .get("message", {})
-                    .get("content", "")
-                )
-                return {"output": {"text": content}}
+            client = await self._get_client()
+            # Using cached client
+            resp = await client.post(
+                f"{self.base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self.model,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": prompt},
+                                {
+                                    "type": "video_url",
+                                    "video_url": {"url": video_url},
+                                },
+                            ],
+                        }
+                    ],
+                },
+                timeout=120.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            content = (
+                data.get("choices", [{}])[0]
+                .get("message", {})
+                .get("content", "")
+            )
+            return {"output": {"text": content}}
         except Exception as e:
             logger.warning("Error analyzing video with OpenRouter: %s", e)
             return {"error": f"Failed to analyze video: {e}"}
@@ -540,22 +545,23 @@ class OpenRouterVLMProvider(VLMProvider):
             return {"error": f"Function calling not supported by {self.model}"}
         
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    f"{self.base_url}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "model": self.model,
-                        "messages": [{"role": "user", "content": prompt}],
-                        "tools": [{"type": "function", "function": f} for f in functions],
-                    },
-                    timeout=60.0,
-                )
-                resp.raise_for_status()
-                return resp.json()
+            client = await self._get_client()
+            # Using cached client
+            resp = await client.post(
+                f"{self.base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self.model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "tools": [{"type": "function", "function": f} for f in functions],
+                },
+                timeout=60.0,
+            )
+            resp.raise_for_status()
+            return resp.json()
         except Exception as e:
             logger.warning("Error with function calling: %s", e)
             return {"error": f"Function call failed: {e}"}
@@ -570,28 +576,29 @@ class OpenRouterVLMProvider(VLMProvider):
         full_prompt = f"{prompt}\n\n{schema_prompt}"
         
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    f"{self.base_url}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "model": self.model,
-                        "messages": [{"role": "user", "content": full_prompt}],
-                    },
-                    timeout=60.0,
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                content = (
-                    data.get("choices", [{}])[0]
-                    .get("message", {})
-                    .get("content", "")
-                )
+            client = await self._get_client()
+            # Using cached client
+            resp = await client.post(
+                f"{self.base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self.model,
+                    "messages": [{"role": "user", "content": full_prompt}],
+                },
+                timeout=60.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            content = (
+                data.get("choices", [{}])[0]
+                .get("message", {})
+                .get("content", "")
+            )
                 # Parse JSON from response
-                return self._parse_structured({"output": {"text": content}}, schema)
+            return self._parse_structured({"output": {"text": content}}, schema)
         except Exception as e:
             logger.warning("Error with structured output: %s", e)
             return {"error": f"Structured output failed: {e}"}

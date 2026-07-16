@@ -8,6 +8,7 @@ from agents import (
     ReasoningAgent,
     ToolExecutor,
     OrchestrationEngine,
+    ValidatorAgent,
 )
 
 
@@ -61,6 +62,19 @@ def create_reasoning(**config):
 )
 def create_executor(**config):
     return ToolExecutor()
+
+
+@register_agent(
+    AgentType.VALIDATOR,
+    AgentMeta(
+        agent_type=AgentType.VALIDATOR,
+        name="ValidatorAgent",
+        description="Validates response accuracy, coherence, completeness, and safety",
+        capabilities=["accuracy_check", "coherence_check", "completeness_check", "safety_check"],
+    ),
+)
+def create_validator(**config):
+    return ValidatorAgent()
 
 
 @register_agent(

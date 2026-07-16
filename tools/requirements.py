@@ -75,7 +75,10 @@ Respond ONLY with JSON array of user stories."""
 
         response = await router.chat(prompt=prompt, temperature=0.3, max_tokens=1500)
         import json
-        data = json.loads(response.choices[0]["message"]["content"])
+        from core.llm_utils import extract_json_from_response
+        data = extract_json_from_response(response)
+        if data is None:
+            raise ValueError("Failed to parse LLM response as JSON")
         return [UserStory(**story) for story in data[:10]]
 
     async def _generate_fallback(self, text: str, format_style: str) -> List[UserStory]:
@@ -132,7 +135,10 @@ Respond ONLY with JSON array."""
 
         response = await router.chat(prompt=prompt, temperature=0.3, max_tokens=1500)
         import json
-        data = json.loads(response.choices[0]["message"]["content"])
+        from core.llm_utils import extract_json_from_response
+        data = extract_json_from_response(response)
+        if data is None:
+            raise ValueError("Failed to parse LLM response as JSON")
         return [AcceptanceCriterion(**c) for c in data]
 
     async def _generate_fallback(self, requirements: List[str]) -> List[AcceptanceCriterion]:

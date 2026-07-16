@@ -49,13 +49,28 @@ class ADRRepository:
         return [a for a in self._adrs.values() if a.status == status]
     
     def find_by_platform(self, platform: str) -> List[ADR]:
-        return [a for a in self._adrs.values() if platform in a.related_platforms]
+        normalized = self._normalize_platform(platform)
+        return [
+            a for a in self._adrs.values()
+            if any(self._normalize_platform(p) == normalized for p in a.related_platforms)
+        ]
+
+    @staticmethod
+    def _normalize_platform(p: str) -> str:
+        n = p.replace("_", "").lower()
+        if n == "sapbtp":
+            n = "sap"
+        return n
     
     def find_by_pattern(self, pattern: str) -> List[ADR]:
         return [a for a in self._adrs.values() if pattern in a.related_patterns]
     
     def list_all(self) -> List[ADR]:
         return list(self._adrs.values())
+
+    # Alias for test/API compatibility
+    def get_all(self) -> List[ADR]:
+        return self.list_all()
 
 
 def _create_default_adrs() -> ADRRepository:
@@ -128,3 +143,8 @@ def get_adr_repository() -> ADRRepository:
     if _adr_repo is None:
         _adr_repo = _create_default_adrs()
     return _adr_repo
+
+
+# Alias for test/API compatibility
+def get_adr_library() -> ADRRepository:
+    return get_adr_repository()

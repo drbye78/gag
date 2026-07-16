@@ -19,10 +19,18 @@ logger = logging.getLogger(__name__)
 from llama_index.core import SimpleDirectoryReader
 from llama_index.core.readers import StringIterableReader
 
-# Docling v2.x - mandatory dependency
-from docling.document_converter import DocumentConverter
-from docling.datamodel.base_models import InputFormat
-from docling.datamodel.document import ConversionResult
+# Docling v2.x - optional dependency (graceful degradation if not installed)
+try:
+    from docling.document_converter import DocumentConverter
+    from docling.datamodel.base_models import InputFormat
+    from docling.datamodel.document import ConversionResult
+    DOCLING_AVAILABLE = True
+except ImportError:
+    DOCLING_AVAILABLE = False
+    DocumentConverter = None  # type: ignore[assignment,misc]
+    InputFormat = None  # type: ignore[assignment,misc]
+    ConversionResult = None  # type: ignore[assignment,misc]
+    logger.warning("Docling not installed — advanced PDF/OCR parsing disabled")
 
 
 @dataclass
@@ -116,6 +124,8 @@ class DoclingParser:
         self._use_ocr = use_ocr
 
     def _get_converter(self) -> Any:
+        if not DOCLING_AVAILABLE:
+            raise RuntimeError("Docling is not installed — cannot use DoclingParser")
         if self._converter is None:
             self._converter = DocumentConverter()
         return self._converter  # type: ignore[return-value]
@@ -124,6 +134,12 @@ class DoclingParser:
         self,
         content: bytes,
     ) -> ParsedDocumentResult:
+        if not DOCLING_AVAILABLE:
+            return ParsedDocumentResult(
+                text="",
+                error="Docling is not installed — advanced PDF/OCR parsing unavailable",
+            )
+
         converter = self._get_converter()
 
         try:

@@ -2,7 +2,8 @@
 
 import asyncio
 from datetime import datetime
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+import pytest
 
 from ui.graph_builder import UIGraphBuilder
 from ui.models import UIElement, UILayout, UISketch, UIExtractionResult
@@ -215,44 +216,41 @@ class TestFullBuildCypher:
 
 
 class TestBuild:
-    def test_build_with_mocked_execute(self):
+    @pytest.mark.asyncio
+    async def test_build_with_mocked_execute(self):
         builder = UIGraphBuilder()
-        builder._execute_cypher = AsyncMock(
-            return_value={"success": True, "response": {"results": []}}
-        )
-        result = _make_sample_result()
-
-        response = asyncio.run(builder.build(result))
-
+        mock_client = MagicMock()
+        mock_client.execute = AsyncMock(return_value={"results": []})
+        with patch("graph.client.get_falkordb_client", return_value=mock_client):
+            result = _make_sample_result()
+            response = await builder.build(result)
         assert response["success"] is True
-        builder._execute_cypher.assert_called_once()
 
-    def test_build_calls_execute_with_cypher(self):
+    @pytest.mark.asyncio
+    async def test_build_calls_execute_with_cypher(self):
         builder = UIGraphBuilder()
-        captured_cypher = None
+        mock_client = MagicMock()
+        mock_client.execute = AsyncMock(return_value={"results": []})
+        with patch("graph.client.get_falkordb_client", return_value=mock_client):
+            result = _make_sample_result()
+            await builder.build(result)
+        # Verify execute was called
+        mock_client.execute.assert_called_once()
+        # Check the Cypher contains expected node types
+        call_args = mock_client.execute.call_args
+        cypher_str = str(call_args)
+        assert "UISketch" in cypher_str
+        assert "UIElement" in cypher_str
+        assert "UILayout" in cypher_str
 
-        async def capture_cypher(cypher):
-            nonlocal captured_cypher
-            captured_cypher = cypher
-            return {"success": True, "response": {}}
-
-        builder._execute_cypher = capture_cypher
-        result = _make_sample_result()
-
-        asyncio.run(builder.build(result))
-
-        assert "UISketch" in captured_cypher
-        assert "UIElement" in captured_cypher
-        assert "UILayout" in captured_cypher
-
-    def test_build_failure(self):
+    @pytest.mark.asyncio
+    async def test_build_failure(self):
         builder = UIGraphBuilder()
-        builder._execute_cypher = AsyncMock(
-            return_value={"success": False, "error": "Connection refused"}
-        )
-        result = _make_sample_result()
-
-        response = asyncio.run(builder.build(result))
-
+        mock_client = MagicMock()
+        mock_client.execute = AsyncMock(side_effect=Exception("Connection refused"))
+        with patch("graph.client.get_falkordb_client", return_value=mock_client):
+            result = _make_sample_result()
+            response = await builder.build(result)
         assert response["success"] is False
+        assert "error" in response
         assert response["error"] == "Connection refused"

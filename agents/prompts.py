@@ -102,7 +102,7 @@ ARCHITECTURE:
 - kubernetes_search, helm_search, dockerfile_search
 
 IDEATION (Phase 1):
-- idea_generate, brainstorm, technology_recommend, pattern_find, market_analysis
+- idea_generate, brainstorm, technology_recommend, pattern_find
 
 REQUIREMENTS (Phase 2):
 - user_story_generate, acceptance_criteria_generate

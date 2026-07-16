@@ -125,6 +125,107 @@ class UIGraphBuilder:
             return {"success": False, "error": str(e)}
 
     async def build(self, result: UIExtractionResult) -> Dict[str, Any]:
-        """Build and execute graph for a UIExtractionResult."""
-        cypher = self.build_cypher(result)
-        return await self._execute_cypher(cypher)
+        """Build and execute graph for a UIExtractionResult.
+
+        Uses parameterized Cypher to prevent injection.
+        """
+        from ui.issue_tracker import get_issue_tracker
+        from ui.pattern_matcher import get_pattern_matcher
+
+        matcher = get_pattern_matcher()
+        tracker = get_issue_tracker()
+        matches = matcher.match_patterns(result)
+
+        sketch = result.sketch
+        layout = result.layout
+
+        # Build parameterized Cypher for sketch node
+        sketch_props = {
+            "sketch_id": sketch.sketch_id,
+            "title": sketch.title,
+            "source_url": sketch.source_url,
+            "format_type": sketch.format_type,
+            "element_count": len(result.elements),
+            "source_type_confidence": result.source_type_confidence,
+        }
+        if sketch.page_type:
+            sketch_props["page_type"] = sketch.page_type
+
+        cypher_parts = []
+        params = {"sketch_props": sketch_props}
+
+        cypher_parts.append(
+            "CREATE (s:UISketch $sketch_props)"
+        )
+
+        # Build parameterized Cypher for layout
+        layout_props = {
+            "layout_id": layout.layout_id,
+            "layout_type": layout.layout_type,
+            "hierarchy": json.dumps(layout.hierarchy),
+            "responsive": layout.responsive,
+        }
+        params["layout_props"] = layout_props
+        params["sketch_id"] = sketch.sketch_id
+        params["layout_id"] = layout.layout_id
+
+        cypher_parts.append(
+            "CREATE (l:UILayout $layout_props) "
+            "WITH s, l "
+            "MATCH (s:UISketch {sketch_id: $sketch_id}) "
+            "CREATE (s)-[:HAS_LAYOUT]->(l)"
+        )
+
+        # Build parameterized Cypher for elements
+        for elem in result.elements:
+            elem_props = {
+                "element_id": elem.element_id,
+                "element_type": elem.element_type,
+                "confidence": elem.confidence,
+            }
+            if elem.label is not None:
+                elem_props["label"] = elem.label
+            if elem.position:
+                elem_props["position"] = json.dumps(elem.position)
+
+            param_key = f"elem_props_{elem.element_id}"
+            params[param_key] = elem_props
+
+            cypher_parts.append(
+                f"CREATE (e_{elem.element_id}:UIElement ${param_key}) "
+                f"WITH s, l, e_{elem.element_id} "
+                f"MATCH (s:UISketch {{sketch_id: $sketch_id}}) "
+                f"CREATE (s)-[:CONTAINS_ELEMENT]->(e_{elem.element_id}) "
+                f"MATCH (l:UILayout {{layout_id: $layout_id}}) "
+                f"CREATE (l)-[:CONTAINS_ELEMENT]->(e_{elem.element_id})"
+            )
+
+        # Add pattern matches
+        for pattern in matches:
+            pattern_props = {
+                "pattern_id": pattern.pattern_id,
+                "pattern_name": pattern.pattern_name,
+                "description": pattern.description,
+                "complexity": pattern.complexity,
+            }
+            param_key = f"pattern_props_{pattern.pattern_id}"
+            params[param_key] = pattern_props
+
+            cypher_parts.append(
+                f"MERGE (p:UIPattern {{pattern_id: $pattern_id_{pattern.pattern_id}}}) "
+                f"SET p = ${param_key} "
+                f"WITH s, p "
+                f"MATCH (s:UISketch {{sketch_id: $sketch_id}}) "
+                f"MERGE (s)-[:MATCHES_PATTERN]->(p)"
+            )
+            params[f"pattern_id_{pattern.pattern_id}"] = pattern.pattern_id
+
+        full_cypher = "\n".join(cypher_parts)
+
+        try:
+            from graph.client import get_falkordb_client
+            client = get_falkordb_client()
+            response = await client.execute(full_cypher, params)
+            return {"success": True, "response": response}
+        except Exception as e:
+            return {"success": False, "error": str(e)}

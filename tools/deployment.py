@@ -39,8 +39,8 @@ class CICDPipelineGeneratorTool(PDLCBaseTool):
         )
         return ToolOutput(
             result={"platform": platform, "pipeline": pipeline},
-            metadata={"generated": True, "method": "fallback"}
-        )
+            metadata={"generated": True, "method": "fallback"}, reliable=False
+            )
     
     async def _generate_pipeline_llm(
         self,
@@ -71,8 +71,11 @@ Use modern best practices: caching, matrix builds, artifact publishing."""
                 max_tokens=3000
             )
             
-            content = response.choices[0]["message"]["content"]
-            return json.loads(content)
+            from core.llm_utils import extract_json_from_response
+            data = extract_json_from_response(response)
+            if data is None:
+                raise ValueError("Failed to parse LLM response as JSON")
+            return data
             
         except Exception as e:
             logger.error(f"LLM pipeline generation failed: {e}")
@@ -165,8 +168,8 @@ class DeploymentGeneratorTool(PDLCBaseTool):
         )
         return ToolOutput(
             result={"manifest": manifest},
-            metadata={"generated": True, "method": "fallback"}
-        )
+            metadata={"generated": True, "method": "fallback"}, reliable=False
+            )
     
     async def _generate_deployment_llm(
         self,
@@ -203,8 +206,11 @@ Use best practices: security context, resource limits, liveness/readiness probes
                 max_tokens=2500
             )
             
-            content = response.choices[0]["message"]["content"]
-            return json.loads(content)
+            from core.llm_utils import extract_json_from_response
+            data = extract_json_from_response(response)
+            if data is None:
+                raise ValueError("Failed to parse LLM response as JSON")
+            return data
             
         except Exception as e:
             logger.error(f"LLM deployment generation failed: {e}")
@@ -308,7 +314,7 @@ class HelmChartGeneratorTool(BaseTool):
             )
             return ToolOutput(
                 result={"chart": chart},
-                metadata={"generated": True, "method": "fallback", "error": str(e)}
+                metadata={"generated": True, "method": "fallback", "error": str(e)}, reliable=False
             )
     
     async def _generate_helm_chart_llm(
@@ -340,8 +346,11 @@ Use production best practices."""
                 max_tokens=2500
             )
             
-            content = response.choices[0]["message"]["content"]
-            return json.loads(content)
+            from core.llm_utils import extract_json_from_response
+            data = extract_json_from_response(response)
+            if data is None:
+                raise ValueError("Failed to parse LLM response as JSON")
+            return data
             
         except Exception as e:
             logger.error(f"LLM helm chart generation failed: {e}")
@@ -406,7 +415,7 @@ class TerraformGeneratorTool(BaseTool):
             terraform = await self._generate_terraform_fallback(provider, resources)
             return ToolOutput(
                 result={"terraform": terraform},
-                metadata={"generated": True, "method": "fallback", "error": str(e)}
+                metadata={"generated": True, "method": "fallback", "error": str(e)}, reliable=False
             )
     
     async def _generate_terraform_llm(
@@ -435,8 +444,11 @@ Use production best practices: modules, remote state, outputs."""
                 max_tokens=2500
             )
             
-            content = response.choices[0]["message"]["content"]
-            return json.loads(content)
+            from core.llm_utils import extract_json_from_response
+            data = extract_json_from_response(response)
+            if data is None:
+                raise ValueError("Failed to parse LLM response as JSON")
+            return data
             
         except Exception as e:
             logger.error(f"LLM terraform generation failed: {e}")
@@ -478,7 +490,7 @@ class DockerComposeGeneratorTool(BaseTool):
             compose = await self._generate_compose_fallback(services, includes)
             return ToolOutput(
                 result={"compose": compose},
-                metadata={"generated": True, "method": "fallback", "error": str(e)}
+                metadata={"generated": True, "method": "fallback", "error": str(e)}, reliable=False
             )
     
     async def _generate_compose_llm(
@@ -504,8 +516,11 @@ Use healthchecks, restart policies, proper port mappings."""
                 max_tokens=2000
             )
             
-            content = response.choices[0]["message"]["content"]
-            return json.loads(content)
+            from core.llm_utils import extract_json_from_response
+            data = extract_json_from_response(response)
+            if data is None:
+                raise ValueError("Failed to parse LLM response as JSON")
+            return data
             
         except Exception as e:
             logger.error(f"LLM compose generation failed: {e}")
@@ -605,8 +620,11 @@ Be strict: catch missing required fields, invalid values, security issues."""
                 max_tokens=1500
             )
             
-            content = response.choices[0]["message"]["content"]
-            return json.loads(content)
+            from core.llm_utils import extract_json_from_response
+            data = extract_json_from_response(response)
+            if data is None:
+                raise ValueError("Failed to parse LLM response as JSON")
+            return data
             
         except Exception as e:
             logger.error(f"LLM validation failed: {e}")

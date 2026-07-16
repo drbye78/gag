@@ -35,20 +35,87 @@ class RetrievalMode(str, Enum):
 
 class RetrievalOrchestrator:
     def __init__(self):
-        self.docs_retriever = get_docs_retriever()
-        self.code_retriever = get_code_retriever()
-        self.graph_retriever = get_graph_retriever()
-        self.code_graph_retriever = get_code_graph_retriever()
-        self.ticket_retriever = get_ticket_retriever()
-        self.telemetry_retriever = get_telemetry_retriever()
-        self.diagram_retriever = get_diagram_retriever()
-        self.hybrid_retriever = get_hybrid_retriever()
         self.classifier = get_query_classifier()
-        from ui.retriever import get_ui_retriever
-        self.ui_retriever = get_ui_retriever()
-        self.colbert_retriever = get_colbert_search_client()
-        self.knowledge_retriever = get_knowledge_retriever()
         self.adapter_registry = get_adapter_registry()
+        # Lazy-init all retrievers — only created when first accessed
+        self._docs_retriever = None
+        self._code_retriever = None
+        self._graph_retriever = None
+        self._code_graph_retriever = None
+        self._ticket_retriever = None
+        self._telemetry_retriever = None
+        self._diagram_retriever = None
+        self._hybrid_retriever = None
+        self._ui_retriever = None
+        self._colbert_retriever = None
+        self._knowledge_retriever = None
+
+    @property
+    def docs_retriever(self):
+        if self._docs_retriever is None:
+            self._docs_retriever = get_docs_retriever()
+        return self._docs_retriever
+
+    @property
+    def code_retriever(self):
+        if self._code_retriever is None:
+            self._code_retriever = get_code_retriever()
+        return self._code_retriever
+
+    @property
+    def graph_retriever(self):
+        if self._graph_retriever is None:
+            self._graph_retriever = get_graph_retriever()
+        return self._graph_retriever
+
+    @property
+    def code_graph_retriever(self):
+        if self._code_graph_retriever is None:
+            self._code_graph_retriever = get_code_graph_retriever()
+        return self._code_graph_retriever
+
+    @property
+    def ticket_retriever(self):
+        if self._ticket_retriever is None:
+            self._ticket_retriever = get_ticket_retriever()
+        return self._ticket_retriever
+
+    @property
+    def telemetry_retriever(self):
+        if self._telemetry_retriever is None:
+            self._telemetry_retriever = get_telemetry_retriever()
+        return self._telemetry_retriever
+
+    @property
+    def diagram_retriever(self):
+        if self._diagram_retriever is None:
+            self._diagram_retriever = get_diagram_retriever()
+        return self._diagram_retriever
+
+    @property
+    def hybrid_retriever(self):
+        if self._hybrid_retriever is None:
+            self._hybrid_retriever = get_hybrid_retriever()
+        return self._hybrid_retriever
+
+    @property
+    def ui_retriever(self):
+        if self._ui_retriever is None:
+            from ui.retriever import get_ui_retriever
+            self._ui_retriever = get_ui_retriever()
+        return self._ui_retriever
+
+    @property
+    def colbert_retriever(self):
+        if self._colbert_retriever is None:
+            self._colbert_retriever = get_colbert_search_client()
+        return self._colbert_retriever
+
+    @property
+    def knowledge_retriever(self):
+        if self._knowledge_retriever is None:
+            self._knowledge_retriever = get_knowledge_retriever()
+        return self._knowledge_retriever
 
     async def retrieve(
         self,
@@ -184,8 +251,10 @@ class RetrievalOrchestrator:
 
     async def _retrieve_ui(self, query: str, limit: int, filters: Optional[Dict]) -> Dict:
         try:
+            # Don't pass the full query as element type — search all types
+            # and let the retriever's similarity matching handle relevance
             results = await self.ui_retriever.search_combined(
-                element_types=[query.lower()], limit=limit
+                element_types=[], limit=limit
             )
             return {"source": "ui_sketch", "results": results, "total": len(results), "took_ms": 0}
         except Exception as e:

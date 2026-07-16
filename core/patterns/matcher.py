@@ -27,17 +27,38 @@ class PatternMatcher:
         return sorted(results, key=lambda r: r.match_score, reverse=True)
     
     def _get_candidates(self, features: IRFeature) -> list[Pattern]:
+        """Get candidate patterns by matching triggers against IR feature fields.
+
+        Uses field-level matching instead of substring on dict string representation
+        to avoid false positives (e.g., "spring" matching "offspring").
+        """
         candidates = set()
         feature_dict = features.model_dump()
-        feature_str = str(feature_dict).lower()
-        
+
+        # Build a set of all feature values (strings, bools as strings) for matching
+        feature_values = set()
+        for key, value in feature_dict.items():
+            if isinstance(value, str):
+                feature_values.add(value.lower())
+            elif isinstance(value, bool) and value:
+                feature_values.add(key.lower().replace("has_", ""))
+            elif isinstance(value, list):
+                for item in value:
+                    if isinstance(item, str):
+                        feature_values.add(item.lower())
+
+        # Match triggers against feature values (word-boundary)
         for trigger, pattern_ids in self.library._index_by_trigger.items():
-            if trigger.lower() in feature_str:
-                candidates.update(pattern_ids)
-        
+            trigger_lower = trigger.lower()
+            for fv in feature_values:
+                # Check if trigger appears as a word in the feature value
+                if trigger_lower == fv or trigger_lower in fv.split("_"):
+                    candidates.update(pattern_ids)
+                    break
+
         if not candidates:
             return self.library.all()[:5]
-        
+
         return [self.library._patterns[pid] for pid in candidates if pid in self.library._patterns]
     
     def _evaluate_pattern(self, pattern: Pattern, features: IRFeature) -> PatternMatchResult:

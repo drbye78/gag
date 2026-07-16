@@ -31,8 +31,8 @@ class MetricsCollectorTool(PDLCBaseTool):
         metrics = await self._collect_metrics_fallback(source, query, time_range)
         return ToolOutput(
             result={"metrics": metrics},
-            metadata={"collected": True, "method": "fallback"}
-        )
+            metadata={"collected": True, "method": "fallback"}, reliable=False
+            )
     
     async def _collect_metrics_llm(
         self,
@@ -62,8 +62,11 @@ Generate 5-10 realistic metrics for monitoring dashboards."""
                 max_tokens=2000
             )
             
-            content = response.choices[0]["message"]["content"]
-            return json.loads(content)
+            from core.llm_utils import extract_json_from_response
+            data = extract_json_from_response(response)
+            if data is None:
+                raise ValueError("Failed to parse LLM response as JSON")
+            return data
             
         except Exception as e:
             logger.error(f"LLM metrics collection failed: {e}")
@@ -109,7 +112,7 @@ class LogAggregatorTool(BaseTool):
             logs = await self._aggregate_logs_fallback(sources, query, time_range, level)
             return ToolOutput(
                 result={"logs": logs},
-                metadata={"aggregated": True, "method": "fallback", "error": str(e)}
+                metadata={"aggregated": True, "method": "fallback", "error": str(e)}, reliable=False
             )
     
     async def _aggregate_logs_llm(
@@ -144,8 +147,11 @@ Generate 10 realistic log entries."""
                 max_tokens=2000
             )
             
-            content = response.choices[0]["message"]["content"]
-            return json.loads(content)
+            from core.llm_utils import extract_json_from_response
+            data = extract_json_from_response(response)
+            if data is None:
+                raise ValueError("Failed to parse LLM response as JSON")
+            return data
             
         except Exception as e:
             logger.error(f"LLM log aggregation failed: {e}")
@@ -223,8 +229,11 @@ Generate production-quality alert rules."""
                 max_tokens=1500
             )
             
-            content = response.choices[0]["message"]["content"]
-            return json.loads(content)
+            from core.llm_utils import extract_json_from_response
+            data = extract_json_from_response(response)
+            if data is None:
+                raise ValueError("Failed to parse LLM response as JSON")
+            return data
             
         except Exception as e:
             logger.error(f"LLM alert management failed: {e}")
@@ -267,8 +276,8 @@ class DashboardGeneratorTool(PDLCBaseTool):
         dashboard = await self._generate_dashboard_fallback(metrics, format, title)
         return ToolOutput(
             result={"dashboard": dashboard},
-            metadata={"generated": True, "method": "fallback"}
-        )
+            metadata={"generated": True, "method": "fallback"}, reliable=False
+            )
     
     async def _generate_dashboard_llm(
         self,
@@ -294,8 +303,11 @@ For JSON: simple panel layout with metric expressions."""
                 max_tokens=2500
             )
             
-            content = response.choices[0]["message"]["content"]
-            return json.loads(content)
+            from core.llm_utils import extract_json_from_response
+            data = extract_json_from_response(response)
+            if data is None:
+                raise ValueError("Failed to parse LLM response as JSON")
+            return data
             
         except Exception as e:
             logger.error(f"LLM dashboard generation failed: {e}")
@@ -344,7 +356,7 @@ class TracingCollectorTool(BaseTool):
             traces = await self._collect_traces_fallback(trace_id, service, time_range)
             return ToolOutput(
                 result={"traces": traces},
-                metadata={"collected": True, "method": "fallback", "error": str(e)}
+                metadata={"collected": True, "method": "fallback", "error": str(e)}, reliable=False
             )
     
     async def _collect_traces_llm(
@@ -380,8 +392,11 @@ Generate 5-10 realistic spans."""
                 max_tokens=2000
             )
             
-            content = response.choices[0]["message"]["content"]
-            return json.loads(content)
+            from core.llm_utils import extract_json_from_response
+            data = extract_json_from_response(response)
+            if data is None:
+                raise ValueError("Failed to parse LLM response as JSON")
+            return data
             
         except Exception as e:
             logger.error(f"LLM trace collection failed: {e}")
@@ -426,7 +441,7 @@ class SLOTrackerTool(BaseTool):
             tracking = await self._track_slo_fallback(slo)
             return ToolOutput(
                 result={"tracking": tracking},
-                metadata={"tracked": True, "method": "fallback", "error": str(e)}
+                metadata={"tracked": True, "method": "fallback", "error": str(e)}, reliable=False
             )
     
     async def _track_slo_llm(self, slo: Dict[str, Any]) -> Dict[str, Any]:
@@ -454,8 +469,11 @@ Calculate realistic values."""
                 max_tokens=1500
             )
             
-            content = response.choices[0]["message"]["content"]
-            return json.loads(content)
+            from core.llm_utils import extract_json_from_response
+            data = extract_json_from_response(response)
+            if data is None:
+                raise ValueError("Failed to parse LLM response as JSON")
+            return data
             
         except Exception as e:
             logger.error(f"LLM SLO tracking failed: {e}")
@@ -496,7 +514,7 @@ class AnomalyDetectorTool(BaseTool):
             anomalies = await self._detect_anomalies_fallback(metrics, sensitivity)
             return ToolOutput(
                 result={"anomalies": anomalies},
-                metadata={"detected": True, "method": "fallback", "error": str(e)}
+                metadata={"detected": True, "method": "fallback", "error": str(e)}, reliable=False
             )
     
     async def _detect_anomalies_llm(
@@ -528,8 +546,11 @@ Use statistical methods: z-score, IQR, seasonal decomposition."""
                 max_tokens=2000
             )
             
-            content = response.choices[0]["message"]["content"]
-            return json.loads(content)
+            from core.llm_utils import extract_json_from_response
+            data = extract_json_from_response(response)
+            if data is None:
+                raise ValueError("Failed to parse LLM response as JSON")
+            return data
             
         except Exception as e:
             logger.error(f"LLM anomaly detection failed: {e}")
