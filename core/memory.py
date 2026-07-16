@@ -8,12 +8,12 @@ Provides:
 """
 
 import json
-import logging
-import threading
 import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
+
+import logging
 
 from core.pool import get_http_pool
 
@@ -92,7 +92,9 @@ class ShortTermMemory:
 
     def retrieve_recent(self, limit: int = 10) -> List[MemoryEntry]:
         self._cleanupExpired()
-        sorted_entries = sorted(self._entries.values(), key=lambda e: e.updated_at, reverse=True)
+        sorted_entries = sorted(
+            self._entries.values(), key=lambda e: e.updated_at, reverse=True
+        )
         return sorted_entries[:limit]
 
     def add_reasoning_trace(
@@ -123,7 +125,9 @@ class ShortTermMemory:
     def _evict_oldest(self) -> None:
         if not self._entries:
             return
-        oldest_key = min(self._entries.keys(), key=lambda k: self._entries[k].updated_at)
+        oldest_key = min(
+            self._entries.keys(), key=lambda k: self._entries[k].updated_at
+        )
         self._entries.pop(oldest_key, None)
 
     def _is_expired(self, entry: MemoryEntry) -> bool:
@@ -132,7 +136,9 @@ class ShortTermMemory:
         return time.time() > entry.expires_at
 
     def _cleanupExpired(self) -> None:
-        expired = [eid for eid, entry in self._entries.items() if self._is_expired(entry)]
+        expired = [
+            eid for eid, entry in self._entries.items() if self._is_expired(entry)
+        ]
         for eid in expired:
             self._entries.pop(eid, None)
 
@@ -290,8 +296,7 @@ class LongTermMemory:
 
         try:
             pool = get_http_pool()
-            await pool.request(
-                "PUT",
+            await pool.put(
                 f"{self.backend_url}/collections/memory/points",
                 json={
                     "points": [
@@ -334,7 +339,9 @@ class LongTermMemory:
                 data = response.json()
                 results = data.get("result", [])
                 if results:
-                    return json.loads(results[0].get("payload", {}).get("value", "{}"))
+                    return json.loads(
+                        results[0].get("payload", {}).get("value", "{}")
+                    )
         except Exception as e:
             logger.warning("Error fetching from memory backend: %s", e)
         return None
@@ -382,7 +389,9 @@ class MemorySystem:
         elif tier == MemoryTier.PROJECT:
             return self.project_memory.store(self.project, key, value, metadata)
         elif tier == MemoryTier.LONG_TERM:
-            return await self.long_term.store(f"project:{self.project}", key, value, metadata)
+            return await self.long_term.store(
+                f"project:{self.project}", key, value, metadata
+            )
         return ""
 
     async def recall(
@@ -401,7 +410,12 @@ class MemorySystem:
                 return result
 
         if tier is None or tier == MemoryTier.LONG_TERM:
-            result = await self.long_term.retrieve(f"project:{self.project}", key)
+            import asyncio
+
+            loop = asyncio.get_running_loop()
+            result = await loop.create_task(
+                self.long_term.retrieve(f"project:{self.project}", key)
+            )
             if result is not None:
                 return result
 
@@ -416,7 +430,8 @@ class MemorySystem:
             "session_id": self.session_id,
             "project": self.project,
             "recent_short_term": [
-                {"key": e.key, "value": e.value, "updated_at": e.updated_at} for e in recent_stm
+                {"key": e.key, "value": e.value, "updated_at": e.updated_at}
+                for e in recent_stm
             ],
             "recent_project": [
                 {"key": e.key, "value": e.value, "updated_at": e.updated_at}
@@ -445,7 +460,6 @@ class MemorySystem:
 
 _short_term_memory: Optional[ShortTermMemory] = None
 _memory_systems: Dict[str, "MemorySystem"] = {}
-_memory_lock = threading.Lock()
 _MAX_MEMORY_SYSTEMS = 100
 
 
@@ -463,16 +477,10 @@ def get_memory_system(
     key = f"{session_id or 'default'}_{project or 'default'}"
 
     global _memory_systems
-
-    # Fast path: already cached
-    if key in _memory_systems:
-        return _memory_systems[key]
-
-    with _memory_lock:
-        if key not in _memory_systems:
-            if len(_memory_systems) >= _MAX_MEMORY_SYSTEMS:
-                # Evict oldest entry (first key)
-                oldest_key = next(iter(_memory_systems))
-                del _memory_systems[oldest_key]
-            _memory_systems[key] = MemorySystem(session_id, project)
+    if key not in _memory_systems:
+        if len(_memory_systems) >= _MAX_MEMORY_SYSTEMS:
+            # Evict oldest entry (first key)
+            oldest_key = next(iter(_memory_systems))
+            del _memory_systems[oldest_key]
+        _memory_systems[key] = MemorySystem(session_id, project)
     return _memory_systems[key]

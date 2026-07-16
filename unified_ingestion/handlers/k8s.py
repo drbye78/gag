@@ -1,12 +1,13 @@
 import hashlib
 import logging
 import os
-from typing import Any, Dict
+from typing import Any, Dict, List
 
-from ingestion.dockerfile_chunker import DockerfileChunker
+from ingestion.k8s_chunker import KubernetesChunker, K8sResource
 from ingestion.helm_chunker import HelmChartChunker
+from ingestion.dockerfile_chunker import DockerfileChunker
 from ingestion.istio_chunker import IstioChunker
-from ingestion.k8s_chunker import KubernetesChunker
+
 from unified_ingestion.handlers.base import Handler, HandlerResult
 
 logger = logging.getLogger(__name__)
@@ -28,9 +29,7 @@ class K8sHandler(Handler):
         self._dockerfile_chunker = DockerfileChunker()
         self._istio_chunker = IstioChunker()
 
-    async def handle(
-        self, content: bytes, source_id: str, metadata: Dict[str, Any]
-    ) -> HandlerResult:
+    async def handle(self, content: bytes, source_id: str, metadata: Dict[str, Any]) -> HandlerResult:
         filename = metadata.get("filename", "manifest")
         ext = os.path.splitext(filename)[1].lower()
 
@@ -78,7 +77,9 @@ class K8sHandler(Handler):
 
         return HandlerResult(success=True, chunks=chunks, metadata={})
 
-    async def _handle_helm(self, content: bytes, source_id: str, filename: str) -> HandlerResult:
+    async def _handle_helm(
+        self, content: bytes, source_id: str, filename: str
+    ) -> HandlerResult:
         text = content.decode("utf-8")
         chunker = self._helm_chunker
         result = chunker.chunk(text, source_id)
@@ -130,7 +131,9 @@ class K8sHandler(Handler):
 
         return HandlerResult(success=True, chunks=chunks, metadata={})
 
-    async def _handle_istio(self, content: bytes, source_id: str, filename: str) -> HandlerResult:
+    async def _handle_istio(
+        self, content: bytes, source_id: str, filename: str
+    ) -> HandlerResult:
         text = content.decode("utf-8")
         chunker = self._istio_chunker
         result = chunker.chunk(text, source_id)

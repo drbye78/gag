@@ -1,8 +1,8 @@
 """Caching layer with in-memory TTL cache and optional Redis backend."""
 
-import asyncio
+import json
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Coroutine, Dict, Optional
 
 
 class _CacheEntry:
@@ -18,19 +18,10 @@ class _CacheEntry:
 
 
 class InMemoryCache:
-    def __init__(self):
+    def __init__(self) -> None:
         import threading
-
         self._store: Dict[str, _CacheEntry] = {}
         self._lock = threading.RLock()
-        self._async_lock: Optional[asyncio.Lock] = None
-
-    def _get_async_lock(self) -> asyncio.Lock:
-        if self._async_lock is None:
-            import asyncio
-
-            self._async_lock = asyncio.Lock()
-        return self._async_lock
 
     def get(self, key: str) -> Optional[Any]:
         with self._lock:
@@ -95,37 +86,24 @@ class CacheWrapper:
         self.default_ttl = default_ttl
 
     def get_or_set(self, key: str, fn, ttl: Optional[int] = None) -> Any:
-        """Synchronous get-or-set: calls fn() if key is missing.
+        """Synchronous get-or-set: calls fn() if key is missing."""
+        cached = self.cache.get(key)
+        if cached is not None:
+            return cached
 
-        The entire check-then-set is wrapped in the cache's lock to
-        prevent a race condition where multiple threads could both
-        observe a cache miss and redundantly compute fn().
-
-        NOTE: ``fn`` must be a plain synchronous callable.  If you need
-        to call an async function, use ``get_or_set_async`` instead —
-        passing an awaitable here will store the coroutine object rather
-        than its result.
-        """
-        with self.cache._lock:
-            cached = self.cache.get(key)
-            if cached is not None:
-                return cached
-
-            result = fn()
-            self.cache.set(key, result, ttl or self.default_ttl)
-            return result
+        result = fn()
+        self.cache.set(key, result, ttl or self.default_ttl)
+        return result
 
     async def get_or_set_async(self, key: str, fn, ttl: Optional[int] = None) -> Any:
         """Async get-or-set: awaits fn() if key is missing."""
-        lock = self.cache._get_async_lock()
-        async with lock:
-            cached = self.cache.get(key)
-            if cached is not None:
-                return cached
+        cached = self.cache.get(key)
+        if cached is not None:
+            return cached
 
-            result = await fn()
-            self.cache.set(key, result, ttl or self.default_ttl)
-            return result
+        result = await fn()
+        self.cache.set(key, result, ttl or self.default_ttl)
+        return result
 
     def invalidate(self, key: str) -> bool:
         return self.cache.delete(key)

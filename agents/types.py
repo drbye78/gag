@@ -1,9 +1,8 @@
 """Agent types for centralized registry."""
 
 from enum import Enum
-from typing import Any, Dict, List, Optional
-
 from pydantic import BaseModel
+from typing import Optional, Dict, Any, List
 
 
 class AgentType(str, Enum):
@@ -12,6 +11,7 @@ class AgentType(str, Enum):
     REASONING = "reasoning"
     EXECUTOR = "executor"
     ORCHESTRATION = "orchestration"
+    VALIDATOR = "validator"
 
 
 class AgentConfig(BaseModel):

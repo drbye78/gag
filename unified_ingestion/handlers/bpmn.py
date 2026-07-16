@@ -1,17 +1,17 @@
 import hashlib
 import logging
-from typing import Any, Dict
+import xml.etree.ElementTree as ET
+from typing import Any, Dict, List
 
 from documents.diagram_formats import BPMNParser
+
 from unified_ingestion.handlers.base import Handler, HandlerResult
 
 logger = logging.getLogger(__name__)
 
 
 class BPMNHandler(Handler):
-    async def handle(
-        self, content: bytes, source_id: str, metadata: Dict[str, Any]
-    ) -> HandlerResult:
+    async def handle(self, content: bytes, source_id: str, metadata: Dict[str, Any]) -> HandlerResult:
         filename = metadata.get("filename", "diagram.bpmn")
         text = content.decode("utf-8")
 
@@ -29,9 +29,7 @@ class BPMNHandler(Handler):
 
             chunks = []
             for process in result.processes:
-                chunk_id = hashlib.sha256(f"{source_id}:{process.get('id')}".encode()).hexdigest()[
-                    :16
-                ]
+                chunk_id = hashlib.sha256(f"{source_id}:{process.get('id')}".encode()).hexdigest()[:16]
                 chunks.append(
                     {
                         "id": chunk_id,
@@ -101,7 +99,9 @@ class BPMNHandler(Handler):
             logger.error("BPMNHandler XML failed: %s", e)
             return HandlerResult(success=False, error=str(e))
 
-    async def _handle_bpmn_text(self, text: str, source_id: str, filename: str) -> HandlerResult:
+    async def _handle_bpmn_text(
+        self, text: str, source_id: str, filename: str
+    ) -> HandlerResult:
         chunks = []
         chunk_id = hashlib.sha256(f"{source_id}".encode()).hexdigest()[:16]
         chunks.append(

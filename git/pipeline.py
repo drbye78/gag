@@ -5,7 +5,7 @@ Coordinates clone → parse → index pipeline
 with job tracking and per-repo credentials.
 """
 
-import asyncio
+import logging
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -13,8 +13,24 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from git.credentials import GitCredentialManager, get_credential_manager
-from git.parser import CodeEntity, CodeParser, get_code_parser
-from git.repo import GitRepoManager, RepoStatus, get_repo_manager
+from git.repo import GitRepoManager, GitRepo, RepoSource, RepoStatus, get_repo_manager
+from git.parser import CodeParser, CodeEntity, EntityType, get_code_parser
+
+# CodeGraphContext integration (optional)
+try:
+    from retrieval.code_graph import (
+        add_code_to_graph,
+        find_code,
+        calculate_cyclomatic_complexity,
+        find_dead_code,
+        find_most_complex_functions,
+        analyze_code_relationships,
+        switch_context,
+        _is_cgc_available,
+    )
+    _CODEGRAPH_MODULE_AVAILABLE = True
+except ImportError:
+    _CODEGRAPH_MODULE_AVAILABLE = False
 
 
 class GitJobStatus(str, Enum):
@@ -71,7 +87,61 @@ class GitIngestionPipeline:
         self.credential_manager = credential_manager or get_credential_manager()
         self.parser = parser or get_code_parser()
         self.graph_indexer = graph_indexer
-        self._jobs: Dict[str, GitIngestionJob] = {}
+        # Per-instance CodeGraph availability — one failed repo doesn't disable
+        # the feature for subsequent repos (fixes module-global mutation bug)
+        self.codegraph_available = (
+            _CODEGRAPH_MODULE_AVAILABLE
+            and _is_cgc_available()
+        )
+        # Bounded LRU job registry (max 1000 jobs, 1h TTL)
+        from collections import OrderedDict
+        import time as _time
+        import asyncio as _asyncio
+        self._max_jobs = 1000
+        self._job_ttl = 3600.0  # 1 hour
+        self._jobs: OrderedDict[str, GitIngestionJob] = OrderedDict()
+        self._job_timestamps: Dict[str, float] = {}
+        self._jobs_lock = _asyncio.Lock()
+
+    def _evict_expired_jobs(self) -> None:
+        """Remove expired jobs (called under lock)."""
+        import time as _time
+        now = _time.time()
+        expired = [
+            jid for jid, ts in self._job_timestamps.items()
+            if now - ts > self._job_ttl
+        ]
+        for jid in expired:
+            self._jobs.pop(jid, None)
+            self._job_timestamps.pop(jid, None)
+
+    def _put_job(self, job: "GitIngestionJob") -> None:
+        """Store a job with LRU eviction."""
+        import time as _time
+        # Evict expired first
+        self._evict_expired_jobs()
+        # Evict oldest if at capacity
+        while len(self._jobs) >= self._max_jobs:
+            oldest_key = next(iter(self._jobs))
+            self._jobs.pop(oldest_key, None)
+            self._job_timestamps.pop(oldest_key, None)
+        self._put_job(job)
+        self._job_timestamps[job.job_id] = _time.time()
+
+    def _get_job(self, job_id: str) -> "Optional[GitIngestionJob]":
+        """Retrieve a job, evicting if expired."""
+        import time as _time
+        job = self._jobs.get(job_id)
+        if job is None:
+            return None
+        ts = self._job_timestamps.get(job_id, 0)
+        if _time.time() - ts > self._job_ttl:
+            self._jobs.pop(job_id, None)
+            self._job_timestamps.pop(job_id, None)
+            return None
+        # Move to end (most recently used)
+        self._jobs.move_to_end(job_id)
+        return job
 
     async def ingest_repository(
         self,
@@ -86,7 +156,7 @@ class GitIngestionPipeline:
             repo_url=repo_url,
             branch=branch,
         )
-        self._jobs[job.job_id] = job
+        self._put_job(job)
 
         try:
             job.status = GitJobStatus.CLONING
@@ -100,27 +170,70 @@ class GitIngestionPipeline:
                 return job
 
             job.status = GitJobStatus.PARSING
+            repo_local_path = repo.local_path
 
-            files = await self.repo_manager.list_files(repo.repo_id, extensions=extensions)
-            job.total_files = len(files)
+            # Use CodeGraphContext if available
+            if self.codegraph_available and parse_code and repo_local_path:
+                try:
+                    # Index entire repository with CodeGraphContext
+                    index_result = await add_code_to_graph(path=repo_local_path, is_dependency=False)
+                    
+                    if index_result.get("success"):
+                        job.metadata["codegraph_indexed"] = True
+                        job.metadata["job_id"] = index_result.get("job_id", "")
+                        
+                        # Query entities from indexed code graph
+                        funcs = await find_code(query="function", repo_path=repo_local_path)
+                        classes = await find_code(query="class", repo_path=repo_local_path)
+                        
+                        # Build entities from CodeGraphContext results
+                        all_entities = []
+                        for item in funcs.get("results", []) + classes.get("results", []):
+                            all_entities.append(CodeEntity(
+                                entity_id=item.get("id", ""),
+                                name=item.get("name", ""),
+                                entity_type=EntityType.FUNCTION if "def " in str(item) else EntityType.CLASS,
+                                file_path=item.get("path", ""),
+                                start_line=item.get("start_line", 0),
+                                end_line=item.get("end_line", 0),
+                                content="",
+                                language=item.get("language", ""),
+                            ))
+                        
+                        job.total_entities = len(all_entities)
+                        job.entities = all_entities
+                        job.indexed_count = len(all_entities)
+                    else:
+                        job.metadata["codegraph_fallback"] = True
+                        raise RuntimeError("CodeGraphContext indexing failed")
+                except Exception:
+                    logger.warning("CodeGraphContext unavailable for this repo, using regex parser")
+                    # Only disable for THIS repo, not globally
+                    self.codegraph_available = False
 
-            files = files[:500]
+            # Fall back to regex parser if CodeGraphContext not available
+            if not self.codegraph_available or not parse_code:
+                files = await self.repo_manager.list_files(
+                    repo.repo_id, extensions=extensions
+                )
+                job.total_files = len(files)
+                files = files[:500]
 
-            all_entities = []
+                all_entities = []
 
-            for file_path in files:
-                file = await self.repo_manager.read_file(repo.repo_id, file_path)
-                if not file:
-                    continue
+                for file_path in files:
+                    file = await self.repo_manager.read_file(repo.repo_id, file_path)
+                    if not file:
+                        continue
 
-                if parse_code:
-                    parsed = self.parser.parse(file.content, file_path)
-                    all_entities.extend(parsed.entities)
+                    if parse_code:
+                        parsed = self.parser.parse(file.content, file_path)
+                        all_entities.extend(parsed.entities)
 
-                    entities_to_index = [
-                        {
-                            "id": e.entity_id,
-                            "node_type": e.entity_type.value,
+                        entities_to_index = [
+                            {
+                                "id": e.entity_id,
+                                "node_type": e.entity_type.value,
                             "properties": {
                                 "name": e.name,
                                 "file_path": e.file_path,
@@ -192,17 +305,18 @@ class GitIngestionPipeline:
             "Accept": "application/vnd.github.v3+json",
         }
 
-        async with httpx.AsyncClient() as client:
-            if repos is None:
-                resp = await client.get(
-                    f"https://api.github.com/orgs/{org_name}/repos",
-                    headers=headers,
-                    params={"per_page": 100},
-                    timeout=30.0,
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                repos = [r["full_name"] for r in data]
+        from core.pool import get_http_pool
+        pool = get_http_pool()
+        if repos is None:
+            resp = await pool.get(
+                f"https://api.github.com/orgs/{org_name}/repos",
+                headers=headers,
+                params={"per_page": 100},
+                timeout=30.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            repos = [r["full_name"] for r in data]
 
             tasks = [
                 self.ingest_repository(
@@ -219,6 +333,7 @@ class GitIngestionPipeline:
         self,
         repo_id: str,
     ) -> GitIngestionJob:
+        import asyncio
 
         repo = self.repo_manager.get_repo(repo_id)
         if not repo:
@@ -230,7 +345,7 @@ class GitIngestionPipeline:
             branch=repo.branch,
             repo_id=repo_id,
         )
-        self._jobs[job.job_id] = job
+        self._put_job(job)
 
         try:
             await self.repo_manager.pull(repo_id)
@@ -259,7 +374,7 @@ class GitIngestionPipeline:
         return job
 
     def get_job(self, job_id: str) -> Optional[GitIngestionJob]:
-        return self._jobs.get(job_id)
+        return self._get_job(job_id)
 
     def list_jobs(self, limit: int = 50) -> List[Dict[str, Any]]:
         jobs = list(self._jobs.values())[-limit:]
@@ -281,7 +396,7 @@ class GitIngestionPipeline:
         ]
 
     def cancel_job(self, job_id: str) -> bool:
-        job = self._jobs.get(job_id)
+        job = self._get_job(job_id)
         if job and job.status in (
             GitJobStatus.PENDING,
             GitJobStatus.CLONING,

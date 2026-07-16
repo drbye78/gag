@@ -10,7 +10,7 @@ Returns service information and available endpoints.
 ```json
 {
   "service": "Engineering Intelligence System",
-  "version": "4.2.0",
+  "version": "4.0.0",
   "endpoints": ["/health", "/query", "/mcp", "/search/*", "/codegraph/*", ...]
 }
 ```
@@ -21,7 +21,7 @@ Health check with dependency status.
 ```json
 {
   "status": "healthy",
-  "version": "4.2.0"
+  "version": "4.0.0"
 }
 ```
 
@@ -603,7 +603,7 @@ Search Istio configurations.
 
 ## CodeGraph
 
-Code analysis via CodeGraphContext MCP - find code relationships, complexity, and visualize call graphs.
+Code analysis via CodeGraphContext CLI - find code relationships, complexity, and visualize call graphs.
 
 ### `POST /codegraph/find`
 Find code snippets matching a query.

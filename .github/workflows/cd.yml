@@ -54,13 +54,17 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Deploy to Dev
-        uses: azure/k8s-set-context@v1
+        uses: azure/k8s-set-context@v4
         with:
           kubeconfig: ${{ secrets.KUBECONFIG_DEV }}
 
+      - name: Get image tag
+        id: tag
+        run: echo "image=$(echo '${{ needs.build.outputs.image-tag }}' | head -1)" >> $GITHUB_OUTPUT
+
       - name: Deploy kustomize
         run: |
-          kubectl set image deployment/eis-api api=${{ needs.build.outputs.image-tag }} -n eis-dev
+          kubectl set image deployment/eis-api api=${{ steps.tag.outputs.image }} -n eis-dev
           kubectl rollout status deployment/eis-api -n eis-dev
 
   deploy-prod:
@@ -72,21 +76,25 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Deploy to Production
-        uses: azure/k8s-set-context@v1
+        uses: azure/k8s-set-context@v4
         with:
           kubeconfig: ${{ secrets.KUBECONFIG_PROD }}
 
+      - name: Get image tag
+        id: tag
+        run: echo "image=$(echo '${{ needs.build.outputs.image-tag }}' | head -1)" >> $GITHUB_OUTPUT
+
       - name: Deploy kustomize
         run: |
-          kubectl set image deployment/eis-api api=${{ needs.build.outputs.image-tag }} -n eis-prod
+          kubectl set image deployment/eis-api api=${{ steps.tag.outputs.image }} -n eis-prod
           kubectl rollout status deployment/eis-api -n eis-prod
 
       - name: Create GitHub Release
-        uses: actions/create-release@v1
+        uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ github.ref }}
-          release_name: Release ${{ github.ref }}
+          name: Release ${{ github.ref }}
           draft: false
           prerelease: ${{ contains(github.ref, 'beta') }}

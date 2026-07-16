@@ -4,12 +4,11 @@ Late Interaction Retriever - ColPali-based visual retrieval.
 Uses ColPali's late interaction mechanism for visual-first document retrieval.
 """
 
-import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from documents.colpali import ColPaliModel, get_colpali_client
+from documents.colpali import get_colpali_client, ColPaliModel, ColPaliSearchResult
 
 
 @dataclass
@@ -31,15 +30,6 @@ class LateInteractionRetriever:
         self.index_name = index_name
         self._client = get_colpali_client(model)
         self._indexed_docs: List[Dict[str, Any]] = []
-        self._load_lock = threading.Lock()
-
-    def _ensure_client(self):
-        """Thread-safe lazy initialization of the ColPali client."""
-        if self._client is None:
-            with self._load_lock:
-                if self._client is None:
-                    self._client = get_colpali_client(self.model)
-        return self._client
 
     @property
     def available(self) -> bool:
@@ -51,8 +41,7 @@ class LateInteractionRetriever:
         doc_id: str,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        client = self._ensure_client()
-        result = await client.index_document(content, doc_id)
+        result = await self._client.index_document(content, doc_id)
         result["metadata"] = metadata or {}
         self._indexed_docs.append(result)
         return result
@@ -83,8 +72,7 @@ class LateInteractionRetriever:
                 error="No documents indexed",
             )
 
-        client = self._ensure_client()
-        result = await client.search(query, self._indexed_docs, top_k=limit)
+        result = await self._client.search(query, self._indexed_docs, top_k=limit)
 
         return LateInteractionResult(
             query=result.query,

@@ -1,8 +1,7 @@
-from datetime import datetime, timezone
-from enum import Enum
-from typing import Dict, List, Optional
-
 from pydantic import BaseModel, Field
+from typing import List, Dict, Any, Optional
+from enum import Enum
+from datetime import datetime
 
 
 class ADRStatus(str, Enum):
@@ -32,36 +31,51 @@ class ADR(BaseModel):
     superseded_by: Optional[str] = Field(None)
     notes: List[str] = Field(default_factory=list)
     owner: Optional[str] = Field(None)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class ADRRepository:
     def __init__(self):
         self._adrs: Dict[str, ADR] = {}
-
+    
     def add(self, adr: ADR) -> None:
         self._adrs[adr.id] = adr
-
+    
     def get(self, adr_id: str) -> Optional[ADR]:
         return self._adrs.get(adr_id)
-
+    
     def find_by_status(self, status: ADRStatus) -> List[ADR]:
         return [a for a in self._adrs.values() if a.status == status]
-
+    
     def find_by_platform(self, platform: str) -> List[ADR]:
-        return [a for a in self._adrs.values() if platform in a.related_platforms]
+        normalized = self._normalize_platform(platform)
+        return [
+            a for a in self._adrs.values()
+            if any(self._normalize_platform(p) == normalized for p in a.related_platforms)
+        ]
 
+    @staticmethod
+    def _normalize_platform(p: str) -> str:
+        n = p.replace("_", "").lower()
+        if n == "sapbtp":
+            n = "sap"
+        return n
+    
     def find_by_pattern(self, pattern: str) -> List[ADR]:
         return [a for a in self._adrs.values() if pattern in a.related_patterns]
-
+    
     def list_all(self) -> List[ADR]:
         return list(self._adrs.values())
+
+    # Alias for test/API compatibility
+    def get_all(self) -> List[ADR]:
+        return self.list_all()
 
 
 def _create_default_adrs() -> ADRRepository:
     repo = ADRRepository()
-
+    
     adrs = [
         ADR(
             id="adr-001",
@@ -114,10 +128,10 @@ def _create_default_adrs() -> ADRRepository:
             related_platforms=["aws", "azure", "gcp", "tanzu"],
         ),
     ]
-
+    
     for adr in adrs:
         repo.add(adr)
-
+    
     return repo
 
 
@@ -129,3 +143,8 @@ def get_adr_repository() -> ADRRepository:
     if _adr_repo is None:
         _adr_repo = _create_default_adrs()
     return _adr_repo
+
+
+# Alias for test/API compatibility
+def get_adr_library() -> ADRRepository:
+    return get_adr_repository()

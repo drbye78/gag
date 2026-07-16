@@ -9,16 +9,17 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from core.config import get_settings
-from core.errors import IngestionError
-from ingestion.chunker import CodeChunker, DocumentChunker
+from ingestion.chunker import ChunkResult, DocumentChunker, CodeChunker
 from ingestion.codegraph_indexer import (
-    CodeGraphFallbackIndexer,
     CodeGraphIndexer,
+    CodeGraphFallbackIndexer,
+    CodeGraphIndexResult,
     get_codegraph_indexer,
 )
 from ingestion.embedder import EmbeddingPipeline, get_embedding_pipeline
-from ingestion.indexer import GraphIndexer, VectorIndexer
+from ingestion.indexer import VectorIndexer, GraphIndexer, IndexerResult
+from core.config import get_settings
+from core.errors import IngestionError
 
 logger = logging.getLogger(__name__)
 
@@ -113,9 +114,9 @@ class JobRegistry:
         async with self._lock:
             cutoff = time.time() - older_than_seconds
             to_remove = [
-                jid
-                for jid, job in self._jobs.items()
-                if job.status in (JobStatus.COMPLETED, JobStatus.FAILED) and job.updated_at < cutoff
+                jid for jid, job in self._jobs.items()
+                if job.status in (JobStatus.COMPLETED, JobStatus.FAILED)
+                and job.updated_at < cutoff
             ]
             for jid in to_remove:
                 del self._jobs[jid]
@@ -134,18 +135,6 @@ class JobRegistry:
 
 
 class IngestionPipeline:
-    # Allowed source types for validation
-    VALID_SOURCE_TYPES = {
-        "document",
-        "code",
-        "codebase",
-        "ticket",
-        "telemetry",
-        "knowledge",
-        "diagram",
-        "requirement",
-    }
-
     def __init__(
         self,
         chunker: Optional[DocumentChunker] = None,
@@ -174,7 +163,6 @@ class IngestionPipeline:
     def graphrag_pipeline(self) -> Optional[Any]:
         if self._graphrag_pipeline is None and self.use_graphrag:
             from ingestion.graphrag import get_graphrag_pipeline
-
             settings = get_settings()
             self._graphrag_pipeline = get_graphrag_pipeline(
                 use_llm_extraction=settings.graphrag_use_llm_extraction,
@@ -192,18 +180,10 @@ class IngestionPipeline:
         index: bool = True,
         use_graphrag: Optional[bool] = None,
     ) -> IngestionJob:
-        if source_type not in self.VALID_SOURCE_TYPES:
-            raise ValueError(
-                f"Invalid source_type '{source_type}'. "
-                f"Must be one of: {sorted(self.VALID_SOURCE_TYPES)}"
-            )
-
         use_gr = use_graphrag if use_graphrag is not None else self.use_graphrag
 
         if use_gr and self.graphrag_pipeline:
-            return await self._ingest_with_graphrag(
-                content, source_id, source_type, metadata, index
-            )
+            return await self._ingest_with_graphrag(content, source_id, source_type, metadata, index)
 
         return await self._ingest_standard(content, source_id, source_type, metadata, index)
 
@@ -258,12 +238,8 @@ class IngestionPipeline:
 
             job.status = JobStatus.COMPLETED
             job.updated_at = time.time()
-            logger.info(
-                "Ingestion job %s completed: %d chunks, %d indexed",
-                job.job_id,
-                job.total_chunks,
-                job.indexed_count,
-            )
+            logger.info("Ingestion job %s completed: %d chunks, %d indexed",
+                       job.job_id, job.total_chunks, job.indexed_count)
 
         except Exception as e:
             logger.exception("Ingestion job %s failed: %s", job.job_id, e)
@@ -283,9 +259,7 @@ class IngestionPipeline:
     ) -> IngestionJob:
         gr_pipeline = self.graphrag_pipeline
         if gr_pipeline is None:
-            raise IngestionError(
-                "GraphRAG pipeline not initialized", details={"use_graphrag": self.use_graphrag}
-            )
+            raise IngestionError("GraphRAG pipeline not initialized", details={"use_graphrag": self.use_graphrag})
 
         job = IngestionJob(
             job_id=str(uuid.uuid4()),
@@ -299,7 +273,9 @@ class IngestionPipeline:
         try:
             job.status = JobStatus.CHUNKING
 
-            graphrag_result = await gr_pipeline.process_document(content, source_id, source_type)
+            graphrag_result = await gr_pipeline.process_document(
+                content, source_id, source_type
+            )
 
             chunks = [
                 {
@@ -311,16 +287,8 @@ class IngestionPipeline:
                     "metadata": {
                         **c.metadata,
                         **job.metadata,
-                        "entities": [
-                            e.id
-                            for e in graphrag_result.entities
-                            if e.name.lower() in c.content.lower()
-                        ][:10],
-                        "entity_names": [
-                            e.name
-                            for e in graphrag_result.entities
-                            if e.name.lower() in c.content.lower()
-                        ][:10],
+                        "entities": [e.id for e in graphrag_result.entities if __import__('re').search(r'\b' + __import__('re').escape(e.name.lower()) + r'\b', c.content.lower()) is not None][:10],
+                        "entity_names": [e.name for e in graphrag_result.entities if __import__('re').search(r'\b' + __import__('re').escape(e.name.lower()) + r'\b', c.content.lower()) is not None][:10],
                         "community_ids": [c.id for c in graphrag_result.communities],
                     },
                 }
@@ -344,12 +312,8 @@ class IngestionPipeline:
 
             job.status = JobStatus.COMPLETED
             job.updated_at = time.time()
-            logger.info(
-                "GraphRAG ingestion job %s completed: %d chunks, %d entities",
-                job.job_id,
-                job.total_chunks,
-                len(graphrag_result.entities),
-            )
+            logger.info("GraphRAG ingestion job %s completed: %d chunks, %d entities",
+                       job.job_id, job.total_chunks, len(graphrag_result.entities))
 
         except Exception as e:
             logger.exception("GraphRAG ingestion job %s failed: %s", job.job_id, e)
@@ -366,56 +330,32 @@ class IngestionPipeline:
     ) -> List[IngestionJob]:
         if parallel:
             tasks = [
-                self.ingest_document(doc["content"], doc["id"], doc.get("type", "document"))
+                self.ingest_document(
+                    doc["content"], doc["id"], doc.get("type", "document")
+                )
                 for doc in documents
             ]
             results = await asyncio.gather(*tasks, return_exceptions=True)
-            jobs: List[IngestionJob] = []
-            for i, result in enumerate(results):
-                if isinstance(result, IngestionJob):
-                    jobs.append(result)
-                elif isinstance(result, BaseException):
-                    doc_id = documents[i].get("id", f"index_{i}")
-                    logger.error(
-                        "ingest_batch: document %s failed with exception: %s",
-                        doc_id,
-                        result,
-                    )
-                    failed_job = IngestionJob(
-                        job_id=str(uuid.uuid4()),
-                        source_type=documents[i].get("type", "document"),
-                        source_id=doc_id,
-                        content=documents[i].get("content", ""),
-                        status=JobStatus.FAILED,
-                        error=f"{type(result).__name__}: {result}",
-                    )
-                    jobs.append(failed_job)
+            jobs = []
+            failed = []
+            for i, r in enumerate(results):
+                if isinstance(r, IngestionJob):
+                    jobs.append(r)
                 else:
-                    logger.warning(
-                        "ingest_batch: unexpected result type for document %s: %s",
-                        documents[i].get("id", f"index_{i}"),
-                        type(result),
-                    )
-            return jobs
+                    doc_id = documents[i].get("id", f"doc_{i}")
+                    error_msg = str(r) if isinstance(r, Exception) else "Unknown error"
+                    logger.error("Batch ingestion failed for doc %s: %s", doc_id, error_msg)
+                    failed.append({"doc_id": doc_id, "error": error_msg})
+            if failed:
+                logger.warning("Batch ingestion: %d/%d documents failed", len(failed), len(documents))
+            return jobs  # Note: caller should check len(jobs) vs len(documents)
         else:
             jobs = []
             for doc in documents:
-                try:
-                    job = await self.ingest_document(
-                        doc["content"], doc["id"], doc.get("type", "document")
-                    )
-                    jobs.append(job)
-                except Exception as e:
-                    logger.error("ingest_batch: document %s failed: %s", doc.get("id"), e)
-                    failed_job = IngestionJob(
-                        job_id=str(uuid.uuid4()),
-                        source_type=doc.get("type", "document"),
-                        source_id=doc.get("id", ""),
-                        content=doc.get("content", ""),
-                        status=JobStatus.FAILED,
-                        error=f"{type(e).__name__}: {e}",
-                    )
-                    jobs.append(failed_job)
+                job = await self.ingest_document(
+                    doc["content"], doc["id"], doc.get("type", "document")
+                )
+                jobs.append(job)
             return jobs
 
     async def ingest_codebase(
@@ -524,11 +464,7 @@ class IngestionPipeline:
             job.updated_at = time.time()
             logger.info(
                 "CodeGraph ingestion job %s completed: %d files, %d chunks, %d entities, %d relationships",
-                job.job_id,
-                len(files),
-                job.total_chunks,
-                len(all_entities),
-                len(all_relationships),
+                job.job_id, len(files), job.total_chunks, len(all_entities), len(all_relationships)
             )
 
         except Exception as e:
@@ -607,12 +543,8 @@ class IngestionPipeline:
                 job.status = JobStatus.COMPLETED
 
             job.updated_at = time.time()
-            logger.info(
-                "Codebase ingestion job %s completed: %d files, %d chunks",
-                job.job_id,
-                len(files),
-                job.total_chunks,
-            )
+            logger.info("Codebase ingestion job %s completed: %d files, %d chunks",
+                       job.job_id, len(files), job.total_chunks)
 
         except Exception as e:
             logger.exception("Codebase ingestion job %s failed: %s", job.job_id, e)

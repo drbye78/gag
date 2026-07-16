@@ -4,14 +4,14 @@
 
 ```bash
 # CLI (preferred - no 'uv run' needed)
-./eis api                    # Start API server
-./eis test                   # Run all tests
-./eis test --file test_core.py # Run specific test
-./eis test --unit           # Run unit tests only
-./eis test --keyword Health  # Tests matching keyword
-./eis shell                 # Python shell
-./eis install               # Install deps
-./eis check                # Lint + typecheck
+./eis.py api                    # Start API server
+./eis.py test                   # Run all tests
+./eis.py test --file test_core.py # Run specific test
+./eis.py test --unit           # Run unit tests only
+./eis.py test --keyword Health  # Tests matching keyword
+./eis.py shell                 # Python shell
+./eis.py install               # Install deps
+./eis.py check                # Lint + typecheck
 
 # Manual (using uv)
 uv run pytest tests/ -v
@@ -41,6 +41,7 @@ uv sync          # or: pip install -e ".[all]"
 │   ├── knowledge/   # Graph, ontology, taxonomy, constraints, usecases, ADRs
 │   ├── patterns/    # Platform patterns (12+)
 │   └── constraints/  # Platform constraints
+├── unified_ingestion/ # Unified artifact ingestion (24 handlers, 33 artifact types)
 ├── retrieval/        # Hybrid retriever (11 sources), reranking, citations
 ├── documents/       # Document parsing, chunking
 ├── ingestion/       # Ingestion pipelines
@@ -52,7 +53,7 @@ uv sync          # or: pip install -e ".[all]"
 ├── ui/              # UI sketch retrieval
 ├── evaluation/      # Evaluation framework
 ├── git/             # Git repository ingestion
-├── tests/          # 382+ tests (690 test functions across 47 files)
+├── tests/          # 560 tests
 └── docs/           # API, Architecture, Configuration
 ```
 
@@ -105,10 +106,11 @@ docker-compose up -d  # Full stack: API + Qdrant + FalkorDB + Redis
 
 ## CodeGraphContext (retrieval/code_graph.py)
 
-- MCP-first: tries `CodeGraphContext_*` imports
-- CLI fallback: uses `cgc` CLI when MCP unavailable
-- Output parsing: stderr contains table output
+- CLI-only: uses `cgc` CLI subprocess calls
+- No MCP imports - direct CLI invocation via subprocess.run()
+- Output parsing: JSON or table format from stdout/stderr
 - Index: `cgc index .` to index codebase
+- Availability check: `_is_cgc_available()` lazy initialization
 
 ## Documentation
 

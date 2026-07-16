@@ -8,50 +8,26 @@ from typing import Any, Dict, List, Optional
 import httpx
 from pydantic import BaseModel, Field, model_validator
 
+
 # ── Constants ──────────────────────────────────────────────────────────────
 
 VALID_SOURCE_TYPES = {"sketch", "screenshot", "wireframe", "diagram"}
 
 VALID_ELEMENT_TYPES = {
-    "table",
-    "form",
-    "button",
-    "input",
-    "select",
-    "chart",
-    "navigation",
-    "tab",
-    "card",
-    "dropdown",
-    "checkbox",
-    "radio",
-    "textarea",
-    "link",
-    "image",
-    "icon",
-    "divider",
-    "toolbar",
-    "sidebar",
-    "header",
-    "footer",
-    "modal",
-    "toast",
-    "breadcrumb",
-    "pagination",
-    "filter",
+    "table", "form", "button", "input", "select", "chart", "navigation",
+    "tab", "card", "dropdown", "checkbox", "radio", "textarea", "link",
+    "image", "icon", "divider", "toolbar", "sidebar", "header", "footer",
+    "modal", "toast", "breadcrumb", "pagination", "filter",
 }
 
 
 # ── Pydantic Schema Models ────────────────────────────────────────────────
 
-
 class UIElementSchema(BaseModel):
     id: str = Field(..., description="Unique element identifier")
     type: str = Field(..., description="Element type (e.g., table, button, form)")
     label: Optional[str] = Field(None, description="Display label")
-    position: Dict[str, Any] = Field(
-        default_factory=dict, description="Bounding box {x, y, width, height}"
-    )
+    position: Dict[str, Any] = Field(default_factory=dict, description="Bounding box {x, y, width, height}")
     attributes: Dict[str, Any] = Field(default_factory=dict, description="Additional attributes")
     interactions: List[str] = Field(default_factory=list, description="Supported interactions")
     confidence: float = Field(0.0, ge=0.0, le=1.0, description="Confidence score 0-1")
@@ -64,9 +40,7 @@ class UserActionSchema(BaseModel):
 
 class LayoutRegionSchema(BaseModel):
     name: str = Field(..., description="Region name (e.g., 'sidebar', 'content')")
-    elements: List[UIElementSchema] = Field(
-        default_factory=list, description="Elements in this region"
-    )
+    elements: List[UIElementSchema] = Field(default_factory=list, description="Elements in this region")
 
 
 class LayoutSchema(BaseModel):
@@ -75,14 +49,10 @@ class LayoutSchema(BaseModel):
 
 
 class UIExtractionSchema(BaseModel):
-    source_type: str = Field(
-        ..., description="Must be one of: sketch, screenshot, wireframe, diagram"
-    )
+    source_type: str = Field(..., description="Must be one of: sketch, screenshot, wireframe, diagram")
     page_type: Optional[str] = Field(None, description="Page classification")
     layout: LayoutSchema = Field(..., description="Structural layout")
-    elements: List[UIElementSchema] = Field(
-        default_factory=list, description="Extracted UI elements"
-    )
+    elements: List[UIElementSchema] = Field(default_factory=list, description="Extracted UI elements")
     user_actions: List[UserActionSchema] = Field(default_factory=list, description="User actions")
 
     @model_validator(mode="after")
@@ -93,7 +63,6 @@ class UIExtractionSchema(BaseModel):
 
 
 # ── VLMUIExtractor Class ──────────────────────────────────────────────────
-
 
 class VLMUIExtractor:
     """Extracts structured UI data from images using a VLM (GPT-4o)."""
@@ -201,7 +170,6 @@ class VLMUIExtractor:
                     return result
             except Exception as e:
                 import logging
-
                 logging.getLogger(__name__).warning("VLM extraction failed: %s", e, exc_info=True)
                 raise
 

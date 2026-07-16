@@ -7,9 +7,9 @@ Provides:
 - Async test helpers
 
 Testing Pyramid Structure:
-    /\\       E2E (few) - full integration
-   /  \\      Integration (some) - real DB, mocked external APIs
-  /----\\     Unit (many) - all mocked
+    /\       E2E (few) - full integration
+   /  \      Integration (some) - real DB, mocked external APIs
+  /----\     Unit (many) - all mocked
  /      \
 /--------\
 
@@ -18,20 +18,10 @@ Use markers:
 - @pytest.mark.integration - Tests needing real DB
 - @pytest.mark.e2e - Full end-to-end tests (marked slow)
 - @pytest.mark.slow - Tests that take >5s
-
-NOTE: The current test suite is primarily composed of shallow smoke tests,
-with many integration and edge-case tests skipped. Deeper integration tests
-are needed for:
-- End-to-end ingestion → retrieval → reasoning pipeline
-- Multi-RAG retrieval with real vector/graph databases
-- Concurrent request handling under load
-- Error recovery and retry logic
-- MCP protocol compliance and session management
 """
 
 # MUST be set BEFORE any imports that trigger Settings() initialization
 import os
-
 os.environ.setdefault("DEBUG", "true")
 os.environ.setdefault("LOG_LEVEL", "DEBUG")
 os.environ.setdefault("JWT_SECRET", "test-secret-key-for-testing-ignore-security-warning")
@@ -51,11 +41,13 @@ os.environ.setdefault("EMBEDDING_PROVIDER", "ollama")
 
 import asyncio
 import os
+import sys
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
 
 os.environ.setdefault("DEBUG", "true")
 os.environ.setdefault("LOG_LEVEL", "DEBUG")
@@ -71,11 +63,15 @@ class MockChunk:
 
 @dataclass
 class MockEmbeddingResult:
-    embeddings: list[list[float]]
+    embeddings: List[List[float]]  # type: ignore[syntax]
     model: str = "test-embedding"
 
 
-TestConfig: Any = None
+# type: ignore[attr-defined]
+TestConfig = None
+
+
+import pytest  # type: ignore[no-redef]
 
 
 @dataclass
@@ -345,72 +341,9 @@ def stub_jwt_secret():
 @pytest.fixture
 def api_client():
     from httpx import AsyncClient
-
     from api.main import app
 
     return AsyncClient(app=app, base_url="http://test")
-
-
-# ---------------------------------------------------------------------------
-# Fixture cleanup for global singletons
-# ---------------------------------------------------------------------------
-# Many fixtures below reference module-level singletons (e.g., _handler in
-# api.mcp, _registry in tools.base, _default_builder in multimodal.ir_builder).
-# These yield fixtures ensure those singletons are reset after each test,
-# preventing state leakage between test cases.
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def clean_tool_registry():
-    """Yield the tool registry, then reset the global singleton after the test."""
-    from tools.base import get_tool_registry
-
-    registry = get_tool_registry()
-    yield registry
-    # Reset global singleton after test
-    import tools.base as _tb
-
-    _tb._registry = None
-
-
-@pytest.fixture
-def clean_mcp_handler():
-    """Yield the MCP handler, then reset the global singleton after the test."""
-    from api.mcp import get_mcp_handler
-
-    handler = get_mcp_handler()
-    yield handler
-    # Reset global singleton after test
-    import api.mcp as _mcp
-
-    _mcp._handler = None
-
-
-@pytest.fixture
-def clean_ir_builder():
-    """Yield the IR builder, then reset the global singleton after the test."""
-    from multimodal.ir_builder import get_ir_builder
-
-    builder = get_ir_builder()
-    yield builder
-    # Reset global singleton after test
-    import multimodal.ir_builder as _irb
-
-    _irb._default_builder = None
-
-
-@pytest.fixture
-def clean_diagram_ir_builder():
-    """Yield the DiagramIR builder, then reset the global singleton after the test."""
-    from multimodal.diagram_ir import get_diagram_ir_builder
-
-    builder = get_diagram_ir_builder()
-    yield builder
-    # Reset global singleton after test
-    import multimodal.diagram_ir as _dir
-
-    _dir._diagram_ir_builder = None
 
 
 @pytest.fixture

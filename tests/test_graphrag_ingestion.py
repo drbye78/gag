@@ -1,6 +1,6 @@
 import pytest
-
-from ingestion.pipeline import IngestionPipeline
+from unittest.mock import AsyncMock, MagicMock, patch
+from ingestion.pipeline import IngestionPipeline, JobStatus
 
 
 class MockChunk:
@@ -32,7 +32,7 @@ class MockIndexerResult:
 @pytest.mark.asyncio
 async def test_ingest_standard_without_graphrag():
     from ingestion.graphrag.pipeline import GraphRAGPipeline
-
+    
     try:
         pipeline = GraphRAGPipeline()
         # Test that pipeline can be instantiated
@@ -45,20 +45,20 @@ async def test_ingest_standard_without_graphrag():
 async def test_ingest_document_accepts_use_graphrag_param():
     pipeline = IngestionPipeline(use_graphrag=False)
 
-    assert hasattr(pipeline, "ingest_document")
+    assert hasattr(pipeline, 'ingest_document')
 
 
 @pytest.mark.asyncio
 async def test_ingest_with_metadata():
     pipeline = IngestionPipeline(use_graphrag=False)
 
-    assert hasattr(pipeline, "ingest_document")
+    assert hasattr(pipeline, 'ingest_document')
 
 
 @pytest.mark.asyncio
 async def test_ingest_code_type_uses_code_chunker():
     from ingestion.chunker import CodeChunker
-
+    
     chunker = CodeChunker()
     # Test that code chunker works
     assert chunker is not None
@@ -66,38 +66,38 @@ async def test_ingest_code_type_uses_code_chunker():
 
 def test_get_ingestion_pipeline_with_graphrag_flag():
     from core.config import get_settings
-
+    
     settings = get_settings()
     original = settings.graphrag_enabled
-
+    
     pipeline = IngestionPipeline(use_graphrag=True)
-    assert pipeline.use_graphrag
+    assert pipeline.use_graphrag == True
 
     pipeline2 = IngestionPipeline(use_graphrag=False)
-    assert not pipeline2.use_graphrag
+    assert pipeline2.use_graphrag == False
 
 
 def test_pipeline_has_graphrag_pipeline_property():
     pipeline = IngestionPipeline(use_graphrag=False)
-    assert hasattr(pipeline, "graphrag_pipeline")
+    assert hasattr(pipeline, 'graphrag_pipeline')
 
 
 def test_pipeline_list_jobs():
     pipeline = IngestionPipeline(use_graphrag=False)
 
-    assert hasattr(pipeline, "list_jobs")
+    assert hasattr(pipeline, 'list_jobs')
     assert callable(pipeline.list_jobs)
 
 
 def test_pipeline_get_job():
     pipeline = IngestionPipeline(use_graphrag=False)
 
-    assert hasattr(pipeline, "get_job")
+    assert hasattr(pipeline, 'get_job')
     assert callable(pipeline.get_job)
 
 
 def test_pipeline_cancel_job():
     pipeline = IngestionPipeline(use_graphrag=False)
 
-    assert hasattr(pipeline, "cancel_job")
+    assert hasattr(pipeline, 'cancel_job')
     assert callable(pipeline.cancel_job)

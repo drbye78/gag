@@ -6,14 +6,15 @@ endpoints with credential management.
 """
 
 from typing import Any, Dict, List, Optional
-
-from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from fastapi import APIRouter, HTTPException, Depends
+
 from core.auth import require_authenticated
-from git.credentials import CredentialType, get_credential_manager
-from git.pipeline import get_git_pipeline
+
+from git.pipeline import GitIngestionPipeline, get_git_pipeline, GitJobStatus
 from git.repo import get_repo_manager
+from git.credentials import get_credential_manager, CredentialType
 
 
 class CloneRequest(BaseModel):

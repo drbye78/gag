@@ -42,7 +42,9 @@ class PrometheusClient:
             username = os.getenv("PROMETHEUS_USER", "")
             password = os.getenv("PROMETHEUS_PASSWORD", "")
             if username:
-                self._client = httpx.AsyncClient(auth=(username, password), timeout=30.0)
+                self._client = httpx.AsyncClient(
+                    auth=(username, password), timeout=30.0
+                )
             else:
                 self._client = httpx.AsyncClient(timeout=30.0)
         return self._client
@@ -215,7 +217,9 @@ class ElasticsearchClient:
 
         return {
             bucket.get("key", ""): bucket.get("doc_count", 0)
-            for bucket in data.get("aggregations", {}).get("levels", {}).get("buckets", [])
+            for bucket in data.get("aggregations", {})
+            .get("levels", {})
+            .get("buckets", [])
         }
 
 

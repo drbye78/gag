@@ -1,4 +1,3 @@
-import logging
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -6,17 +5,15 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from ingestion.telemetry.client import (
-    ElasticsearchClient,
-    LogEntry,
-    LokiClient,
-    MetricPoint,
     PrometheusClient,
+    ElasticsearchClient,
+    LokiClient,
+    LogEntry,
+    MetricPoint,
+    get_prometheus_client,
     get_elasticsearch_client,
     get_loki_client,
-    get_prometheus_client,
 )
-
-logger = logging.getLogger(__name__)
 
 
 class TelemetryJobStatus(str, Enum):
@@ -129,7 +126,9 @@ class TelemetryIngestionPipeline:
 
         try:
             job.status = TelemetryJobStatus.FETCHING
-            logs = await self.elasticsearch_client.search(query, level, service, max_results)
+            logs = await self.elasticsearch_client.search(
+                query, level, service, max_results
+            )
             job.log_count = len(logs)
 
             job.status = TelemetryJobStatus.PROCESSING
@@ -211,36 +210,30 @@ class TelemetryIngestionPipeline:
     def _process_logs(self, logs: List[LogEntry]) -> List[Dict[str, Any]]:
         processed = []
         for log in logs:
-            try:
-                processed.append(
-                    {
-                        "timestamp": log.timestamp,
-                        "message": log.message,
-                        "level": log.level,
-                        "service": log.service,
-                        "source": log.source,
-                        "metadata": log.metadata,
-                    }
-                )
-            except Exception as e:
-                logger.warning("Failed to process log record, skipping: %s", e)
+            processed.append(
+                {
+                    "timestamp": log.timestamp,
+                    "message": log.message,
+                    "level": log.level,
+                    "service": log.service,
+                    "source": log.source,
+                    "metadata": log.metadata,
+                }
+            )
         return processed
 
     def _process_metrics(self, metrics: List[MetricPoint]) -> List[Dict[str, Any]]:
         processed = []
         for metric in metrics:
-            try:
-                processed.append(
-                    {
-                        "name": metric.name,
-                        "value": metric.value,
-                        "timestamp": metric.timestamp,
-                        "labels": metric.labels,
-                        "source": metric.source,
-                    }
-                )
-            except Exception as e:
-                logger.warning("Failed to process metric record, skipping: %s", e)
+            processed.append(
+                {
+                    "name": metric.name,
+                    "value": metric.value,
+                    "timestamp": metric.timestamp,
+                    "labels": metric.labels,
+                    "source": metric.source,
+                }
+            )
         return processed
 
     def get_job(self, job_id: str) -> Optional[TelemetryJob]:

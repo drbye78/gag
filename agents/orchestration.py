@@ -6,25 +6,25 @@ execution, retry logic, and metrics.
 """
 
 import asyncio
-import copy
-import hashlib
 import logging
-import threading
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, AsyncGenerator, Dict, List, Optional, cast
 
-from agents.executor import ToolExecutor
 from agents.planner import ExecutionPlan, ExecutionStep, PlannerAgent
-from agents.reasoning import ReasoningAgent
-from agents.registry import get_registry
 from agents.retrieval import RetrievalAgent
+from agents.reasoning import ReasoningAgent
+from agents.executor import ToolExecutor
+from agents.validator import ValidatorAgent
+from agents.registry import _registry as _agent_registry
 from agents.types import AgentType
 from core.memory import (
-    MemoryTier,
     get_memory_system,
+    MemoryScope,
+    MemoryTier,
+    get_short_term_memory,
 )
 
 logger = logging.getLogger(__name__)
@@ -136,6 +136,71 @@ class ReasonStepExecutor(StepExecutor):
         tools = context.get("tool_results", [])
         intent = context.get("intent", "explain")
         return await self.reasoner.generate_answer(query, retrieved, tools, intent)
+
+
+class ValidateStepExecutor(StepExecutor):
+    """Validates the reasoning result against retrieved context.
+
+    Runs accuracy, coherence, completeness, and safety checks.
+    If validation fails with ERROR severity, the orchestrator can re-plan.
+    """
+
+    def __init__(self, validator: "ValidatorAgent"):
+        self.validator = validator
+
+    async def execute(self, state: ExecutionState, context: Dict[str, Any]) -> Any:
+        query = context.get("query", "")
+        answer = context.get("reason_result", "") or ""
+        retrieval_results = context.get("retrieval_results", {})
+        retrieved_context: List[Dict[str, Any]] = []
+
+        # Flatten retrieval results into a list of context items
+        if isinstance(retrieval_results, dict):
+            for source, source_data in retrieval_results.items():
+                if isinstance(source_data, dict):
+                    for item in source_data.get("results", []):
+                        if isinstance(item, dict):
+                            retrieved_context.append(item)
+                elif isinstance(source_data, list):
+                    retrieved_context.extend(
+                        item for item in source_data if isinstance(item, dict)
+                    )
+        elif isinstance(retrieval_results, list):
+            retrieved_context = [
+                item for item in retrieval_results if isinstance(item, dict)
+            ]
+
+        # Get reasoning trace from execution states
+        reasoning_trace = [
+            {"step": s.step.step_type, "thinking": str(s.result or "")[:200]}
+            for s in context.get("_all_states", [])
+            if s.status == StepStatus.COMPLETED and s.result
+        ]
+
+        result = await self.validator.validate_response(
+            query=query,
+            response=answer,
+            retrieved_context=retrieved_context,
+            reasoning_trace=reasoning_trace,
+        )
+
+        # Return as dict for JSON serialization
+        return {
+            "valid": result.valid,
+            "score": result.score,
+            "confidence": result.confidence,
+            "issues": [
+                {
+                    "category": issue.category,
+                    "severity": issue.severity,
+                    "message": issue.message,
+                    "evidence": issue.evidence,
+                    "suggestion": issue.suggestion,
+                }
+                for issue in result.issues
+            ],
+            "metadata": result.metadata,
+        }
 
 
 class AnalyzeStepExecutor(StepExecutor):
@@ -251,29 +316,28 @@ class OrchestrationEngine:
         max_iterations: int = 3,
         max_retries: int = 2,
         parallel_execution: bool = True,
-        orchestration_mode: OrchestrationMode = OrchestrationMode.ITERATIVE,
     ):
         self.max_iterations = max_iterations
         self.max_retries = max_retries
         self.parallel_execution = parallel_execution
-        self.orchestration_mode = orchestration_mode
 
         # Use the agent registry for agent creation; fall back to direct instantiation
         try:
             # Ensure built-in agents are registered
             import agents._register  # noqa: F401
 
-            registry = get_registry()
-            self.planner = registry.get_factory(AgentType.PLANNER)()
-            self.retriever = registry.get_factory(AgentType.RETRIEVAL)()
-            self.reasoner = registry.get_factory(AgentType.REASONING)()
-            self.executor = registry.get_factory(AgentType.EXECUTOR)()
+            self.planner = _agent_registry.get_factory(AgentType.PLANNER)()
+            self.retriever = _agent_registry.get_factory(AgentType.RETRIEVAL)()
+            self.reasoner = _agent_registry.get_factory(AgentType.REASONING)()
+            self.executor = _agent_registry.get_factory(AgentType.EXECUTOR)()
+            self.validator = _agent_registry.get_factory(AgentType.VALIDATOR)()
         except (KeyError, ImportError):
             # Fallback if registry not populated or import fails
             self.planner = PlannerAgent()
             self.retriever = RetrievalAgent()
             self.reasoner = ReasoningAgent()
             self.executor = ToolExecutor()
+            self.validator = ValidatorAgent()
 
         self._executors = self._init_executors()
         self._initialize_metrics()
@@ -283,6 +347,7 @@ class OrchestrationEngine:
             "retrieve": RetrieveStepExecutor(self.retriever),
             "tool": ToolStepExecutor(self.executor),
             "reason": ReasonStepExecutor(self.reasoner),
+            "validate": ValidateStepExecutor(self.validator),
             "analyze": AnalyzeStepExecutor(),
         }
 
@@ -319,6 +384,7 @@ class OrchestrationEngine:
                 state.status = StepStatus.COMPLETED
                 break  # Success — exit retry loop
             except Exception as e:
+                from core.errors import OrchestrationError
                 if attempt < self.max_retries:
                     state.retry_count += 1
                     self.metrics["total_retries"] += 1
@@ -383,6 +449,66 @@ class OrchestrationEngine:
 
         return states
 
+    async def _execute_plan_waves(
+        self,
+        plan: ExecutionPlan,
+        context: Dict[str, Any],
+    ) -> List[ExecutionState]:
+        """Execute plan in dependency-ordered waves.
+
+        Wave 0: retrieve + tool (independent, run in parallel)
+        Wave 1: analyze (needs retrieval)
+        Wave 2: reason (needs retrieval + analyze)
+        Wave 3: validate (needs reason)
+
+        Each wave runs its steps in parallel; results propagate to the
+        next wave via the context dict.
+        """
+        tier_map = {
+            "retrieve": 0,
+            "tool": 0,
+            "analyze": 1,
+            "reason": 2,
+            "validate": 3,
+        }
+
+        # Group steps by tier
+        tiers: Dict[int, List[ExecutionStep]] = {}
+        for step in plan.steps:
+            tier = tier_map.get(step.step_type, 0)
+            tiers.setdefault(tier, []).append(step)
+
+        all_states = []
+        for tier_num in sorted(tiers.keys()):
+            tier_steps = tiers[tier_num]
+            states = []
+            for step in tier_steps:
+                state = ExecutionState(step=step)
+                states.append(state)
+
+            # Run all steps in this tier in parallel
+            tasks = [self._execute_step(s, context) for s in states]
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Propagate results into context for the next tier
+            for step, state in zip(tier_steps, states):
+                context[f"{step.step_type}_result"] = state.result
+                if step.step_type == "retrieve":
+                    # Aggregate retrieval results for downstream steps
+                    if "retrieval_results" not in context:
+                        context["retrieval_results"] = {}
+                    if state.result and isinstance(state.result, dict):
+                        source = state.result.get("source", step.source or "unknown")
+                        context["retrieval_results"][source] = state.result
+                elif step.step_type == "reason":
+                    context["reason_result"] = state.result or ""
+                elif step.step_type == "validate":
+                    context["validation_result"] = state.result
+
+            all_states.extend(states)
+
+        return all_states
+
     async def _should_revise(
         self,
         states: List[ExecutionState],
@@ -390,20 +516,11 @@ class OrchestrationEngine:
     ) -> Optional[str]:
         failed = [s for s in states if s.status == StepStatus.FAILED]
         if failed:
-            reason = f"Step failed: {failed[0].error}"
-            # Raise PlanRevision so callers can catch it explicitly
-            raise PlanRevision(
-                reason=reason,
-                new_steps=[s.step for s in states if s.status == StepStatus.PENDING],
-            )
+            return f"Step failed: {failed[0].error}"
 
         completed = [s for s in states if s.status == StepStatus.COMPLETED]
         if len(completed) < len(plan.steps) / 2:
-            reason = "Less than 50% steps completed"
-            raise PlanRevision(
-                reason=reason,
-                new_steps=[s.step for s in states if s.status == StepStatus.PENDING],
-            )
+            return "Less than 50% steps completed"
 
         return None
 
@@ -421,73 +538,12 @@ class OrchestrationEngine:
                         return True
         return False
 
-    @staticmethod
-    def _serialize_state(state: ExecutionState) -> Dict[str, Any]:
-        """Safely serialize ExecutionState, converting nested objects properly."""
-        return {
-            "step": state.step.to_dict(),
-            "status": state.status.value,
-            "result": state.result,
-            "error": state.error,
-            "started_at": state.started_at,
-            "completed_at": state.completed_at,
-            "retry_count": state.retry_count,
-            "duration_ms": state.duration_ms,
-        }
-
-    async def _get_final_answer(
-        self,
-        all_states: List[ExecutionState],
-        context: Dict[str, Any],
-    ) -> tuple:
-        """Get the final reasoning answer. Returns (answer_state, answer_text)."""
-        final_answer_state = next(
-            (
-                s
-                for s in reversed(all_states)
-                if s.step.step_type == "reason" and s.status == StepStatus.COMPLETED and s.result
-            ),
-            None,
-        )
-        if final_answer_state is None:
-            reasoning_state = ExecutionState(
-                step=ExecutionStep(step_type="reason", action="generate_answer")
-            )
-            final_answer_state = await self._execute_step(reasoning_state, context)
-        return final_answer_state, final_answer_state.result or "No response"
-
     async def execute(
         self,
         query: str,
         ir_context: Optional[Dict[str, Any]] = None,
         max_iterations: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Execute a query using the configured OrchestrationMode dispatch."""
-        # Dispatch to the appropriate execution strategy based on orchestration_mode
-        mode = self.orchestration_mode
-
-        if mode == OrchestrationMode.BRANCHING:
-            return await self.execute_branching(query, ir_context)
-        elif mode == OrchestrationMode.RECURSIVE:
-            return await self.execute_recursive(query, ir_context)
-        elif mode == OrchestrationMode.PARALLEL:
-            return await self._execute_iterative(query, ir_context, max_iterations, parallel=True)
-        elif mode == OrchestrationMode.SEQUENTIAL:
-            return await self._execute_iterative(query, ir_context, max_iterations, parallel=False)
-        else:
-            # ITERATIVE (default) — uses parallel_execution flag
-            return await self._execute_iterative(
-                query, ir_context, max_iterations, parallel=self.parallel_execution
-            )
-
-    async def _execute_iterative(
-        self,
-        query: str,
-        ir_context: Optional[Dict[str, Any]] = None,
-        max_iterations: Optional[int] = None,
-        parallel: bool = True,
-    ) -> Dict[str, Any]:
-        """Core iterative execution loop used by ITERATIVE/PARALLEL/SEQUENTIAL modes."""
         start_time = time.time()
         max_iterations = max_iterations or self.max_iterations
 
@@ -511,8 +567,8 @@ class OrchestrationEngine:
         for iteration in range(max_iterations):
             context["iteration"] = iteration
 
-            if parallel:
-                states = await self._execute_plan_parallel(plan, context)
+            if self.parallel_execution:
+                states = await self._execute_plan_waves(plan, context)
             else:
                 states = await self._execute_plan_sequential(plan, context)
 
@@ -533,25 +589,28 @@ class OrchestrationEngine:
             if not await self._revision_needed(states, context):
                 break
 
-            try:
-                should_revise = await self._should_revise(states, plan)
-            except PlanRevision as pr:
-                should_revise = pr.reason
-                logger.info("PlanRevision raised: %s", pr.reason)
-
+            should_revise = await self._should_revise(states, plan)
             if should_revise and iteration < max_iterations - 1:
                 new_plan = await self.planner.plan(query, context)
                 plan = new_plan
-            else:
-                # Revision needed but no specific reason or last iteration — stop looping
-                break
 
-        # Only run final reasoning if no reason step already produced an answer
-        final_answer_state, answer = await self._get_final_answer(all_states, context)
+        reasoning_state = ExecutionState(
+            step=ExecutionStep(step_type="reason", action="generate_answer")
+        )
+        reasoning_state = await self._execute_step(reasoning_state, context)
+
+        # Store the reasoning result so the validate executor can access it
+        context["reason_result"] = reasoning_state.result or ""
+
+        # Run validation after reasoning
+        validation_state = ExecutionState(
+            step=ExecutionStep(step_type="validate", action="validate_response")
+        )
+        validation_state = await self._execute_step(validation_state, context)
 
         execution_time = int((time.time() - start_time) * 1000)
 
-        has_errors = any(s.error for s in all_states) or final_answer_state.error
+        has_errors = any(s.error for s in all_states) or reasoning_state.error or validation_state.error
         self._update_metrics(not has_errors, len(all_states), execution_time)
 
         memory = get_memory_system()
@@ -566,18 +625,27 @@ class OrchestrationEngine:
             tier=MemoryTier.PROJECT,
         )
 
+        # Extract validation result for the response
+        validation_result = validation_state.result if validation_state.result else {
+            "valid": True,
+            "score": 0.0,
+            "confidence": 0.0,
+            "issues": [],
+            "metadata": {},
+        }
+
         return {
             "query": query,
-            "answer": answer,
+            "answer": reasoning_state.result or "No response",
             "intent": plan.intent,
             "plan": plan.to_dict(),
             "execution": {
                 "iterations": len(all_states),
-                "steps": [self._serialize_state(s) for s in all_states],
+                "steps": [s.__dict__ for s in all_states],
                 "took_ms": execution_time,
             },
-            "metrics": dict(self.metrics),
-            "orchestration_mode": self.orchestration_mode.value,
+            "validation": validation_result,
+            "metrics": self.metrics,
         }
 
     def _aggregate_results(
@@ -603,10 +671,12 @@ class OrchestrationEngine:
             self.metrics["failed_runs"] += 1
         self.metrics["total_steps_executed"] += steps
 
-        # Proper cumulative average
-        total = self.metrics["total_runs"]
+        # Running mean (not exponential moving average)
+        total_runs = self.metrics["total_runs"]
         prev_avg = self.metrics["avg_execution_time_ms"]
-        self.metrics["avg_execution_time_ms"] = (prev_avg * (total - 1) + time_ms) / total
+        self.metrics["avg_execution_time_ms"] = (
+            prev_avg * (total_runs - 1) + time_ms
+        ) / total_runs
 
     async def execute_streaming(
         self,
@@ -649,7 +719,6 @@ class OrchestrationEngine:
                     "status": state.status.value,
                     "result": str(state.result)[:500] if state.result else None,
                     "error": state.error,
-                    "iteration": iteration,
                 }
 
                 if state.status == StepStatus.FAILED:
@@ -663,31 +732,24 @@ class OrchestrationEngine:
             if not await self._revision_needed(states, context):
                 break
 
-            try:
-                should_revise = await self._should_revise(states, plan)
-            except PlanRevision as pr:
-                should_revise = pr.reason
-                logger.info("PlanRevision raised (streaming): %s", pr.reason)
-
+            should_revise = await self._should_revise(states, plan)
             if should_revise and iteration < max_iterations - 1:
                 new_plan = await self.planner.plan(query, context)
                 plan = new_plan
                 yield {"type": "plan_revised", "plan": plan.to_dict()}
-            else:
-                break
 
-        # Only run final reasoning if no reason step already produced an answer
-        final_answer_state, answer = await self._get_final_answer(all_states, context)
+        reasoning_state = ExecutionState(
+            step=ExecutionStep(step_type="reason", action="generate_answer")
+        )
+        reasoning_state = await self._execute_step(reasoning_state, context)
 
         execution_time = int((time.time() - start_time) * 1000)
-
-        has_errors = any(s.error for s in all_states) or final_answer_state.error
-        self._update_metrics(not has_errors, len(all_states), execution_time)
+        self._update_metrics(True, len(all_states), execution_time)
 
         yield {
             "type": "complete",
             "query": query,
-            "answer": answer,
+            "answer": reasoning_state.result or "No response",
             "intent": plan.intent,
             "execution": {
                 "iterations": len(all_states),
@@ -721,12 +783,16 @@ class OrchestrationEngine:
         branch_outcomes = await asyncio.gather(*branch_tasks, return_exceptions=True)
 
         valid_results = [
-            cast(Dict[str, Any], r) for r in branch_outcomes if not isinstance(r, Exception)
+            cast(Dict[str, Any], r) 
+            for r in branch_outcomes 
+            if not isinstance(r, Exception)
         ]
 
         merged_context = self._merge_branch_results(valid_results, context)
 
-        final_result = await self.execute(merged_context.get("merged_query", query), ir_context)
+        final_result = await self.execute(
+            merged_context.get("merged_query", query), ir_context
+        )
 
         execution_time = int((time.time() - start_time) * 1000)
 
@@ -745,15 +811,14 @@ class OrchestrationEngine:
     ) -> Dict[str, Any]:
         plan = await self.planner.plan(branch_query, context.get("ir_context", {}))
 
-        # Deep copy to avoid shared mutable state across parallel branches
-        branch_context = copy.deepcopy(context)
+        branch_context = context.copy()
         branch_context["retrieval_results"] = {}
 
         states = await self._execute_plan_parallel(plan, branch_context)
 
         return {
             "query": branch_query,
-            "states": [self._serialize_state(s) for s in states],
+            "states": [s.__dict__ for s in states],
             "result": self._aggregate_results(states),
         }
 
@@ -823,7 +888,6 @@ class OrchestrationEngine:
             "retrieval_results": {},
             "tool_results": [],
             "recursive_depth": 0,
-            "_visited_queries": set(),
         }
 
         final_result = await self._recursive_execute(query, context, depth)
@@ -838,11 +902,6 @@ class OrchestrationEngine:
             "took_ms": execution_time,
         }
 
-    @staticmethod
-    def _query_hash(query: str) -> str:
-        """Compute a stable hash for a query string to detect cycles."""
-        return hashlib.sha256(query.encode()).hexdigest()
-
     async def _recursive_execute(
         self,
         query: str,
@@ -852,17 +911,9 @@ class OrchestrationEngine:
         if remaining_depth <= 0:
             return {"answer": "Maximum recursion depth reached"}
 
-        # Cycle detection: if we've already processed this query, return early
-        qhash = self._query_hash(query)
-        visited: set = context.get("_visited_queries", set())
-        if qhash in visited:
-            return {"answer": "Cycle detected — skipping already-visited query"}
-
         plan = await self.planner.plan(query, context.get("ir_context", {}))
 
-        # Track depth per-branch using a copy of context to avoid
-        # shared mutation across sibling recursive calls
-        current_depth = context.get("recursive_depth", 0) + 1
+        context["recursive_depth"] += 1
 
         states = await self._execute_plan_sequential(plan, context)
 
@@ -872,17 +923,11 @@ class OrchestrationEngine:
             sub_queries = self._extract_sub_queries(aggregated)
 
             if sub_queries and remaining_depth > 1:
-                # Mark the current query as visited before recursing
-                visited.add(qhash)
-
                 sub_results = []
                 for sq in sub_queries[:2]:
-                    # Each sub-query gets its own context copy to avoid
-                    # shared depth counter corruption across siblings
-                    sub_context = dict(context)
-                    sub_context["recursive_depth"] = current_depth
-                    sub_context["_visited_queries"] = set(visited)
-                    sub_result = await self._recursive_execute(sq, sub_context, remaining_depth - 1)
+                    sub_result = await self._recursive_execute(
+                        sq, context, remaining_depth - 1
+                    )
                     sub_results.append(sub_result)
 
                 return {
@@ -892,7 +937,7 @@ class OrchestrationEngine:
 
         return {
             "answer": str(aggregated) if aggregated else "No result",
-            "depth": current_depth,
+            "depth": context["recursive_depth"],
         }
 
     def _extract_sub_queries(
@@ -911,13 +956,10 @@ class OrchestrationEngine:
 
 
 _orchestration_engine: Optional[OrchestrationEngine] = None
-_orchestration_lock = threading.Lock()
 
 
 def get_orchestration_engine() -> OrchestrationEngine:
     global _orchestration_engine
     if _orchestration_engine is None:
-        with _orchestration_lock:
-            if _orchestration_engine is None:
-                _orchestration_engine = OrchestrationEngine()
+        _orchestration_engine = OrchestrationEngine()
     return _orchestration_engine

@@ -1,8 +1,8 @@
 from ui.knowledge import (
     ComponentType,
     UIComponent,
-    UIComponentKnowledge,
     UIService,
+    UIComponentKnowledge,
     get_ui_knowledge_registry,
 )
 
@@ -12,22 +12,9 @@ def _create_aws_knowledge() -> UIComponentKnowledge:
         domain_id="aws",
         display_name="AWS Amplify/Cognito",
         supported_element_types=[
-            "button",
-            "input",
-            "select",
-            "table",
-            "form",
-            "card",
-            "navigation",
-            "header",
-            "footer",
-            "tab",
-            "chart",
-            "filter",
-            "checkbox",
-            "radio",
-            "text",
-            "image",
+            "button", "input", "select", "table", "form", "card",
+            "navigation", "header", "footer", "tab", "chart", "filter",
+            "checkbox", "radio", "text", "image",
         ],
     )
 

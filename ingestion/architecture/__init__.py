@@ -1,6 +1,6 @@
 from ingestion.architecture.client import (
-    ArchitectureClient,
     ArchitectureSource,
+    ArchitectureClient,
     get_architecture_client,
 )
 from ingestion.architecture.pipeline import (

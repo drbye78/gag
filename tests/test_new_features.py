@@ -2,9 +2,11 @@
 Tests for entity graph cache, LLM router, extended config, tools, and API validation.
 """
 
-from unittest.mock import MagicMock, patch
+import time
 
 import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+
 
 # ---------------------------------------------------------------------------
 # Entity Graph Cache
@@ -42,7 +44,6 @@ class TestEntityGraphCache:
         cache.put("Test", entry)
         # Small sleep to ensure time advances
         import time as _time
-
         _time.sleep(0.01)
         result = cache.get("Test")
         assert result is None
@@ -170,7 +171,6 @@ class TestLLMRouter:
             mock_settings.return_value = mock
 
             from llm.router import LLMRouter
-
             router = LLMRouter()
             assert router.provider.value == "openrouter"
             assert router.model.value == "qwen-max"
@@ -178,7 +178,7 @@ class TestLLMRouter:
 
     @pytest.mark.asyncio
     async def test_chat_raises_on_no_api_key(self):
-        from llm.router import LLMProvider, LLMRouter
+        from llm.router import LLMRouter, LLMProvider
 
         router = LLMRouter(
             provider=LLMProvider.OPENROUTER,
@@ -188,7 +188,7 @@ class TestLLMRouter:
             await router.chat("test")
 
     def test_build_headers(self):
-        from llm.router import LLMProvider, LLMRouter
+        from llm.router import LLMRouter, LLMProvider
 
         router = LLMRouter(provider=LLMProvider.OPENROUTER, api_key="test")
         headers = router._build_headers()
@@ -221,7 +221,6 @@ class TestLLMRouter:
 class TestConfigExtended:
     def test_all_new_settings_exist(self):
         from core.config import get_settings, reset_settings
-
         reset_settings()
 
         s = get_settings()
@@ -260,10 +259,9 @@ class TestConfigExtended:
         assert old is not new  # different instance after reset
 
     def test_settings_validate_warning(self):
-        import os
-        import warnings as w
-
         from core.config import Settings
+        import warnings as w
+        import os
 
         os.environ.pop("JWT_SECRET", None)
         os.environ.pop("CREDENTIAL_ENCRYPT_KEY", None)
@@ -274,10 +272,9 @@ class TestConfigExtended:
             assert len(jwt_warnings) >= 1
 
     def test_settings_validate_no_warning_with_custom_secret(self):
-        import os
-        import warnings as w
-
         from core.config import Settings, reset_settings
+        import warnings as w
+        import os
 
         reset_settings()
         os.environ["JWT_SECRET"] = "super-secret-key-12345"
@@ -294,7 +291,6 @@ class TestConfigExtended:
 
     def test_settings_defaults(self):
         from core.config import get_settings, reset_settings
-
         reset_settings()
 
         s = get_settings()
@@ -382,10 +378,9 @@ class TestToolRegistry:
 
 class TestAPIInputValidation:
     def test_query_request_rejects_empty(self):
+        from api.main import QueryRequest
         import pytest
         from pydantic import ValidationError
-
-        from api.main import QueryRequest
 
         with pytest.raises(ValidationError, match="query must not be empty"):
             QueryRequest(query="")
@@ -400,37 +395,33 @@ class TestAPIInputValidation:
         assert req.query == "hello"
 
     def test_reasoning_request_rejects_empty(self):
+        from api.main import ReasoningRequest
         import pytest
         from pydantic import ValidationError
-
-        from api.main import ReasoningRequest
 
         with pytest.raises(ValidationError, match="query must not be empty"):
             ReasoningRequest(query="", facts=[])
 
     def test_rerank_request_rejects_empty(self):
+        from api.main import RerankRequest
         import pytest
         from pydantic import ValidationError
-
-        from api.main import RerankRequest
 
         with pytest.raises(ValidationError, match="query must not be empty"):
             RerankRequest(query="", results=[])
 
     def test_citation_request_rejects_empty(self):
+        from api.main import CitationRequest
         import pytest
         from pydantic import ValidationError
-
-        from api.main import CitationRequest
 
         with pytest.raises(ValidationError, match="answer must not be empty"):
             CitationRequest(answer="", sources=[])
 
     def test_image_extraction_rejects_empty_url(self):
+        from api.main import ImageExtractionRequest
         import pytest
         from pydantic import ValidationError
-
-        from api.main import ImageExtractionRequest
 
         with pytest.raises(ValidationError, match="image_url must not be empty"):
             ImageExtractionRequest(image_url="")

@@ -102,7 +102,7 @@ ARCHITECTURE:
 - kubernetes_search, helm_search, dockerfile_search
 
 IDEATION (Phase 1):
-- idea_generate, brainstorm, technology_recommend, pattern_find, market_analysis
+- idea_generate, brainstorm, technology_recommend, pattern_find
 
 REQUIREMENTS (Phase 2):
 - user_story_generate, acceptance_criteria_generate
@@ -145,7 +145,7 @@ ARCHITECTURE DECISION RECORDS (5+):
 - API Gateway for external APIs
 - Platform-agnostic patterns
 
-REFERENCE ARCHITECTURES (8 patterns):
+REFERENCE ARCHURES (8 patterns):
 - Serverless (AWS Lambda, Azure Functions, GCP Cloud Functions)
 - Microservices (Kubernetes)
 - Event-driven (SNS/SQS, Event Hub)
@@ -246,9 +246,7 @@ class Step(str, Enum):
     GENERATE_PROPOSAL = "generate_proposal"
 
 
-def create_planner_response(
-    intent: str, steps: list, tools: list, pdlc_phases: list = None
-) -> dict:
+def create_planner_response(intent: str, steps: list, tools: list, pdlc_phases: list = None) -> dict:
     return {
         "intent": intent,
         "steps": steps,

@@ -2,9 +2,8 @@
 Tests for retrieval modules: orchestrator, hybrid, classifier, fusion, reasoning.
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
-
 import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 class TestRetrievalOrchestrator:
@@ -68,7 +67,6 @@ class TestHybridRetriever:
     @pytest.mark.asyncio
     async def test_retrieve_vector_only(self):
         from retrieval.hybrid import HybridRetriever
-
         try:
             retriever = HybridRetriever()
             result = await retriever.search("test", limit=5)
@@ -85,7 +83,6 @@ class TestHybridRetriever:
     @pytest.mark.asyncio
     async def test_retrieve_cascade(self):
         from retrieval.hybrid import HybridRetriever
-
         try:
             retriever = HybridRetriever()
             result = await retriever.search("test cascade", limit=5)
@@ -99,11 +96,10 @@ class TestHybridRetriever:
                 pytest.skip(f"API auth failed: {e}")
             else:
                 pytest.skip(f"Backend unavailable: {e}")
-
+    
     @pytest.mark.asyncio
     async def test_retrieve_iterative(self):
         from retrieval.hybrid import HybridRetriever
-
         try:
             retriever = HybridRetriever()
             result = await retriever.search("test iterative", limit=5, use_reasoning=False)
@@ -121,7 +117,7 @@ class TestHybridRetriever:
 
 class TestQueryClassifier:
     def test_classify_simple_query(self):
-        from retrieval.classifier import get_query_classifier
+        from retrieval.classifier import QueryClassifier, get_query_classifier
 
         classifier = get_query_classifier()
         intent = classifier.classify("How does auth work?")
@@ -156,18 +152,12 @@ class TestQueryClassifier:
 class TestResultFusion:
     @pytest.mark.asyncio
     async def test_fuse_rrf(self):
-        from retrieval.fusion import get_result_fusion
+        from retrieval.fusion import ResultFusion, get_result_fusion
 
         fusion = get_result_fusion()
         results = {
-            "docs": [
-                {"id": "1", "content": "doc1", "score": 0.9},
-                {"id": "2", "content": "doc2", "score": 0.8},
-            ],
-            "code": [
-                {"id": "1", "content": "code1", "score": 0.85},
-                {"id": "3", "content": "code3", "score": 0.7},
-            ],
+            "docs": [{"id": "1", "content": "doc1", "score": 0.9}, {"id": "2", "content": "doc2", "score": 0.8}],
+            "code": [{"id": "1", "content": "code1", "score": 0.85}, {"id": "3", "content": "code3", "score": 0.7}],
         }
         fused = fusion.fuse(results)
         assert fused is not None
@@ -175,7 +165,7 @@ class TestResultFusion:
 
     @pytest.mark.asyncio
     async def test_fuse_weighted(self):
-        from retrieval.fusion import FusionMethod, ResultFusion
+        from retrieval.fusion import ResultFusion, FusionMethod
 
         fusion = ResultFusion(method=FusionMethod.WEIGHTED)
         results = {
@@ -189,7 +179,7 @@ class TestResultFusion:
 class TestReasoningEngine:
     @pytest.mark.asyncio
     async def test_reason_basic(self):
-        from retrieval.reasoning import ReasoningMode, get_reasoning_engine
+        from retrieval.reasoning import get_reasoning_engine, ReasoningMode
 
         engine = get_reasoning_engine(ReasoningMode.CHAIN_OF_THOUGHTS)
         # Without LLM backend, this will fail - just test interface
@@ -201,7 +191,7 @@ class TestReasoningEngine:
 
     @pytest.mark.asyncio
     async def test_reason_with_context(self):
-        from retrieval.reasoning import ReasoningMode, get_reasoning_engine
+        from retrieval.reasoning import get_reasoning_engine, ReasoningMode
 
         engine = get_reasoning_engine(mode=ReasoningMode.CHAIN_OF_THOUGHTS)
         # Without LLM backend, this will fail - just test interface
@@ -219,7 +209,6 @@ class TestCodeRetriever:
     @pytest.mark.asyncio
     async def test_retrieve_code(self):
         from retrieval.code import CodeRetriever
-
         try:
             retriever = CodeRetriever()
             result = await retriever.search("test code", limit=5)
@@ -237,7 +226,7 @@ class TestCodeRetriever:
 class TestGraphRetriever:
     @pytest.mark.asyncio
     async def test_retrieve_graph(self):
-        from retrieval.graph import get_graph_retriever
+        from retrieval.graph import GraphRetriever, get_graph_retriever
 
         with patch("retrieval.graph.get_graph_retriever") as mock_get:
             mock_ret = MagicMock()
@@ -252,7 +241,7 @@ class TestGraphRetriever:
 class TestTicketRetriever:
     @pytest.mark.asyncio
     async def test_retrieve_tickets(self):
-        from retrieval.ticket import get_ticket_retriever
+        from retrieval.ticket import TicketRetriever, get_ticket_retriever
 
         with patch("retrieval.ticket.get_ticket_retriever") as mock_get:
             mock_ret = MagicMock()
@@ -267,7 +256,7 @@ class TestTicketRetriever:
 class TestTelemetryRetriever:
     @pytest.mark.asyncio
     async def test_retrieve_telemetry(self):
-        from retrieval.telemetry import get_telemetry_retriever
+        from retrieval.telemetry import TelemetryRetriever, get_telemetry_retriever
 
         with patch("retrieval.telemetry.get_telemetry_retriever") as mock_get:
             mock_ret = MagicMock()

@@ -7,9 +7,10 @@ WebDAV-enabled storage (Nextcloud, SharePoint, etc.).
 
 import logging
 import os
-from dataclasses import dataclass
+import uuid
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import httpx
 
@@ -71,7 +72,6 @@ class WebDAVClient:
         url = f"{base}/{path}"
         # SECURITY: Validate the constructed URL for SSRF prevention
         from core.security import validate_url
-
         try:
             validate_url(url)
         except ValueError:
@@ -118,59 +118,64 @@ class WebDAVClient:
 
         except Exception as e:
             import logging
-
             logging.getLogger(__name__).warning("WebDAV list failed: %s", e, exc_info=True)
             return []
 
     def _parse_propfind_response(self, xml: str) -> List[WebDAVFile]:
-        import xml.etree.ElementTree as ET
+        """Parse PROPFIND XML response using defusedxml (XXE-safe)."""
+        try:
+            from defusedxml import ElementTree as ET
+        except ImportError:
+            import logging
+            logging.getLogger(__name__).error(
+                "defusedxml not installed — WebDAV XML parsing disabled for security"
+            )
+            return []
 
         files = []
 
         try:
             root = ET.fromstring(xml)
-        except ET.ParseError:
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("Failed to parse WebDAV XML: %s", e)
             return []
 
-        # Register common WebDAV namespaces
-        ns = {
-            "d": "DAV:",
-            "cs": "http://calendarserver.org/ns/",
-        }
+        # Handle namespaces — WebDAV uses DAV: namespace
+        ns = {"d": "DAV:"}
 
-        for response in root.findall("d:response", ns):
-            href_elem = response.find("d:href", ns)
-            if href_elem is None or not href_elem.text:
+        for response_elem in root.findall(".//d:response", ns):
+            # Also try without namespace for non-standard servers
+            if response_elem is None:
+                continue
+
+            href_elem = response_elem.find("d:href", ns)
+            if href_elem is None or href_elem.text is None:
                 continue
 
             path = href_elem.text.strip()
             if path.endswith("/"):
                 path = path[:-1]
 
-            propstat = response.find("d:propstat", ns)
-            if propstat is None:
-                continue
-            prop = propstat.find("d:prop", ns)
-            if prop is None:
-                continue
-
-            name_elem = prop.find("d:displayname", ns)
+            name_elem = response_elem.find(".//d:displayname", ns)
             name = name_elem.text if name_elem is not None and name_elem.text else os.path.basename(path)
 
-            size_elem = prop.find("d:getcontentlength", ns)
-            size = int(size_elem.text) if size_elem is not None and size_elem.text else 0
+            size_elem = response_elem.find(".//d:getcontentlength", ns)
+            try:
+                size = int(size_elem.text) if size_elem is not None and size_elem.text else 0
+            except ValueError:
+                size = 0
 
-            type_elem = prop.find("d:getcontenttype", ns)
+            type_elem = response_elem.find(".//d:getcontenttype", ns)
             content_type = type_elem.text if type_elem is not None and type_elem.text else "application/octet-stream"
 
-            mod_elem = prop.find("d:getlastmodified", ns)
+            mod_elem = response_elem.find(".//d:getlastmodified", ns)
             modified = mod_elem.text if mod_elem is not None and mod_elem.text else None
 
-            # Collection detection via resourcetype
-            res_type = prop.find("d:resourcetype", ns)
-            is_dir = res_type is not None and res_type.find("d:collection", ns) is not None
+            # Check for collection (directory)
+            is_dir = response_elem.find(".//d:collection", ns) is not None
 
-            etag_elem = prop.find("d:getetag", ns)
+            etag_elem = response_elem.find(".//d:getetag", ns)
             etag = etag_elem.text if etag_elem is not None and etag_elem.text else None
 
             files.append(
@@ -185,7 +190,6 @@ class WebDAVClient:
                 )
             )
 
-        # Skip first entry (often the collection itself)
         return files[1:]
 
     async def download_file(self, path: str) -> Optional[bytes]:
@@ -276,7 +280,9 @@ class WebDAVClient:
 
         for file in files:
             if file.is_directory:
-                await self._sync_folder_recursive(file.path, results, extensions, max_files)
+                await self._sync_folder_recursive(
+                    file.path, results, extensions, max_files
+                )
             elif not extensions or any(file.name.endswith(ext) for ext in extensions):
                 results.append(file)
 

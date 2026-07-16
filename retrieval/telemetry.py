@@ -5,7 +5,6 @@ Supports Prometheus and Elasticsearch backends
 with in-memory fallback.
 """
 
-import logging
 import os
 import time
 from abc import ABC, abstractmethod
@@ -75,7 +74,9 @@ class PrometheusBackend(TelemetryBackend):
         severity: Optional[str] = None,
         limit: int = 10,
     ) -> List[Dict[str, Any]]:
-        results = await self._query(f'alerts{{service="{service}"}}' if service else "alerts")
+        results = await self._query(
+            f'alerts{{service="{service}"}}' if service else "alerts"
+        )
         return [
             {
                 "id": r.get("metric", {}).get("alertname", ""),
@@ -99,7 +100,9 @@ class PrometheusBackend(TelemetryBackend):
         return [
             {
                 "id": r.get("metric", {}).get("__name__", metric_name or "unknown"),
-                "metric_name": r.get("metric", {}).get("__name__", metric_name or "unknown"),
+                "metric_name": r.get("metric", {}).get(
+                    "__name__", metric_name or "unknown"
+                ),
                 "service": r.get("metric", {}).get("job", ""),
                 "value": r.get("value", 0),
                 "unit": "",
@@ -163,7 +166,9 @@ class ElasticSearchBackend(TelemetryBackend):
         except httpx.HTTPError as e:
             import logging
 
-            logging.getLogger(__name__).warning("HTTP error querying Elasticsearch: %s", e)
+            logging.getLogger(__name__).warning(
+                "HTTP error querying Elasticsearch: %s", e
+            )
             return []
         except Exception as e:
             import logging
@@ -213,10 +218,14 @@ class ElasticSearchBackend(TelemetryBackend):
                 for bucket in buckets
             ]
         except httpx.HTTPError as e:
-            logging.getLogger(__name__).warning("HTTP error querying Elasticsearch metrics: %s", e)
+            logging.getLogger(__name__).warning(
+                "HTTP error querying Elasticsearch metrics: %s", e
+            )
             return []
         except Exception as e:
-            logging.getLogger(__name__).warning("Error querying Elasticsearch metrics: %s", e)
+            logging.getLogger(__name__).warning(
+                "Error querying Elasticsearch metrics: %s", e
+            )
             return []
 
 
@@ -308,19 +317,6 @@ class InMemoryTelemetryBackend(TelemetryBackend):
 class TelemetryRetriever:
     def __init__(self, backend: Optional[TelemetryBackend] = None):
         self.backend = backend or self._create_backend()
-        self._pool = None
-
-    def _get_pool(self):
-        """Lazily initialize the shared HTTP pool from core.pool."""
-        if self._pool is None:
-            try:
-                from core.pool import get_http_pool
-
-                self._pool = get_http_pool()
-            except Exception:
-                # Fallback: create a persistent client if shared pool unavailable
-                self._pool = httpx.AsyncClient(timeout=30.0)
-        return self._pool
 
     @staticmethod
     def _create_backend() -> TelemetryBackend:

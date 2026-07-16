@@ -1,5 +1,4 @@
 from typing import List
-
 from retrieval.citations.base import CitationSource, CitationStyle
 
 

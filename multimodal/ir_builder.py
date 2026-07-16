@@ -4,12 +4,12 @@ import logging
 from typing import Any, Callable, Dict, List, Optional
 
 from models.ir import (
-    UIIR,
     ArchitectureIR,
     ArtifactStatus,
-    CodeIR,
     DocumentIR,
     IRNode,
+    UIIR,
+    CodeIR,
 )
 
 logger = logging.getLogger(__name__)
@@ -22,10 +22,10 @@ _ingestion_callbacks: List[Callable[..., Any]] = []
 def _get_indexer() -> tuple:
     global _indexing
     if _indexing is None:
-        from ingestion.indexer import GraphIndexer, VectorIndexer
+        from ingestion.indexer import VectorIndexer, GraphIndexer
 
         _indexing = (VectorIndexer, GraphIndexer)
-    return _indexing  # type: ignore[return-value]  # _indexing is set to tuple if None; pyright can't track this
+    return _indexing  # type: ignore[return-value]
 
 
 def _get_embedder():
@@ -60,7 +60,6 @@ class IRBuilder:
         self._nodes: List[IRNode] = []
         self._seen_ids: set = set()
         self._background_tasks: List[asyncio.Task] = []
-        self._edge_node_ids: set = set()  # Track node IDs referenced by edges
 
     def _generate_id(self, content: str, prefix: str = "ir") -> str:
         hash_str = hashlib.sha256(content.encode()).hexdigest()[:12]
@@ -92,11 +91,10 @@ class IRBuilder:
         )
         if self._deduplicate(node):
             self._nodes.append(node)
-            self._edge_node_ids.add(ir_id)
             return node
         return None
 
-    def add_ui(
+    async def add_ui(
         self,
         content: str,
         title: Optional[str] = None,
@@ -116,32 +114,26 @@ class IRBuilder:
         )
         if self._deduplicate(node):
             self._nodes.append(node)
-            self._edge_node_ids.add(ir_id)
             if "extraction_result" in kwargs:
                 try:
                     from ui.graph_builder import UIGraphBuilder
                     from ui.pattern_matcher import get_pattern_matcher
-
                     builder = UIGraphBuilder()
                     er = kwargs["extraction_result"]
+                    # Await graph build with timeout — no fire-and-forget, no new_event_loop
                     try:
-                        loop = asyncio.get_running_loop()
-                        task = loop.create_task(builder.build(er))
-                        self._background_tasks.append(task)
-                    except RuntimeError:
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                        try:
-                            loop.run_until_complete(builder.build(er))
-                        finally:
-                            loop.close()
+                        await asyncio.wait_for(builder.build(er), timeout=30.0)
+                    except asyncio.TimeoutError:
+                        logging.getLogger(__name__).warning("UI graph build timed out after 30s")
+                    except Exception as e:
+                        logging.getLogger(__name__).warning("UI graph build failed: %s", e)
                     node.graph_node_id = er.sketch.sketch_id
                     node.element_count = len(er.elements)
                     matcher = get_pattern_matcher()
                     matches = matcher.match_patterns(er)
                     node.pattern_matches = [m.pattern_name for m in matches]
                 except Exception as e:
-                    logging.getLogger(__name__).warning("UI graph build failed: %s", e)
+                    logging.getLogger(__name__).warning("UI IR build failed: %s", e)
             return node
         return None
 
@@ -169,7 +161,6 @@ class IRBuilder:
         )
         if self._deduplicate(node):
             self._nodes.append(node)
-            self._edge_node_ids.add(ir_id)
             return node
         return None
 
@@ -193,27 +184,8 @@ class IRBuilder:
         )
         if self._deduplicate(node):
             self._nodes.append(node)
-            self._edge_node_ids.add(ir_id)
             return node
         return None
-
-    def add_edge(self, source_id: str, target_id: str, relation: str = "related_to") -> bool:
-        """Add an edge between two IR nodes after validating references.
-
-        Returns True if the edge was added, False if source or target
-        node IDs do not exist in the builder.
-        """
-        if source_id not in self._edge_node_ids:
-            logger.warning(
-                "Edge references non-existent source node '%s'; edge not added", source_id
-            )
-            return False
-        if target_id not in self._edge_node_ids:
-            logger.warning(
-                "Edge references non-existent target node '%s'; edge not added", target_id
-            )
-            return False
-        return True
 
     def build(self) -> List[IRNode]:
         return self._nodes
@@ -245,15 +217,28 @@ class IRBuilder:
             for i, node in enumerate(nodes):
                 node.status = ArtifactStatus.INDEXED
 
-            index_result = await vi.index_chunks(
-                [f"{node.id}: {node.content[:200]}" for node in nodes],
-                [node.id for node in nodes],
-                [node.artifact_type.value if node.artifact_type else "unknown" for node in nodes],
-            )
+            # Build chunk dicts in the format VectorIndexer.index_chunks expects
+            chunks_for_indexing = [
+                {
+                    "id": node.id,
+                    "content": f"{node.id}: {node.content[:200]}",
+                    "source_id": source,
+                    "source_type": node.artifact_type.value if node.artifact_type else "unknown",
+                    "chunk_index": i,
+                    "metadata": {"ir_type": node.artifact_type.value if node.artifact_type else "unknown"},
+                    "embedding": embeddings[i] if i < len(embeddings) else [],
+                }
+                for i, node in enumerate(nodes)
+            ]
+            index_result = await vi.index_chunks(chunks_for_indexing, source_tag=source)
             results["indexed"] = (
-                index_result.indexed_count if hasattr(index_result, "indexed_count") else len(nodes)
+                index_result.indexed_count
+                if hasattr(index_result, "indexed_count")
+                else len(nodes)
             )
-            results["errors"] = index_result.errors if hasattr(index_result, "errors") else []
+            results["errors"] = (
+                index_result.errors if hasattr(index_result, "errors") else []
+            )
 
             _notify_ingestion_callbacks(source, nodes)
 

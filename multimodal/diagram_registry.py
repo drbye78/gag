@@ -177,7 +177,9 @@ class DiagramRegistry:
                 for point in data.get("result", []):
                     ir = self._cache.get(point.get("id"))
                     if ir:
-                        results.append(DiagramSearchResult(ir=ir, score=point.get("score", 0.0)))
+                        results.append(
+                            DiagramSearchResult(ir=ir, score=point.get("score", 0.0))
+                        )
                 return results
 
         except Exception as e:
@@ -205,7 +207,9 @@ class DiagramRegistry:
                 for item in data.get("data", []):
                     ir = self._cache.get(item.get("diagram_id"))
                     if ir:
-                        results.append(DiagramSearchResult(ir=ir, score=item.get("score", 0.0)))
+                        results.append(
+                            DiagramSearchResult(ir=ir, score=item.get("score", 0.0))
+                        )
                 return results
 
         except Exception as e:
@@ -226,7 +230,9 @@ class DiagramRegistry:
 
         edges = []
         for edge in ir.edges:
-            edges.append({"from": edge.source, "to": edge.target, "label": edge.type.value})
+            edges.append(
+                {"from": edge.source, "to": edge.target, "label": edge.type.value}
+            )
 
         return {"nodes": nodes, "edges": edges}
 

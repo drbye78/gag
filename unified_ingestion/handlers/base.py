@@ -15,9 +15,7 @@ class HandlerResult:
 
 class Handler(ABC):
     @abstractmethod
-    async def handle(
-        self, content: bytes, source_id: str, metadata: Dict[str, Any]
-    ) -> HandlerResult:
+    async def handle(self, content: bytes, source_id: str, metadata: Dict[str, Any]) -> HandlerResult:
         pass
 
 

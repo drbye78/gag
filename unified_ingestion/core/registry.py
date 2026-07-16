@@ -1,8 +1,8 @@
+from collections import OrderedDict
 import asyncio
 import logging
 import time
-from collections import OrderedDict
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from unified_ingestion.core.job import ArtifactJob
 
@@ -40,9 +40,7 @@ class JobRegistry:
 
     async def _evict_expired(self) -> None:
         now = time.time()
-        expired = [
-            jid for jid, job in self._jobs.items() if now - job.updated_at > self.ttl_seconds
-        ]
+        expired = [jid for jid, job in self._jobs.items() if now - job.updated_at > self.ttl_seconds]
         for jid in expired:
             del self._jobs[jid]
 

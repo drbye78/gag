@@ -5,8 +5,8 @@ Provides reasoning capabilities that leverage entity graphs and
 relationship information for context-aware answer synthesis.
 """
 
+import sys
 from enum import Enum
-from typing import Any, Dict, List, Optional
 
 
 class ReasoningMode(str, Enum):
@@ -17,94 +17,57 @@ class ReasoningMode(str, Enum):
     CRITIQUE = "critique"
 
 
-class ReasoningEngine:
-    """Default reasoning engine that synthesises answers from retrieved facts.
-
-    Supports multiple reasoning modes.  When no LLM backend is available,
-    falls back to deterministic concatenation of the top facts.
-    """
-
-    def __init__(self, mode: ReasoningMode = ReasoningMode.CHAIN_OF_THOUGHTS):
-        self.mode = mode
-
-    async def reason(
-        self,
-        query: str,
-        facts: List[Dict[str, Any]],
-        entity_graph: Optional[Dict[str, List[Any]]] = None,
-    ) -> Dict[str, Any]:
-        """Synthesise an answer from retrieved facts.
-
-        When an ``entity_graph`` is supplied, delegates to
-        :class:`EntityAwareReasoningEngine` for richer graph-based
-        reasoning; otherwise performs direct fact synthesis.
-        """
-        if entity_graph:
-            from retrieval.reasoning.entity_aware import EntityAwareReasoningEngine
-
-            engine = EntityAwareReasoningEngine()
-            return await engine.reason(query, facts, entity_graph)
-
-        return await self._direct_reason(query, facts)
-
-    async def _direct_reason(
-        self,
-        query: str,
-        facts: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
-        """Fallback: concatenate top facts into a basic answer."""
-        if not facts:
-            return {
-                "query": query,
-                "answer": "No relevant information found.",
-                "reasoning_mode": self.mode.value,
-                "confidence": 0.0,
-                "steps": [],
-                "duration_ms": 0,
-            }
-
-        import time
-
-        start = int(time.time() * 1000)
-
-        top_facts = facts[:3]
-        answer_parts = [f.get("content", "")[:200] for f in top_facts if f.get("content")]
-        answer = " | ".join(answer_parts) if answer_parts else "Insufficient information."
-
-        confidence = sum(f.get("score", 0.0) for f in top_facts) / max(len(top_facts), 1)
-        confidence = min(max(confidence, 0.0), 1.0)
-
-        return {
-            "query": query,
-            "answer": answer,
-            "reasoning_mode": self.mode.value,
-            "confidence": confidence,
-            "steps": [
-                {
-                    "step_id": "0",
-                    "thought": f"Analyzing query: {query}",
-                    "action": "synthesize",
-                    "observation": f"Based on {len(facts)} retrieved facts",
-                }
-            ],
-            "sources": [f.get("source", "") for f in top_facts],
-            "duration_ms": int(time.time() * 1000) - start,
-        }
+_reasoning_engine_cls = None
 
 
-def get_reasoning_engine(mode: ReasoningMode = ReasoningMode.CHAIN_OF_THOUGHTS) -> ReasoningEngine:
-    """Factory: return a :class:`ReasoningEngine` configured with *mode*."""
-    return ReasoningEngine(mode=mode)
+def _load_reasoning_engine():
+    global _reasoning_engine_cls
+    if _reasoning_engine_cls is not None:
+        return _reasoning_engine_cls
+    
+    reasoning_file = None
+    for path in sys.path:
+        import os
+        candidate = os.path.join(path, "retrieval", "reasoning.py")
+        if os.path.exists(candidate):
+            reasoning_file = candidate
+            break
+    
+    if reasoning_file:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("retrieval.reasoning_impl", reasoning_file)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules["retrieval.reasoning_impl"] = module
+        spec.loader.exec_module(module)
+        _reasoning_engine_cls = module.ReasoningEngine
+        return _reasoning_engine_cls
+    
+    return None
+
+
+def get_reasoning_engine(mode=ReasoningMode.CHAIN_OF_THOUGHTS):
+    cls = _load_reasoning_engine()
+    if cls is None:
+        raise RuntimeError("Could not load ReasoningEngine")
+    return cls(mode=mode)
+
+
+def __getattr__(name):
+    if name == "ReasoningEngine":
+        cls = _load_reasoning_engine()
+        if cls is not None:
+            return cls
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 from retrieval.reasoning.entity_aware import (
     EntityAwareReasoningEngine,
-    EntityRelation,
     GraphPathType,
+    EntityRelation,
 )
 
+
 __all__ = [
-    "ReasoningEngine",
     "EntityAwareReasoningEngine",
     "GraphPathType",
     "EntityRelation",

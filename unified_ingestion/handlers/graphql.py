@@ -1,8 +1,9 @@
 import hashlib
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from ingestion.graphql_chunker import GraphQLChunker
+
 from unified_ingestion.handlers.base import Handler, HandlerResult
 
 logger = logging.getLogger(__name__)
@@ -12,9 +13,7 @@ class GraphQLHandler(Handler):
     def __init__(self):
         self._chunker = GraphQLChunker()
 
-    async def handle(
-        self, content: bytes, source_id: str, metadata: Dict[str, Any]
-    ) -> HandlerResult:
+    async def handle(self, content: bytes, source_id: str, metadata: Dict[str, Any]) -> HandlerResult:
         filename = metadata.get("filename", "schema.graphql")
         text = content.decode("utf-8")
 
@@ -26,9 +25,7 @@ class GraphQLHandler(Handler):
             relationships = []
 
             for chunk in result.chunks:
-                chunk_id = hashlib.sha256(f"{source_id}:{chunk.chunk_index}".encode()).hexdigest()[
-                    :16
-                ]
+                chunk_id = hashlib.sha256(f"{source_id}:{chunk.chunk_index}".encode()).hexdigest()[:16]
                 chunks.append(
                     {
                         "id": chunk_id,
@@ -52,10 +49,7 @@ class GraphQLHandler(Handler):
                             "fields": chunk.metadata.get("fields", []),
                         }
                     )
-                elif (
-                    chunk.metadata.get("type") == "query"
-                    or chunk.metadata.get("type") == "mutation"
-                ):
+                elif chunk.metadata.get("type") == "query" or chunk.metadata.get("type") == "mutation":
                     relationships.append(
                         {
                             "source": chunk.metadata.get("name"),

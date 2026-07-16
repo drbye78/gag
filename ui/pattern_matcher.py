@@ -1,16 +1,12 @@
-"""UIPattern node creation and MATCHES_PATTERN relationship building.
+"""UIPattern node creation and MATCHES_PATTERN relationship building."""
 
-Uses parameterized Cypher queries to prevent injection attacks.
-"""
-
+import json
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List, Optional
 
-from ui.models import UIExtractionResult, UIPattern
+from ui.models import UIPattern, UIExtractionResult
 
 logger = logging.getLogger(__name__)
-
-CypherStatement = Tuple[str, Dict[str, Any]]
 
 # Standard UI patterns with required element composition
 _STANDARD_PATTERNS = [
@@ -86,41 +82,34 @@ class UIPatternMatcher:
 
     def build_pattern_cypher(
         self, result: UIExtractionResult, matches: List[UIPattern]
-    ) -> List[CypherStatement]:
-        """Build parameterized Cypher for UIPattern nodes and MATCHES_PATTERN relationships."""
+    ) -> str:
+        """Build Cypher for UIPattern nodes and MATCHES_PATTERN relationships."""
         if not matches:
-            return []
+            return ""
 
-        statements: List[CypherStatement] = []
+        parts = []
         for pattern in matches:
-            props: Dict[str, Any] = {
+            props = {
                 "pattern_id": pattern.pattern_id,
                 "pattern_name": pattern.pattern_name,
                 "description": pattern.description,
                 "complexity": pattern.complexity,
                 "required_elements": pattern.required_elements,
             }
-            statements.append(
-                (
-                    "MERGE (p:UIPattern {pattern_id: $pattern_id}) SET p = $props",
-                    {"pattern_id": pattern.pattern_id, "props": props},
-                )
+            props_str = json.dumps(props)
+            parts.append(
+                f"MERGE (p:UIPattern {{pattern_id: '{pattern.pattern_id}'}}) "
+                f"SET p = {props_str}"
             )
-            statements.append(
-                (
-                    "MATCH (s:UISketch {sketch_id: $sketch_id}) "
-                    "MERGE (s)-[:MATCHES_PATTERN {confidence: 1.0}]->(p)",
-                    {"sketch_id": result.sketch.sketch_id},
-                )
+            parts.append(
+                f"MATCH (s:UISketch {{sketch_id: '{result.sketch.sketch_id}'}}) "
+                f"MERGE (s)-[:MATCHES_PATTERN {{confidence: 1.0}}]->(p)"
             )
 
-        return statements
+        return "\n".join(parts)
 
     def build_sap_mapping_cypher(self) -> str:
-        """Build USES_PATTERN relationships between SAPComponent and UIPattern.
-
-        No user-supplied values — safe to return as plain string.
-        """
+        """Build USES_PATTERN relationships between SAPComponent and UIPattern."""
         return (
             "MATCH (sc:SAPComponent), (p:UIPattern) "
             "WHERE ANY(elem IN p.required_elements WHERE elem IN sc.supported_element_types) "

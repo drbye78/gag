@@ -1,5 +1,3 @@
-import asyncio
-import logging
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -7,14 +5,12 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from ingestion.ticket.client import (
-    GitHubIssuesClient,
     JiraClient,
-    Ticket,
-    get_github_client,
+    GitHubIssuesClient,
     get_jira_client,
+    get_github_client,
+    Ticket,
 )
-
-logger = logging.getLogger(__name__)
 
 
 class TicketJobStatus(str, Enum):
@@ -60,42 +56,10 @@ class TicketIngestionPipeline:
         self,
         jira_client: Optional[JiraClient] = None,
         github_client: Optional[GitHubIssuesClient] = None,
-        max_retries: int = 3,
-        base_delay: float = 1.0,
     ):
         self.jira_client = jira_client or get_jira_client()
         self.github_client = github_client or get_github_client()
         self._jobs: Dict[str, TicketJob] = {}
-        self.max_retries = max_retries
-        self.base_delay = base_delay
-
-    async def _fetch_with_rate_limit_retry(self, fetch_fn, *args, **kwargs):
-        """Execute fetch with retry on HTTP 429 rate limiting."""
-        import httpx
-
-        for attempt in range(self.max_retries):
-            try:
-                return await fetch_fn(*args, **kwargs)
-            except httpx.HTTPStatusError as e:
-                if e.response.status_code == 429 and attempt < self.max_retries - 1:
-                    delay = self.base_delay * (2**attempt)
-                    retry_after = e.response.headers.get("Retry-After")
-                    if retry_after:
-                        try:
-                            delay = float(retry_after)
-                        except (ValueError, TypeError):
-                            pass
-                    logger.warning("Rate limited (429), retrying in %.1fs", delay)
-                    await asyncio.sleep(delay)
-                else:
-                    raise
-            except (httpx.ConnectError, httpx.TimeoutException) as e:
-                if attempt < self.max_retries - 1:
-                    delay = self.base_delay * (2**attempt)
-                    logger.warning("Connection error, retrying in %.1fs: %s", delay, e)
-                    await asyncio.sleep(delay)
-                else:
-                    raise
 
     async def ingest_jira(
         self,
@@ -112,9 +76,7 @@ class TicketIngestionPipeline:
 
         try:
             job.status = TicketJobStatus.FETCHING
-            tickets = await self._fetch_with_rate_limit_retry(
-                self.jira_client.fetch_issues, jql, max_results
-            )
+            tickets = await self.jira_client.fetch_issues(jql, max_results)
             job.ticket_count = len(tickets)
 
             job.status = TicketJobStatus.PROCESSING
@@ -156,8 +118,8 @@ class TicketIngestionPipeline:
 
         try:
             job.status = TicketJobStatus.FETCHING
-            tickets = await self._fetch_with_rate_limit_retry(
-                self.github_client.fetch_issues, state, max_results=max_results
+            tickets = await self.github_client.fetch_issues(
+                state, max_results=max_results
             )
             job.ticket_count = len(tickets)
 
@@ -206,7 +168,9 @@ class TicketIngestionPipeline:
                     "id": ticket.ticket_id,
                     "source": ticket.source,
                     "title": ticket.title,
-                    "description": ticket.description[:500] if ticket.description else "",
+                    "description": ticket.description[:500]
+                    if ticket.description
+                    else "",
                     "status": ticket.status,
                     "priority": ticket.priority,
                     "assignee": ticket.assignee,

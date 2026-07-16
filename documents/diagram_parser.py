@@ -12,7 +12,9 @@ Features:
 - Code generation from diagrams
 """
 
+import base64
 import io
+import json
 import re
 from dataclasses import dataclass, field
 from enum import Enum
@@ -206,7 +208,13 @@ class UMLClassExtractor:
                 if not line or "(" in line:
                     continue
 
-                vis = "+" if line.startswith("+") else "-" if line.startswith("-") else "#"
+                vis = (
+                    "+"
+                    if line.startswith("+")
+                    else "-"
+                    if line.startswith("-")
+                    else "#"
+                )
                 name = re.sub(r"^[+\-#]\s*", "", line).split(":")[0].strip()
                 atype = line.split(":")[-1].strip() if ":" in line else "unknown"
                 if atype == line:
@@ -222,7 +230,13 @@ class UMLClassExtractor:
                 if "(" not in line:
                     continue
                 line = line.strip()
-                vis = "+" if line.startswith("+") else "-" if line.startswith("-") else "#"
+                vis = (
+                    "+"
+                    if line.startswith("+")
+                    else "-"
+                    if line.startswith("-")
+                    else "#"
+                )
                 clean = re.sub(r"^[+\-#]\s*", "", line)
 
                 if "(" in clean:
@@ -294,7 +308,7 @@ class UMLSequenceExtractor:
         for line in text.split("\n"):
             if ":" in line and "->" not in line:
                 name = line.split(":")[0].strip()
-                if name and name not in [ll.get("name") for ll in lifelines]:
+                if name and name not in [l.get("name") for l in lifelines]:
                     lifelines.append({"name": name, "type": "object"})
 
         message_pattern = r"(\w+)\s*(->>|-->|->)\s*(\w+):?\s*([^\n]+)"
@@ -342,7 +356,9 @@ class C4ContainerExtractor:
                     tech = line.split("(")[1].split(")")[0].strip()
 
                 if name:
-                    containers.append({"name": name, "technology": tech, "type": "container"})
+                    containers.append(
+                        {"name": name, "technology": tech, "type": "container"}
+                    )
 
         rel_patterns = [
             r"(\w+)\s*->\s*(\w+)",
@@ -546,7 +562,7 @@ class UMLObjectExtractor:
         links = []
 
         for line in text.split("\n"):
-            if ":" in line and "->" not in line:
+            if ":" in line and not "->" in line:
                 name = line.split(":")[0].strip()
                 otype = line.split(":")[-1].strip() if ":" in line else "Object"
                 if name:
@@ -734,7 +750,9 @@ class MermaidGenerator:
             lines.append(f"  participant {name}")
 
         for rel in diagram_result.relationships:
-            lines.append(f"  {rel.get('from')}->>{rel.get('to')}: {rel.get('message', 'msg')}")
+            lines.append(
+                f"  {rel.get('from')}->>{rel.get('to')}: {rel.get('message', 'msg')}"
+            )
 
         return "\n".join(lines)
 
@@ -797,6 +815,8 @@ class UnifiedDiagramParser:
         if hasattr(image_source, "read"):
             image_source = image_source.read()
 
+        from PIL import Image
+
         if isinstance(image_source, bytes):
             image = Image.open(io.BytesIO(image_source))
         elif isinstance(image_source, str):
@@ -811,7 +831,9 @@ class UnifiedDiagramParser:
                 diagram_type=DiagramType.UNKNOWN, error="Could not load image"
             )
 
-        text_result = await parser.parse(str(image), "Describe the diagram elements in detail.")
+        text_result = await parser.parse(
+            str(image), "Describe the diagram elements in detail."
+        )
         text = text_result.text if hasattr(text_result, "text") else str(text_result)
 
         detected = DiagramType.UNKNOWN
@@ -841,7 +863,9 @@ class UnifiedDiagramParser:
         if extractor:
             return extractor.extract(text)
 
-        return DiagramExtractionResult(diagram_type=detected, error="No extractor available")
+        return DiagramExtractionResult(
+            diagram_type=detected, error="No extractor available"
+        )
 
 
 def get_diagram_parser() -> UnifiedDiagramParser:

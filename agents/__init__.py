@@ -2,17 +2,20 @@
 Agents Module - Agent system components.
 
 Exports: PlannerAgent, RetrievalAgent, ReasoningAgent,
-ToolExecutor, OrchestrationEngine, and system prompts.
+ToolExecutor, OrchestrationEngine, ValidatorAgent, and system prompts.
 """
 
-import agents._register  # noqa: F401 - registers all built-in agents
-from agents.executor import ToolExecutor, ToolResult, ToolStatus
-from agents.orchestration import ExecutionState, OrchestrationEngine
-from agents.planner import ExecutionPlan, ExecutionStep, PlannerAgent
+from agents.planner import PlannerAgent, ExecutionPlan, ExecutionStep
+from agents.retrieval import RetrievalAgent, RetrievalStrategy, RetrievalResult
 from agents.reasoning import ReasoningAgent, ReasonMode
-from agents.registry import AgentRegistry, get_agent, get_registry, list_agents, register_agent
-from agents.retrieval import RetrievalAgent, RetrievalResult, RetrievalStrategy
-from agents.types import AgentConfig, AgentMeta, AgentType
+from agents.executor import ToolExecutor, ToolStatus, ToolResult
+from agents.orchestration import OrchestrationEngine, ExecutionState
+from agents.validator import ValidatorAgent, ValidationResult, ValidationIssue
+from agents.registry import get_agent, list_agents, register_agent, AgentRegistry
+from agents.types import AgentType, AgentConfig, AgentMeta
+
+import agents._register  # noqa: F401 - registers all built-in agents
+
 
 __all__ = [
     "PlannerAgent",
@@ -28,11 +31,13 @@ __all__ = [
     "ToolResult",
     "OrchestrationEngine",
     "ExecutionState",
+    "ValidatorAgent",
+    "ValidationResult",
+    "ValidationIssue",
     "get_agent",
     "list_agents",
     "register_agent",
     "AgentRegistry",
-    "get_registry",
     "AgentType",
     "AgentConfig",
     "AgentMeta",

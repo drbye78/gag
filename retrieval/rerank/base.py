@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import List, Dict, Any, Optional
 from enum import Enum
-from typing import Any, Dict, List, Optional
 
 
 class RerankProvider(str, Enum):
@@ -32,22 +32,6 @@ class BaseReranker(ABC):
         results: List[Dict[str, Any]],
         top_n: Optional[int] = None,
     ) -> List[RerankResult]: ...
-
-    async def rerank_batch(
-        self,
-        queries: List[str],
-        results_list: List[List[Dict[str, Any]]],
-        top_n: Optional[int] = None,
-    ) -> List[List[RerankResult]]:
-        """Rerank multiple query-result pairs.
-
-        Default implementation calls rerank() for each pair sequentially.
-        Subclasses may override for more efficient batched processing.
-        """
-        batch_results: List[List[RerankResult]] = []
-        for query, results in zip(queries, results_list):
-            batch_results.append(await self.rerank(query, results, top_n))
-        return batch_results
 
     @property
     @abstractmethod

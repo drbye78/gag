@@ -13,12 +13,26 @@ Unified knowledge layer for domain intelligence:
 - Reference: Reference architectures
 """
 
-from core.knowledge.adrs import (
-    ADR,
-    ADRDecision,
-    ADRRepository,
-    ADRStatus,
-    get_adr_repository,
+from core.knowledge.graph import (
+    KnowledgeGraph,
+    KnowledgeNode,
+    KnowledgeEdge,
+    NodeType,
+    EdgeType,
+    get_knowledge_graph,
+)
+from core.knowledge.ontology import (
+    ExtractedEntity,
+    EntityRole,
+    QueryIntent,
+    IntentType,
+    IRFeatureV2,
+)
+from core.knowledge.taxonomy import (
+    PatternV2,
+    PatternDomain,
+    PatternMatcherV2,
+    PatternMatch,
 )
 from core.knowledge.constraints import (
     ConstraintRule,
@@ -26,36 +40,9 @@ from core.knowledge.constraints import (
     RuleResult,
     RuleType,
 )
-from core.knowledge.graph import (
-    EdgeType,
-    KnowledgeEdge,
-    KnowledgeGraph,
-    KnowledgeNode,
-    NodeType,
-    get_knowledge_graph,
-)
-from core.knowledge.ontology import (
-    EntityRole,
-    ExtractedEntity,
-    IntentType,
-    IRFeatureV2,
-    QueryIntent,
-)
-from core.knowledge.reference import (
-    ReferenceArchitecture,
-    ReferenceArchitectureRepository,
-    ReferenceArchitectureType,
-    get_reference_architecture_repository,
-)
 from core.knowledge.resolver import (
     KnowledgeResolver,
     ResolutionResult,
-)
-from core.knowledge.taxonomy import (
-    PatternDomain,
-    PatternMatch,
-    PatternMatcherV2,
-    PatternV2,
 )
 from core.knowledge.usecases import (
     UseCase,
@@ -64,18 +51,31 @@ from core.knowledge.usecases import (
     UseCaseRepository,
     get_use_case_repository,
 )
+from core.knowledge.adrs import (
+    ADR,
+    ADRStatus,
+    ADRDecision,
+    ADRRepository,
+    get_adr_repository,
+)
+from core.knowledge.reference import (
+    ReferenceArchitecture,
+    ReferenceArchitectureType,
+    ReferenceArchitectureRepository,
+    get_reference_architecture_repository,
+)
 
 __all__ = [
     # Graph
     "KnowledgeGraph",
-    "KnowledgeNode",
+    "KnowledgeNode", 
     "KnowledgeEdge",
     "NodeType",
     "EdgeType",
     # Ontology
     "ExtractedEntity",
     "EntityRole",
-    "QueryIntent",
+    "QueryIntent", 
     "IntentType",
     "IRFeatureV2",
     # Taxonomy
@@ -86,7 +86,7 @@ __all__ = [
     # Constraints
     "ConstraintRule",
     "RuleEngine",
-    "RuleResult",
+    "RuleResult", 
     "RuleType",
     # Resolver
     "KnowledgeResolver",
@@ -99,7 +99,7 @@ __all__ = [
     "get_use_case_repository",
     # ADRs
     "ADR",
-    "ADRStatus",
+    "ADRStatus", 
     "ADRDecision",
     "ADRRepository",
     "get_adr_repository",

@@ -3,8 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
-
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 
 class EntityType(str, Enum):
@@ -52,20 +51,6 @@ class EntityNode(BaseModel):
     source_id: Optional[str] = Field(None, description="Source document ID")
     confidence: float = Field(default=1.0, description="Extraction confidence")
 
-    @field_validator("name")
-    @classmethod
-    def name_not_empty(cls, v: str) -> str:
-        if not v or not v.strip():
-            raise ValueError("Entity name must not be empty")
-        return v.strip()
-
-    @field_validator("confidence")
-    @classmethod
-    def confidence_range(cls, v: float) -> float:
-        if not 0.0 <= v <= 1.0:
-            raise ValueError("Confidence must be between 0.0 and 1.0")
-        return v
-
 
 class RelationshipEdge(BaseModel):
     source_id: str = Field(..., description="Source entity ID")
@@ -75,20 +60,6 @@ class RelationshipEdge(BaseModel):
     context: Optional[str] = Field(None, description="Context from source text")
     properties: dict[str, Any] = Field(default_factory=dict)
 
-    @field_validator("source_id", "target_id")
-    @classmethod
-    def id_not_empty(cls, v: str) -> str:
-        if not v or not v.strip():
-            raise ValueError("Entity ID must not be empty")
-        return v.strip()
-
-    @field_validator("confidence")
-    @classmethod
-    def confidence_range(cls, v: float) -> float:
-        if not 0.0 <= v <= 1.0:
-            raise ValueError("Confidence must be between 0.0 and 1.0")
-        return v
-
 
 class Community(BaseModel):
     id: str = Field(..., description="Community ID")
@@ -97,13 +68,6 @@ class Community(BaseModel):
     size: int = Field(default=0, description="Number of members")
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.utcnow)
-
-    @field_validator("name")
-    @classmethod
-    def name_not_empty(cls, v: str) -> str:
-        if not v or not v.strip():
-            raise ValueError("Community name must not be empty")
-        return v.strip()
 
 
 class GraphRAGConfig(BaseModel):
@@ -134,18 +98,9 @@ class GraphRAGConfig(BaseModel):
 class GraphRAGQueryRequest(BaseModel):
     query: str = Field(..., description="User query")
     include_entities: bool = Field(default=True, description="Include entities in response")
-    include_relationships: bool = Field(
-        default=True, description="Include relationships in response"
-    )
+    include_relationships: bool = Field(default=True, description="Include relationships in response")
     include_communities: bool = Field(default=False, description="Include communities in response")
     max_hops: int = Field(default=3, description="Maximum graph traversal hops")
-
-    @field_validator("query")
-    @classmethod
-    def query_not_empty(cls, v: str) -> str:
-        if not v or not v.strip():
-            raise ValueError("Query must not be empty")
-        return v.strip()
 
 
 class GraphRAGQueryResponse(BaseModel):

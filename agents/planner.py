@@ -7,7 +7,7 @@ execution plans with retrieval steps and tool invocations.
 
 from typing import Any, Dict, List, Optional
 
-from agents.prompts import Intent
+from agents.prompts import Intent, Step, create_planner_response
 
 
 class ExecutionStep:
@@ -17,13 +17,11 @@ class ExecutionStep:
         action: str,
         source: Optional[str] = None,
         params: Optional[Dict[str, Any]] = None,
-        depends_on: Optional[str] = None,
     ):
         self.step_type = step_type
         self.action = action
         self.source = source
         self.params = params or {}
-        self.depends_on = depends_on
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -31,7 +29,6 @@ class ExecutionStep:
             "action": self.action,
             "source": self.source,
             "params": self.params,
-            "depends_on": self.depends_on,
         }
 
 
@@ -50,14 +47,6 @@ class ExecutionPlan:
         self.current_step = 0
 
     def add_step(self, step: ExecutionStep):
-        """Add a step, validating dependency ordering if depends_on is set."""
-        if step.depends_on is not None:
-            prior_ids = {s.action for s in self.steps}
-            if step.depends_on not in prior_ids:
-                raise ValueError(
-                    f"Step '{step.action}' depends on '{step.depends_on}', "
-                    f"but that step has not been added yet"
-                )
         self.steps.append(step)
 
     def add_tool(self, tool: str):
@@ -87,15 +76,7 @@ class ExecutionPlan:
 
 class PlannerAgent:
     def __init__(self):
-        self._default_sources = [
-            "docs",
-            "code",
-            "graph",
-            "tickets",
-            "telemetry",
-            "diagram",
-            "ui_sketch",
-        ]
+        self._default_sources = ["docs", "code", "graph", "tickets", "telemetry", "diagram", "ui_sketch"]
         # High-level intent mapping from QueryClassifier fine-grained intents
         self._classifier_intent_map = {
             "causal": Intent.TROUBLESHOOT,
@@ -138,19 +119,35 @@ class PlannerAgent:
             classification = classifier.classify(query)
             primary_intent = classification.get("primary_intent", "fact")
             return self._classifier_intent_map.get(primary_intent, Intent.EXPLAIN)
-        except (ImportError, RuntimeError, ValueError):
+        except Exception:
             # Fallback to simple keyword matching if classifier unavailable
-            return Intent.EXPLAIN
+            return self._fallback_intent(query)
+
+    def _fallback_intent(self, query: str) -> str:
+        """Fallback intent detection when QueryClassifier is unavailable."""
+        query_lower = query.lower()
+        for intent, keywords in self._explicit_intent_keywords.items():
+            if any(kw in query_lower for kw in keywords):
+                return intent
+        return Intent.EXPLAIN
 
     def _identify_sources(self, query: str) -> List[str]:
         query_lower = query.lower()
         sources = []
 
-        if any(kw in query_lower for kw in ["doc", "document", "readme", "guide", "how to"]):
+        if any(
+            kw in query_lower for kw in ["doc", "document", "readme", "guide", "how to"]
+        ):
             sources.append("docs")
-        if any(kw in query_lower for kw in ["code", "function", "class", "implement", "api"]):
+        if any(
+            kw in query_lower
+            for kw in ["code", "function", "class", "implement", "api"]
+        ):
             sources.append("code")
-        if any(kw in query_lower for kw in ["architecture", "component", "service", "deploy"]):
+        if any(
+            kw in query_lower
+            for kw in ["architecture", "component", "service", "deploy"]
+        ):
             sources.append("graph")
         if any(kw in query_lower for kw in ["issue", "bug", "ticket", "problem"]):
             sources.append("tickets")
@@ -158,9 +155,7 @@ class PlannerAgent:
             sources.append("telemetry")
 
         # UI implementation keywords
-        if any(
-            kw in query_lower for kw in ["ui", "sketch", "wireframe", "screen", "layout", "mockup"]
-        ):
+        if any(kw in query_lower for kw in ["ui", "sketch", "wireframe", "screen", "layout", "mockup"]):
             sources.append("ui_sketch")
 
         if not sources:
@@ -181,7 +176,9 @@ class PlannerAgent:
 
         return tools
 
-    async def plan(self, query: str, ir_context: Optional[Dict[str, Any]] = None) -> ExecutionPlan:
+    async def plan(
+        self, query: str, ir_context: Optional[Dict[str, Any]] = None
+    ) -> ExecutionPlan:
         intent = self._detect_intent(query)
         sources = self._identify_sources(query)
         tools = self._identify_tools(query)
@@ -189,37 +186,57 @@ class PlannerAgent:
         plan = ExecutionPlan(query=query, intent=intent)
 
         if intent == Intent.DESIGN:
-            plan.add_step(ExecutionStep(step_type="analyze", action="analyze_ir", source="ir"))
-            plan.add_step(ExecutionStep(step_type="retrieve", action="search", source="docs"))
-            plan.add_step(ExecutionStep(step_type="retrieve", action="search", source="code"))
-            plan.add_step(ExecutionStep(step_type="reason", action="generate_architecture"))
+            plan.add_step(
+                ExecutionStep(step_type="analyze", action="analyze_ir", source="ir")
+            )
+            plan.add_step(
+                ExecutionStep(step_type="retrieve", action="search", source="docs")
+            )
+            plan.add_step(
+                ExecutionStep(step_type="retrieve", action="search", source="code")
+            )
+            plan.add_step(
+                ExecutionStep(step_type="reason", action="generate_architecture")
+            )
 
         elif intent == Intent.TROUBLESHOOT:
-            plan.add_step(ExecutionStep(step_type="retrieve", action="search", source="tickets"))
-            plan.add_step(ExecutionStep(step_type="retrieve", action="search", source="telemetry"))
+            plan.add_step(
+                ExecutionStep(step_type="retrieve", action="search", source="tickets")
+            )
+            plan.add_step(
+                ExecutionStep(step_type="retrieve", action="search", source="telemetry")
+            )
             plan.add_step(ExecutionStep(step_type="analyze", action="analyze_logs"))
             plan.add_step(ExecutionStep(step_type="reason", action="diagnose"))
 
         else:
-            seen_sources = set()
-            for source in sources:
-                if source not in seen_sources:
-                    seen_sources.add(source)
-                    plan.add_step(
-                        ExecutionStep(
-                            step_type="retrieve",
-                            action="search",
-                            source=source,
-                            params={"limit": 10},
+            if not sources:
+                plan.add_step(
+                    ExecutionStep(step_type="retrieve", action="search", source="all")
+                )
+            else:
+                seen_sources = set()
+                for source in sources:
+                    if source not in seen_sources:
+                        seen_sources.add(source)
+                        plan.add_step(
+                            ExecutionStep(
+                                step_type="retrieve",
+                                action="search",
+                                source=source,
+                                params={"limit": 10},
+                            )
                         )
-                    )
 
         if tools:
             plan.add_step(
-                ExecutionStep(step_type="tool", action="execute_tools", params={"tools": tools})
+                ExecutionStep(
+                    step_type="tool", action="execute_tools", params={"tools": tools}
+                )
             )
 
         plan.add_step(ExecutionStep(step_type="reason", action="generate_answer"))
+        plan.add_step(ExecutionStep(step_type="validate", action="validate_response"))
 
         for tool in tools:
             plan.add_tool(tool)
@@ -236,8 +253,6 @@ class PlannerAgent:
             "code_queries": [],
             "ticket_queries": [],
             "telemetry_queries": [],
-            "graph_queries": [],
-            "ui_sketch_queries": [],
         }
 
         if "docs" in sources:
@@ -255,14 +270,6 @@ class PlannerAgent:
         if "telemetry" in sources:
             queries["telemetry_queries"].append(query)
             queries["telemetry_queries"].append(f"{query} logs metrics")
-
-        if "graph" in sources:
-            queries["graph_queries"].append(query)
-            queries["graph_queries"].append(f"{query} architecture components")
-
-        if "ui_sketch" in sources:
-            queries["ui_sketch_queries"].append(query)
-            queries["ui_sketch_queries"].append(f"{query} UI implementation")
 
         return queries
 

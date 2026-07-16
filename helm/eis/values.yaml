@@ -3,7 +3,7 @@ replicaCount: 3
 image:
   repository: eis-api
   pullPolicy: IfNotPresent
-  tag: "3.2.0"
+  tag: "4.0.0"
 
 imagePullSecrets: []
 nameOverride: ""
@@ -101,9 +101,6 @@ config:
   maxRetrievalResults: "50"
 
 secrets:
-  # CRITICAL: jwtSecret MUST be set before deployment. Never use the default empty value in production.
-  jwtSecret: ""
-  # CRITICAL: credentialEncryptKey MUST be set before deployment.
+  jwtSecret: "change-me-in-production"
   credentialEncryptKey: ""
-  # CRITICAL: llmApiKey MUST be set before deployment.
   llmApiKey: ""

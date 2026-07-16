@@ -6,14 +6,15 @@ and metadata enrichment for PDF and Office documents.
 Inspired by RAGFlow DeepDoc architecture.
 """
 
-import logging
 import os
 import re
-import xml.etree.ElementTree as ET
+import json
+import logging
 import zipfile
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
-from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
+from enum import Enum
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +115,9 @@ class PDFLayoutAnalyzer:
                     words = page.extract_words() or []
                     tables = page.extract_tables() or []
 
-                    page_blocks = self._build_blocks_from_words(words, tables, page_num + 1)
+                    page_blocks = self._build_blocks_from_words(
+                        words, tables, page_num + 1
+                    )
 
                     for block in page_blocks:
                         if block.layout_type == LayoutType.TABLE:
@@ -152,9 +155,13 @@ class PDFLayoutAnalyzer:
             row_text = " ".join(w["text"] for w in row_words)
             bbox = self._get_row_bbox(row_words)
 
-            is_in_table = any(self._bbox_overlaps(bbox, tbbox) for tbbox in table_bboxes)
+            is_in_table = any(
+                self._bbox_overlaps(bbox, tbbox) for tbbox in table_bboxes
+            )
             layout_type = (
-                LayoutType.TABLE if is_in_table else self._classify_text_block(row_text, bbox, page)
+                LayoutType.TABLE
+                if is_in_table
+                else self._classify_text_block(row_text, bbox, page)
             )
 
             block_obj = LayoutBlock(
@@ -213,7 +220,9 @@ class PDFLayoutAnalyzer:
             return False
         x1_min, y1_min, x1_max, y1_max = bbox1
         x2_min, y2_min, x2_max, y2_max = bbox2
-        return not (x1_max < x2_min or x1_min > x2_max or y1_max < y2_min or y1_min > y2_max)
+        return not (
+            x1_max < x2_min or x1_min > x2_max or y1_max < y2_min or y1_min > y2_max
+        )
 
     def _classify_text_block(self, text: str, bbox: Tuple, page: int) -> LayoutType:
         text = text.strip()
@@ -291,7 +300,9 @@ class DOCXStructureAnalyzer:
                     tree = ET.parse(doc_xml)
                     root = tree.getroot()
 
-                    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+                    ns = {
+                        "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+                    }
 
                     headings = root.findall(".//w:pStyle[@w:val='Heading']/..", ns)
 
@@ -366,7 +377,9 @@ class DOCXStructureAnalyzer:
                         tree = ET.parse(f)
                         root = tree.getroot()
 
-                        ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+                        ns = {
+                            "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+                        }
 
                         for tbl in root.findall(".//w:tbl", ns):
                             rows = []
@@ -374,7 +387,8 @@ class DOCXStructureAnalyzer:
                                 cells = []
                                 for tc in tr.findall("w:tc", ns):
                                     cell_text = "".join(
-                                        p.text or "" for p in tc.findall(".//w:p/w:t", ns)
+                                        p.text or ""
+                                        for p in tc.findall(".//w:p/w:t", ns)
                                     )
                                     cells.append(cell_text)
                                 rows.append(cells)
@@ -403,9 +417,8 @@ class XLSXStructureAnalyzer:
         reading_order = []
 
         try:
-            from io import BytesIO
-
             import openpyxl
+            from io import BytesIO
 
             wb = openpyxl.load_workbook(BytesIO(content))
 
@@ -459,7 +472,9 @@ class PPTXStructureAnalyzer:
                 slide_files = sorted(
                     [f for f in pptx.namelist() if f.startswith("ppt/slides/slide")],
                     key=lambda x: int(
-                        re.search(r"slide(\d+)", x).group(1) if re.search(r"slide(\d+)", x) else 0
+                        re.search(r"slide(\d+)", x).group(1)
+                        if re.search(r"slide(\d+)", x)
+                        else 0
                     ),
                 )
 
@@ -533,11 +548,15 @@ class UnifiedLayoutParser:
         self.xlsx_analyzer = XLSXStructureAnalyzer()
         self.pptx_analyzer = PPTXStructureAnalyzer()
 
-    def get_layout_analysis(self, content: bytes, filename: str) -> Optional[LayoutAnalysisResult]:
+    def get_layout_analysis(
+        self, content: bytes, filename: str
+    ) -> Optional[LayoutAnalysisResult]:
         ext = os.path.splitext(filename)[1].lower()
 
         if ext == ".pdf":
-            return asyncio.get_event_loop().run_until_complete(self.pdf_analyzer.analyze(content))
+            return asyncio.get_event_loop().run_until_complete(
+                self.pdf_analyzer.analyze(content)
+            )
 
         return None
 
@@ -547,11 +566,17 @@ class UnifiedLayoutParser:
         ext = os.path.splitext(filename)[1].lower()
 
         if ext == ".docx":
-            return asyncio.get_event_loop().run_until_complete(self.docx_analyzer.analyze(content))
+            return asyncio.get_event_loop().run_until_complete(
+                self.docx_analyzer.analyze(content)
+            )
         elif ext == ".xlsx":
-            return asyncio.get_event_loop().run_until_complete(self.xlsx_analyzer.analyze(content))
+            return asyncio.get_event_loop().run_until_complete(
+                self.xlsx_analyzer.analyze(content)
+            )
         elif ext == ".pptx":
-            return asyncio.get_event_loop().run_until_complete(self.pptx_analyzer.analyze(content))
+            return asyncio.get_event_loop().run_until_complete(
+                self.pptx_analyzer.analyze(content)
+            )
 
         return None
 

@@ -1,8 +1,8 @@
+from dataclasses import dataclass, field
+from typing import List, Dict, Any, Optional
+from enum import Enum
 import json
 import logging
-from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +94,9 @@ class DocumentEntityExtractor:
 
         return chunks if chunks else [text]
 
-    async def _extract_from_chunk(self, chunk: str, source_id: str) -> List[ExtractedEntity]:
+    async def _extract_from_chunk(
+        self, chunk: str, source_id: str
+    ) -> List[ExtractedEntity]:
         prompt = f"""Extract named entities from the following text. 
 Return a JSON array of objects with fields: name, type, description.
 
@@ -112,7 +114,17 @@ Return JSON:"""
                 temperature=0.1,
             )
 
-            entities = self._parse_llm_response(response.text)
+            # If parsing fails, retry with a "return only JSON" reprompt
+            entities = self._parse_llm_response(response)
+            if not entities:
+                logger.info("First entity extraction returned no entities, retrying with JSON-only prompt")
+                retry_prompt = prompt + "\n\nIMPORTANT: Return ONLY a valid JSON array. No prose, no markdown fences, no code blocks."
+                response = await self.llm_client.chat(
+                    prompt=retry_prompt,
+                    max_tokens=2000,
+                    temperature=0.0,
+                )
+                entities = self._parse_llm_response(response)
 
             for e in entities:
                 e.id = f"{source_id}:{e.name.lower().replace(' ', '_')}"
@@ -121,35 +133,40 @@ Return JSON:"""
             return entities
 
         except Exception as e:
+            logger.warning("Entity extraction failed for %s: %s", source_id, e)
             return []
 
-    def _parse_llm_response(self, response: str) -> List[ExtractedEntity]:
-        try:
-            data = json.loads(response)
-            if not isinstance(data, list):
-                return []
+    def _parse_llm_response(self, response: Any) -> List[ExtractedEntity]:
+        """Parse LLM response into entities. Handles markdown fences and retries."""
+        from core.llm_utils import extract_json_from_response
 
-            entities = []
-            for item in data:
-                try:
-                    entity_type = EntityType(item.get("type", "concept").lower())
-                except ValueError:
-                    entity_type = EntityType.CONCEPT
-
-                entities.append(
-                    ExtractedEntity(
-                        id="",
-                        name=item.get("name", ""),
-                        entity_type=entity_type,
-                        description=item.get("description", ""),
-                    )
-                )
-
-            return entities
-
-        except json.JSONDecodeError:
+        data = extract_json_from_response(response)
+        if data is None:
             logger.warning("Failed to parse LLM response as JSON, returning empty entities")
             return []
+
+        if not isinstance(data, list):
+            return []
+
+        entities = []
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            try:
+                entity_type = EntityType(item.get("type", "concept").lower())
+            except ValueError:
+                entity_type = EntityType.CONCEPT
+
+            entities.append(
+                ExtractedEntity(
+                    id="",
+                    name=item.get("name", ""),
+                    entity_type=entity_type,
+                    description=item.get("description", ""),
+                )
+            )
+
+        return entities
 
     def _merge_entities(self, entities: List[ExtractedEntity]) -> List[ExtractedEntity]:
         merged = {}
@@ -168,12 +185,13 @@ Return JSON:"""
 
 
 class LightweightEntityExtractor:
-    def __init__(self, max_entities: int = 50):
-        self.max_entities = max_entities
+    def __init__(self):
+        pass
 
     def extract(self, text: str, source_id: str) -> EntityExtractionResult:
-        import re
         import time
+        import re
+        from collections import defaultdict
 
         start = time.time()
 
@@ -193,7 +211,9 @@ class LightweightEntityExtractor:
                     mentions=[
                         {
                             "position": match.start(),
-                            "context": text[max(0, match.start() - 50) : match.end() + 50],
+                            "context": text[
+                                max(0, match.start() - 50) : match.end() + 50
+                            ],
                         }
                     ],
                 )
@@ -209,7 +229,9 @@ class LightweightEntityExtractor:
                     mentions=[
                         {
                             "position": match.start(),
-                            "context": text[max(0, match.start() - 50) : match.end() + 50],
+                            "context": text[
+                                max(0, match.start() - 50) : match.end() + 50
+                            ],
                         }
                     ],
                 )
@@ -225,18 +247,19 @@ class LightweightEntityExtractor:
                     mentions=[
                         {
                             "position": match.start(),
-                            "context": text[max(0, match.start() - 50) : match.end() + 50],
+                            "context": text[
+                                max(0, match.start() - 50) : match.end() + 50
+                            ],
                         }
                     ],
                 )
             )
 
         took = int((time.time() - start) * 1000)
-        truncated = entities[: self.max_entities]
         return EntityExtractionResult(
             source_id=source_id,
-            entities=truncated,
-            total_entities=len(truncated),
+            entities=entities[:50],
+            total_entities=len(entities),
             took_ms=took,
         )
 

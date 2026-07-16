@@ -1,7 +1,7 @@
-import csv
 import hashlib
-import io
 import logging
+import csv
+import io
 import os
 from typing import Any, Dict
 
@@ -18,9 +18,7 @@ class TextHandler(Handler):
         ".text": "text",
     }
 
-    async def handle(
-        self, content: bytes, source_id: str, metadata: Dict[str, Any]
-    ) -> HandlerResult:
+    async def handle(self, content: bytes, source_id: str, metadata: Dict[str, Any]) -> HandlerResult:
         filename = metadata.get("filename", "file")
         ext = os.path.splitext(filename)[1].lower()
 
@@ -38,11 +36,15 @@ class TextHandler(Handler):
             logger.error("TextHandler failed: %s", e)
             return HandlerResult(success=False, error=str(e))
 
-    async def _parse_text(self, content: bytes, source_id: str, filename: str) -> HandlerResult:
+    async def _parse_text(
+        self, content: bytes, source_id: str, filename: str
+    ) -> HandlerResult:
         text = content.decode("utf-8")
         return self._chunk_text(text, source_id, filename)
 
-    async def _parse_csv(self, content: bytes, source_id: str, filename: str) -> HandlerResult:
+    async def _parse_csv(
+        self, content: bytes, source_id: str, filename: str
+    ) -> HandlerResult:
         text = content.decode("utf-8")
         reader = csv.reader(io.StringIO(text))
         rows = list(reader)
@@ -54,11 +56,11 @@ class TextHandler(Handler):
         data_rows = rows[1:] if len(rows) > 1 else []
 
         csv_text = text
-        return self._chunk_text(
-            csv_text, source_id, filename, metadata={"row_count": len(data_rows)}
-        )
+        return self._chunk_text(csv_text, source_id, filename, metadata={"row_count": len(data_rows)})
 
-    async def _parse_tsv(self, content: bytes, source_id: str, filename: str) -> HandlerResult:
+    async def _parse_tsv(
+        self, content: bytes, source_id: str, filename: str
+    ) -> HandlerResult:
         text = content.decode("utf-8")
         reader = csv.reader(io.StringIO(text), delimiter="\t")
         rows = list(reader)
@@ -69,9 +71,7 @@ class TextHandler(Handler):
         data_rows = rows[1:] if len(rows) > 1 else []
 
         tsv_text = content.decode("utf-8")
-        return self._chunk_text(
-            tsv_text, source_id, filename, metadata={"row_count": len(data_rows)}
-        )
+        return self._chunk_text(tsv_text, source_id, filename, metadata={"row_count": len(data_rows)})
 
     def _chunk_text(
         self,

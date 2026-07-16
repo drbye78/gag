@@ -3,7 +3,8 @@ import logging
 import os
 from typing import Any, Dict
 
-from documents.parse import DoclingParser, LlamaIndexParser, ParsedDocumentResult
+from documents.parse import LlamaIndexParser, DoclingParser, ParsedDocumentResult
+
 from unified_ingestion.handlers.base import Handler, HandlerResult
 
 logger = logging.getLogger(__name__)
@@ -23,9 +24,7 @@ class DocumentHandler(Handler):
         self._llama_parser = LlamaIndexParser()
         self._docling_parser = DoclingParser()
 
-    async def handle(
-        self, content: bytes, source_id: str, metadata: Dict[str, Any]
-    ) -> HandlerResult:
+    async def handle(self, content: bytes, source_id: str, metadata: Dict[str, Any]) -> HandlerResult:
         filename = metadata.get("filename", "document")
         ext = os.path.splitext(filename)[1].lower()
 

@@ -25,12 +25,11 @@ Query → Knowledge Resolver → Platform Adapter → Platform-specific Output
 
 ### Adapters (`core/adapters/`)
 
-| Adapter | Platform ID | Services (catalog count) | File |
-|---------|------------|-------------------------|------|
+| Adapter | Platform ID | Services | File |
+|---------|------------|---------|------|
 | `SAPBTPAdapter` | `sap` | XSUAA, HANA, Kyma, CAP | `sap.py` |
 | `VMwareTanzuAdapter` | `tanzu` | Kubernetes, Spring, TAS | `tanzu.py` |
 | `PowerPlatformAdapter` | `powerplatform` | Power Apps, Dataverse | `powerplatform.py` |
-| `PlatformVAdapter` | `platformv` | Platform V services (57 across 7 portfolios) | `platformv.py` |
 | `AWSAdapter` | `aws` | Lambda, S3, DynamoDB, EKS | `clouds.py` |
 | `AzureAdapter` | `azure` | Functions, Cosmos DB, AKS | `clouds.py` |
 | `GCPAdapter` | `gcp` | Cloud Functions, Firestore, GKE | `clouds.py` |
@@ -40,46 +39,27 @@ Query → Knowledge Resolver → Platform Adapter → Platform-specific Output
 ```python
 class PlatformAdapter(ABC):
     @property
-    @abstractmethod
     def platform_id(self) -> str: ...
 
     @property
-    def supported_services(self) -> List[str]:
-        """Flat service name list (derived from service_catalog by default)."""
-        ...
+    def supported_services(self) -> List[str]: ...
 
     @property
-    def service_catalog(self) -> List[ServiceSpec]:
-        """Rich catalog with cost models, compliance, dependencies per service."""
-        ...
+    def patterns(self) -> List[Pattern]: ...
 
     @property
-    @abstractmethod
-    def patterns(self) -> List[Any]: ...
+    def constraints(self) -> List[Constraint]: ...
 
-    @property
-    @abstractmethod
-    def constraints(self) -> Any: ...
-
-    @abstractmethod
-    def transform_ir_to_platform(self, input: AdapterInput) -> AdapterOutput: ...
-
-    @abstractmethod
-    def generate_config(self, features: Any) -> Dict[str, str]: ...
-
-    @abstractmethod
-    def generate_code(self, features: Any) -> Dict[str, str]: ...
-
-    def resolve_dependencies(
-        self, service_names: List[str], transitive: bool = True
-    ) -> List[str]:
-        """Resolve transitive service dependencies from the catalog."""
+    def transform_ir_to_platform(self, input: AdapterInput) -> AdapterOutput:
+        # Transform generic IR to platform-specific artifacts
         ...
 
-    def compute_compliance(
-        self, features: Any, selected_service_names: List[str]
-    ) -> List[ComplianceMatrix]:
-        """Compute compliance matrix based on service certifications."""
+    def generate_config(self, features: IRFeature) -> Dict[str, str]:
+        # Generate platform-specific config
+        ...
+
+    def generate_code(self, features: IRFeature) -> Dict[str, str]:
+        # Generate platform-specific code
         ...
 ```
 
@@ -106,21 +86,16 @@ class MyCustomAdapter(PlatformAdapter):
     @property
     def constraints(self) -> List[Constraint]:
         return [
-            Constraint(
-                id="max-timeout", name="Max Timeout", domain="operations",
-                type="hard", feature="timeout_seconds",
-                operator="<=", threshold=300,
-                message="Maximum timeout is 300 seconds",
-                fix_hint="Reduce timeout value",
-                severity="error", platforms=["myplatform"],
-            )
+            Constraint(id="max-timeout", type=ConstraintType.HARD, 
+                      condition={"timeout": {"lt": 300}})
         ]
     
     def transform_ir_to_platform(self, input: AdapterInput) -> AdapterOutput:
         # Transform IR features to platform artifacts
         return AdapterOutput(
-            config_templates=self.generate_config(input.ir_features),
-            code_snippets=self.generate_code(input.ir_features),
+            configs=self.generate_config(input.ir_features),
+            code=self.generate_code(input.ir_features),
+            metadata={"platform": self.platform_id}
         )
     
     def generate_config(self, features: IRFeature) -> Dict[str, str]:
@@ -147,8 +122,9 @@ adapter = registry.auto_detect(features)
 # List all platforms
 platforms = registry.list_platforms()
 
-# List adapter details (including supported services)
-details = registry.list_adapters()
+# Check platform capabilities
+if registry.has_service("aws", "lambda"):
+    ...
 ```
 
 ### Adapter Example: AWS Serverless
@@ -174,8 +150,8 @@ output = adapter.transform_ir_to_platform(AdapterInput(
 ))
 
 # Output includes Lambda config, IAM role, CloudFormation template
-print(output.config_templates)  # { "lambda.yaml": "...", "iam.yaml": "..." }
-print(output.code_snippets)       # { "handler.py": "..." }
+print(output.configs)  # { "lambda.yaml": "...", "iam.yaml": "..." }
+print(output.code)       # { "handler.py": "..." }
 ```
 
 ## Knowledge Layer
@@ -208,8 +184,8 @@ print(output.code_snippets)       # { "handler.py": "..." }
 
 ### Seed Data
 
-**Platforms** (7):
-- SAP BTP, VMware Tanzu, Power Platform, Platform V, AWS, Azure, GCP
+**Platforms** (6):
+- SAP BTP, VMware Tanzu, Power Platform, AWS, Azure, GCP
 
 **Services** (12):
 - SAP: XSUAA, HANA, Kyma
@@ -232,36 +208,27 @@ print(output.code_snippets)       # { "handler.py": "..." }
 Platform-agnostic feature extraction:
 
 ```python
-class IRFeature(BaseModel):
-    """Extracted features from IR for pattern matching and constraints."""
+class IRFeatureV2(BaseModel):
+    # Serverless
+    has_serverless: bool = False
+    has_functions: bool = False
 
-    # Core capabilities
-    has_async: Optional[bool] = None
-    has_auth: Optional[bool] = None
-    has_database: Optional[bool] = None
-    has_api: Optional[bool] = None
-    has_ui: Optional[bool] = None
-    has_batch: Optional[bool] = None
+    # Data
+    has_database: bool = False
+    has_storage: bool = False
 
-    # Architecture patterns
-    has_microservices: Optional[bool] = None
-    has_event_driven: Optional[bool] = None
-    has_serverless: Optional[bool] = None
-    has_container: Optional[bool] = None
+    # Integration
+    has_async: bool = False
+    has_event_driven: bool = False
+    has_api: bool = False
 
-    # Data & compliance
-    data_classification: str = "internal"
-    compliance_requirements: List[str] = []
+    # Security
+    has_auth: bool = False
+    has_oauth: bool = False
 
-    # Cost awareness
-    cost_sensitive: Optional[bool] = None
-    monthly_budget: Optional[float] = None
-
-    # Extended compliance (Platform V)
-    fstec_level: Optional[str] = None
-    compliance_frameworks: List[str] = []
-    require_gost_crypto: Optional[bool] = None
-    target_region: Optional[str] = None
+    # Architecture
+    has_microservices: bool = False
+    has_container: bool = False
 ```
 
 ## Taxonomy (`core/knowledge/taxonomy.py`)
@@ -423,48 +390,35 @@ This guide shows how to create a custom platform adapter for a new platform (e.g
 
 ```python
 from core.adapters.base import PlatformAdapter, AdapterOutput
-from typing import Any, Dict
+from pydantic import BaseModel
 
 class OracleCloudAdapter(PlatformAdapter):
     """Oracle Cloud Infrastructure adapter."""
 
-    @property
-    def platform_id(self) -> str:
-        return "oracle"
+    platform: str = "oracle"
+    supported_services: list[str] = [
+        "functions",
+        "object_storage",
+        "autonomous_db",
+        "apiGateway"
+    ]
 
-    @property
-    def supported_services(self) -> list[str]:
-        return ["functions", "object_storage", "autonomous_db"]
-
-    @property
-    def patterns(self) -> list[Any]:
-        return []
-
-    @property
-    def constraints(self) -> Any:
-        return None
-
-    def transform_ir_to_platform(self, input: AdapterInput) -> AdapterOutput:
-        config_templates = {}
-        code_snippets = {}
+    async def transform_ir_to_platform(
+        self,
+        input: AdapterInput
+    ) -> AdapterOutput:
+        # Transform IR features to Oracle-specific config
+        configs = {}
+        code = {}
 
         if input.ir_features.has_serverless:
-            config_templates["function.yaml"] = self._generate_fn_config(input)
-            code_snippets["handler.py"] = self._generate_handler(input)
+            configs["function.yaml"] = self._generate_fn_config(input)
+            code["handler.py"] = self._generate_handler(input)
 
         if input.ir_features.has_storage:
-            config_templates["bucket.yaml"] = self._generate_bucket_config(input)
+            configs["bucket.yaml"] = self._generate_bucket_config(input)
 
-        return AdapterOutput(
-            config_templates=config_templates,
-            code_snippets=code_snippets,
-        )
-
-    def generate_config(self, features: Any) -> Dict[str, str]:
-        return {}
-
-    def generate_code(self, features: Any) -> Dict[str, str]:
-        return {}
+        return AdapterOutput(configs=configs, code=code)
 
     def _generate_fn_config(self, input: AdapterInput) -> str:
         return """Generate Oracle Functions config."""
@@ -486,22 +440,15 @@ class OracleCloudAdapter(PlatformAdapter):
 #### Step 2: Register the Adapter
 
 ```python
-# core/adapters/__init__.py
-from core.adapters.base import AdapterRegistry
-from core.adapters.oracle import OracleCloudAdapter
+# core/adapters/registry.py
+from core.adapters import adapter_registry
 
-_registry: AdapterRegistry = None
+@adapter_registry.register("oracle")
+class OracleCloudAdapter(PlatformAdapter):
+    ...
 
-def _ensure_registry() -> AdapterRegistry:
-    global _registry
-    if _registry is None:
-        _registry = AdapterRegistry()
-        _registry.register(OracleCloudAdapter())
-        # ... other adapters
-    return _registry
-
-def get_adapter_registry() -> AdapterRegistry:
-    return _ensure_registry()
+# Now available via registry
+adapter = adapter_registry.get("oracle")
 ```
 
 #### Step 3: Add to Knowledge Graph
@@ -529,54 +476,54 @@ ORACLE_SERVICES = {
 #### Step 4: Add Platform Constraints
 
 ```python
-# core/constraints/platforms/oracle.py
-from core.constraints.engine import Constraint, ConstraintSet
+# core/constraints/oracle.py
+from core.constraints.base import PlatformConstraints
 
-ORACLE_CONSTRAINTS = ConstraintSet(
-    id="oracle",
-    name="Oracle Cloud Constraints",
-    description="Platform-specific constraints for OCI",
-    constraints=[
+class OracleConstraints(PlatformConstraints):
+    platform = "oracle"
+
+    hard_constraints = [
         Constraint(
-            id="oracle_region", name="Valid Region", domain="operations",
-            type="enum", feature="region",
-            operator="in", threshold=["us-phoenix-1", "us-ashburn-1"],
-            message="Must use a valid OCI region",
-            fix_hint="Choose from: us-phoenix-1, us-ashburn-1",
-            severity="error", platforms=["oracle"],
+            id="oracle_region",
+            message="Oracle functions require specific region",
+            check=lambda ctx: ctx.get("region") in OCI_REGIONS
         ),
         Constraint(
-            id="oracle_memory", name="Memory Limit", domain="operations",
-            type="limit", feature="memory_mb",
-            operator="<=", threshold=1024,
+            id="oracle_memory",
             message="Max memory is 1024MB",
-            fix_hint="Reduce memory allocation",
-            severity="error", platforms=["oracle"],
-        ),
-    ],
-)
+            check=lambda ctx: ctx.get("memory", 0) <= 1024
+        )
+    ]
+
+    soft_constraints = [
+        Constraint(
+            id="oracle_cold_start",
+            message="Consider warm containers for low latency",
+            severity="warning"
+        )
+    ]
 ```
 
 #### Step 5: Test the Adapter
 
 ```python
 # tests/test_oracle_adapter.py
-from core.adapters import get_adapter_registry
-from core.adapters.base import AdapterInput
-from models.ir import IRFeature
+import pytest
+from core.adapters import adapter_registry
 
-def test_oracle_serverless():
-    adapter = get_adapter_registry().get("oracle")
+@pytest.mark.asyncio
+async def test_oracle_serverless():
+    adapter = adapter_registry.get("oracle")
 
-    result = adapter.transform_ir_to_platform(AdapterInput(
+    result = await adapter.transform_ir_to_platform(AdapterInput(
         ir_features=IRFeature(has_serverless=True),
         pattern_matches=[serverless_pattern],
         constraint_violations=[],
         platform_context={"region": "us-phoenix-1"}
     ))
 
-    assert "function.yaml" in result.config_templates
-    assert "handler.py" in result.code_snippets
+    assert "function.yaml" in result.configs
+    assert "handler.py" in result.code
 ```
 
 ### Adapter Interface Reference
@@ -584,15 +531,14 @@ def test_oracle_serverless():
 | Method | Description | Required |
 |--------|-------------|----------|
 | `transform_ir_to_platform()` | Transform IR to platform output | Yes |
-| `generate_config()` | Generate platform-specific config templates | Yes |
-| `generate_code()` | Generate platform-specific code snippets | Yes |
-| `resolve_dependencies()` | Resolve transitive service dependencies | No |
-| `compute_compliance()` | Compute compliance matrix for selected services | No |
+| `validate_constraints()` | Check platform constraints | Yes |
+| `list_services()` | List available services | No |
+| `get_service_config()` | Get service configuration | No |
 
 ### Best Practices
 
 1. **Inherit from base class** - Use `PlatformAdapter` base class
-2. **Implement all required methods** - `transform_ir_to_platform()`, `generate_config()`, `generate_code()`
+2. **Implement all required methods** - `transform_ir_to_platform()`, `validate_constraints()`
 3. **Add logging** - Use `structlog` for debugging
 4. **Handle errors gracefully** - Return empty configs, not exceptions
 5. **Add tests** - Cover all service transformations

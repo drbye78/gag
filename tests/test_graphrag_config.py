@@ -1,3 +1,4 @@
+import pytest
 from core.config import Settings, reset_settings
 
 
@@ -5,11 +6,11 @@ def test_graphrag_config_defaults():
     reset_settings()
     settings = Settings()
 
-    assert settings.graphrag_enabled
-    assert not settings.graphrag_use_llm_extraction
-    assert settings.graphrag_structural_chunking
-    assert settings.graphrag_incremental
-    assert settings.graphrag_community_detection
+    assert settings.graphrag_enabled == True
+    assert settings.graphrag_use_llm_extraction == False
+    assert settings.graphrag_structural_chunking == True
+    assert settings.graphrag_incremental == True
+    assert settings.graphrag_community_detection == True
     assert settings.graphrag_max_entities == 100
     assert settings.graphrag_default_hops == 3
 
@@ -42,8 +43,8 @@ def test_graphrag_config_env_override(monkeypatch):
     reset_settings()
     settings = Settings()
 
-    assert settings.graphrag_enabled
-    assert settings.graphrag_use_llm_extraction
+    assert settings.graphrag_enabled == True
+    assert settings.graphrag_use_llm_extraction == True
     assert settings.graphrag_max_entities == 500
     assert settings.graphrag_default_hops == 5
     assert settings.graphrag_entity_types == "PERSON,TECHNOLOGY,DOCUMENT"

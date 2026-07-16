@@ -5,18 +5,15 @@ Defines schemas for documents, code, tickets, and telemetry
 with embeddings and metadata.
 """
 
-from __future__ import annotations
-
 from datetime import datetime
 from enum import Enum
 from typing import Any, List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class RetrievalSource(str, Enum):
     """Canonical retrieval source enum - includes all 11 sources."""
-
     DOCS = "docs"
     CODE = "code"
     GRAPH = "graph"

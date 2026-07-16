@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
 
-from core.text_utils import detect_language
+from core.text_utils import detect_language, TextLanguage
 
 
 class DocumentSource(str, Enum):

@@ -6,39 +6,8 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 # Allowlists for validated inputs
-ALLOWED_ELEMENT_TYPES = {
-    "button",
-    "input",
-    "text",
-    "image",
-    "link",
-    "form",
-    "container",
-    "header",
-    "footer",
-    "navigation",
-    "sidebar",
-    "card",
-    "modal",
-    "table",
-    "list",
-    "icon",
-    "checkbox",
-    "radio",
-    "select",
-    "textarea",
-    "label",
-}
-ALLOWED_LAYOUT_TYPES = {
-    "grid",
-    "flex",
-    "block",
-    "inline",
-    "absolute",
-    "relative",
-    "fixed",
-    "sticky",
-}
+ALLOWED_ELEMENT_TYPES = {"button", "input", "text", "image", "link", "form", "container", "header", "footer", "navigation", "sidebar", "card", "modal", "table", "list", "icon", "checkbox", "radio", "select", "textarea", "label"}
+ALLOWED_LAYOUT_TYPES = {"grid", "flex", "block", "inline", "absolute", "relative", "fixed", "sticky"}
 MAX_LIMIT = 1000
 MIN_LIMIT = 1
 
@@ -61,13 +30,10 @@ def _validate_limit(limit: int) -> int:
 
 
 class UIRetriever:
-    async def _execute_cypher(
-        self, cypher: str, params: Optional[Dict[str, Any]] = None
-    ) -> List[Dict[str, Any]]:
+    async def _execute_cypher(self, cypher: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """Execute Cypher query and return results."""
         try:
             from graph.client import get_falkordb_client
-
             client = get_falkordb_client()
             result = await client.query(cypher, params or {})
             return result.get("results", [])
@@ -75,9 +41,7 @@ class UIRetriever:
             logger.error("UI retriever Cypher failed: %s", e)
             return []
 
-    async def search_by_element_type(
-        self, element_type: str, limit: int = 10
-    ) -> List[Dict[str, Any]]:
+    async def search_by_element_type(self, element_type: str, limit: int = 10) -> List[Dict[str, Any]]:
         """Find sketches containing elements of a given type."""
         _validate_element_type(element_type)
         limit = _validate_limit(limit)
@@ -87,9 +51,7 @@ class UIRetriever:
         )
         return await self._execute_cypher(cypher, {"element_type": element_type, "limit": limit})
 
-    async def find_similar_structural(
-        self, sketch_id: str, limit: int = 10
-    ) -> List[Dict[str, Any]]:
+    async def find_similar_structural(self, sketch_id: str, limit: int = 10) -> List[Dict[str, Any]]:
         """Find structurally similar sketches by element type overlap."""
         limit = _validate_limit(limit)
         cypher = (
@@ -133,19 +95,18 @@ class UIRetriever:
             )
             return await self._execute_cypher(cypher, {"limit": limit})
 
-        type_conditions = " OR ".join(
-            f"e.element_type = $type_{i}" for i in range(len(element_types))
-        )
+        type_conditions = " OR ".join(f"e.element_type = $type_{i}" for i in range(len(element_types)))
         params: Dict[str, Any] = {f"type_{i}": et for i, et in enumerate(element_types)}
         params["limit"] = limit
 
-        cypher = f"MATCH (s:UISketch)-[:CONTAINS_ELEMENT]->(e:UIElement) WHERE {type_conditions}"
+        cypher = (
+            f"MATCH (s:UISketch)-[:CONTAINS_ELEMENT]->(e:UIElement) "
+            f"WHERE {type_conditions}"
+        )
 
         if layout_type:
             if layout_type not in ALLOWED_LAYOUT_TYPES:
-                raise ValueError(
-                    f"Invalid layout_type: {layout_type}. Allowed: {ALLOWED_LAYOUT_TYPES}"
-                )
+                raise ValueError(f"Invalid layout_type: {layout_type}. Allowed: {ALLOWED_LAYOUT_TYPES}")
             cypher += " AND s.layout_type = $layout_type"
             params["layout_type"] = layout_type
 

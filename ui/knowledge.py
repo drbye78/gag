@@ -1,7 +1,8 @@
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
 from typing import Any, Dict, List, Optional
+from enum import Enum
 
 
 class ComponentType(str, Enum):
@@ -43,7 +44,10 @@ class UIComponentKnowledge:
     last_updated: datetime = field(default_factory=datetime.now)
 
     def map_element_to_components(self, element_type: str) -> List[UIComponent]:
-        return [c for c in self.components.values() if element_type in c.supported_element_types]
+        return [
+            c for c in self.components.values()
+            if element_type in c.supported_element_types
+        ]
 
     def get_component(self, name: str) -> Optional[UIComponent]:
         return self.components.get(name)

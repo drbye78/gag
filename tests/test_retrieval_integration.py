@@ -1,4 +1,6 @@
 import pytest
+import time
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 class TestEntityCacheIntegration:
@@ -35,7 +37,6 @@ class TestHybridCascadeIntegration:
     @pytest.mark.asyncio
     async def test_hybrid_cascade_integration(self):
         from retrieval.hybrid import HybridRetriever
-
         try:
             retriever = HybridRetriever()
             result = await retriever.search("how does auth work", limit=10)
@@ -56,7 +57,6 @@ class TestHybridIterativeIntegration:
     @pytest.mark.asyncio
     async def test_hybrid_iterative_integration(self):
         from retrieval.hybrid import HybridRetriever
-
         try:
             retriever = HybridRetriever()
             result = await retriever.search(
@@ -78,8 +78,8 @@ class TestRerankPipelineIntegration:
     @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_rerank_pipeline_with_fallback(self):
+        from retrieval.rerank.pipeline import RerankPipeline, RerankConfig
         from retrieval.rerank.base import RerankProvider
-        from retrieval.rerank.pipeline import RerankConfig, RerankPipeline
 
         config = RerankConfig(
             providers=[RerankProvider.COHERE],
@@ -102,9 +102,9 @@ class TestFullDocsPipeline:
     @pytest.mark.e2e
     @pytest.mark.asyncio
     async def test_full_docs_pipeline(self):
-        from retrieval.citations.builder import CitationBuilder, CitationStyle
         from retrieval.docs import DocsRetriever
         from retrieval.rerank.pipeline import RerankPipeline
+        from retrieval.citations.builder import CitationBuilder, CitationStyle
 
         retriever = DocsRetriever()
         try:
@@ -172,7 +172,7 @@ class TestIterativeRefinementPipeline:
     @pytest.mark.e2e
     @pytest.mark.asyncio
     async def test_iterative_refinement_pipeline(self):
-        from retrieval.reasoning.iterative import IterationStrategy, IterativeRetrievalReasoner
+        from retrieval.reasoning.iterative import IterativeRetrievalReasoner, IterationStrategy
 
         reasoner = IterativeRetrievalReasoner(
             max_iterations=3,

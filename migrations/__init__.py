@@ -4,23 +4,22 @@ Database migration system for Engineering Intelligence System.
 Supports FalkorDB (graph) and Qdrant (vector) migrations.
 """
 
-import logging
 import os
+from pathlib import Path
+from typing import Optional, List, Dict, Any
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+import logging
 
 logger = logging.getLogger(__name__)
 
 
-MIGRATIONS_DIR = Path(__file__).parent
+MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
 
 @dataclass
 class Migration:
     """Represents a database migration."""
-
     version: str
     name: str
     timestamp: datetime
@@ -32,24 +31,24 @@ class Migration:
 
 class MigrationManager:
     """Manages database migrations for FalkorDB and Qdrant."""
-
+    
     def __init__(self, falkordb_client=None, qdrant_client=None):
         self.falkordb = falkordb_client
         self.qdrant = qdrant_client
         self._applied: List[str] = []
-
+    
     async def init_db(self) -> None:
         """Initialize database schema."""
         logger.info("Initializing database schema...")
-
+        
         if self.falkordb:
             await self._init_falkordb()
-
+        
         if self.qdrant:
             await self._init_qdrant()
-
+        
         logger.info("Database schema initialized")
-
+    
     async def _init_falkordb(self) -> None:
         """Initialize FalkorDB with base schema."""
         schema = """
@@ -66,7 +65,7 @@ class MigrationManager:
             await self.falkordb.execute(schema)
         except Exception as e:
             logger.warning(f"FalkorDB init warning: {e}")
-
+    
     async def _init_qdrant(self) -> None:
         """Initialize Qdrant collections."""
         collections = [
@@ -75,151 +74,89 @@ class MigrationManager:
             {"name": "diagrams", "vector_size": 1536},
             {"name": "ui_sketches", "vector_size": 768},
         ]
-
+        
         try:
             from qdrant_client import QdrantClient
             from qdrant_client.models import Distance, VectorParams
-
+            
             for coll in collections:
                 try:
-                    self.qdrant.get_collection(collection_name=coll["name"])
+                    self.qdrant.recreate_collection(
+                        collection_name=coll["name"],
+                        vectors_config=VectorParams(
+                            size=coll["vector_size"],
+                            distance=Distance.COSINE
+                        )
+                    )
                 except Exception:
-                    # Collection doesn't exist yet – create it
-                    try:
-                        self.qdrant.create_collection(
-                            collection_name=coll["name"],
-                            vectors_config=VectorParams(
-                                size=coll["vector_size"], distance=Distance.COSINE
-                            ),
-                        )
-                    except Exception as create_err:
-                        logger.warning(
-                            "Failed to create Qdrant collection %s: %s",
-                            coll["name"],
-                            create_err,
-                        )
+                    pass
         except Exception as e:
             logger.warning(f"Qdrant init warning: {e}")
-
+    
     async def migrate(self, target_version: Optional[str] = None) -> None:
         """Run pending migrations."""
         logger.info(f"Running migrations up to {target_version or 'latest'}")
-
+        
         pending = self._get_pending_migrations(target_version)
-
+        
         for migration in pending:
             logger.info(f"Applying migration {migration.version}: {migration.name}")
-
+            
             if migration.falkordb_up and self.falkordb:
                 try:
                     await self.falkordb.execute(migration.falkordb_up)
                 except Exception as e:
                     logger.error(f"FalkorDB migration {migration.version} failed: {e}")
                     raise
-
+            
             if migration.qdrant_up and self.qdrant:
                 try:
                     await self._apply_qdrant_migration(migration.qdrant_up)
                 except Exception as e:
                     logger.error(f"Qdrant migration {migration.version} failed: {e}")
                     raise
-
+            
             self._applied.append(migration.version)
-
+        
         logger.info(f"Applied {len(pending)} migrations")
-
+    
     async def rollback(self, target_version: str) -> None:
         """Rollback to a specific version."""
         logger.info(f"Rolling back migrations to {target_version}")
-
+        
         applied = [v for v in reversed(self._applied) if v > target_version]
-
+        
         for version in applied:
             migration = self._get_migration(version)
             if not migration:
                 continue
-
+            
             logger.info(f"Rolling back migration {version}")
-
+            
             if migration.falkordb_down and self.falkordb:
                 try:
                     await self.falkordb.execute(migration.falkordb_down)
                 except Exception as e:
                     logger.error(f"FalkorDB rollback {version} failed: {e}")
-
+            
             if migration.qdrant_down and self.qdrant:
                 try:
                     await self._apply_qdrant_migration(migration.qdrant_down, down=True)
                 except Exception as e:
                     logger.error(f"Qdrant rollback {version} failed: {e}")
-
+    
     def _get_pending_migrations(self, target: Optional[str]) -> List[Migration]:
-        """Get list of pending migrations that haven't been applied yet."""
-        all_migrations = self._discover_migrations()
-        if not all_migrations:
-            return []
-
-        pending = [m for m in all_migrations if m.version not in self._applied]
-
-        if target:
-            pending = [m for m in pending if m.version <= target]
-
-        return sorted(pending, key=lambda m: m.version)
-
-    def _discover_migrations(self) -> List[Migration]:
-        """Discover migration files from the migrations directory."""
-        migrations: List[Migration] = []
-
-        if not MIGRATIONS_DIR.exists():
-            return migrations
-
-        import importlib
-        from datetime import datetime as _dt
-
-        for path in sorted(MIGRATIONS_DIR.glob("*.py")):
-            if path.name.startswith("_"):
-                continue
-
-            version = path.stem.split("_")[0]
-            module_name = f"migrations.{path.stem}"
-
-            try:
-                mod = importlib.import_module(module_name)
-            except ImportError:
-                logger.warning("Could not import migration module: %s", module_name)
-                continue
-
-            name = path.stem
-            # Try to parse a date from the version prefix (e.g. "001" -> ordinal)
-            try:
-                ts = _dt.utcnow()
-            except Exception:
-                ts = _dt.utcnow()
-
-            migration = Migration(
-                version=version,
-                name=name,
-                timestamp=ts,
-                falkordb_up=getattr(mod, "INIT_FALKORDB", None),
-                falkordb_down=getattr(mod, "DROP_FALKORDB", None),
-                qdrant_up=getattr(mod, "INIT_QDRANT", None),
-                qdrant_down=getattr(mod, "DROP_QDRANT", None),
-            )
-            migrations.append(migration)
-
-        return migrations
-
+        """Get list of pending migrations."""
+        return []
+    
     def _get_migration(self, version: str) -> Optional[Migration]:
         """Get migration by version."""
-        for m in self._discover_migrations():
-            if m.version == version:
-                return m
         return None
-
+    
     async def _apply_qdrant_migration(self, config: Dict[str, Any], down: bool = False) -> None:
         """Apply Qdrant migration config."""
         pass
-
+    
     def get_status(self) -> Dict[str, Any]:
         """Get migration status."""
         return {
@@ -234,41 +171,38 @@ async def get_migration_manager() -> MigrationManager:
     """Get migration manager instance."""
     falkordb = None
     qdrant = None
-
+    
     try:
         from graph.client import get_graph_client
-
         falkordb = get_graph_client()
     except Exception:
         pass
-
+    
     try:
         from qdrant_client import QdrantClient
-
         from core.config import get_settings
-
         settings = get_settings()
         qdrant = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port)
     except Exception:
         pass
-
+    
     return MigrationManager(falkordb_client=falkordb, qdrant_client=qdrant)
 
 
 # Migration entry point for CLI
 if __name__ == "__main__":
     import asyncio
-
+    
     async def main():
         manager = await get_migration_manager()
-
+        
         print("=== Migration Status ===")
         status = manager.get_status()
         print(f"Applied: {status['applied']}")
         print(f"FalkorDB: {'Connected' if status['falkordb_connected'] else 'Not connected'}")
         print(f"Qdrant: {'Connected' if status['qdrant_connected'] else 'Not connected'}")
-
+        
         await manager.init_db()
         print("\nDatabase initialized successfully")
-
+    
     asyncio.run(main())

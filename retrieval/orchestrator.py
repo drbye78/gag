@@ -6,27 +6,24 @@ graph, tickets, and telemetry sources.
 """
 
 import asyncio
-import logging
 import time
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from core.adapters import get_adapter_registry
-from core.text_utils import TextLanguage, detect_language, normalize_text
-from models.retrieval import RetrievalSource
-from retrieval.classifier import get_query_classifier
-from retrieval.code import get_code_retriever
-from retrieval.code_graph import get_code_graph_retriever
-from retrieval.colbert import get_colbert_search_client
-from retrieval.diagram import get_diagram_retriever
+from core.text_utils import detect_language, normalize_text, TextLanguage
 from retrieval.docs import get_docs_retriever
+from retrieval.code import get_code_retriever
 from retrieval.graph import get_graph_retriever
-from retrieval.hybrid import get_hybrid_retriever
-from retrieval.knowledge import get_knowledge_retriever
-from retrieval.telemetry import get_telemetry_retriever
+from retrieval.code_graph import get_code_graph_retriever
 from retrieval.ticket import get_ticket_retriever
-
-logger = logging.getLogger(__name__)
+from retrieval.telemetry import get_telemetry_retriever
+from retrieval.hybrid import get_hybrid_retriever
+from retrieval.classifier import get_query_classifier
+from retrieval.diagram import get_diagram_retriever
+from retrieval.colbert import get_colbert_search_client
+from retrieval.knowledge import get_knowledge_retriever
+from core.adapters import get_adapter_registry
+from models.retrieval import RetrievalSource
 
 
 class RetrievalMode(str, Enum):
@@ -37,24 +34,88 @@ class RetrievalMode(str, Enum):
 
 
 class RetrievalOrchestrator:
-    def __init__(self, sources: Optional[List[Any]] = None):
-        self.docs_retriever = get_docs_retriever()
-        self.code_retriever = get_code_retriever()
-        self.graph_retriever = get_graph_retriever()
-        self.code_graph_retriever = get_code_graph_retriever()
-        self.ticket_retriever = get_ticket_retriever()
-        self.telemetry_retriever = get_telemetry_retriever()
-        self.diagram_retriever = get_diagram_retriever()
-        self.hybrid_retriever = get_hybrid_retriever()
+    def __init__(self):
         self.classifier = get_query_classifier()
-        from ui.retriever import get_ui_retriever
-
-        self.ui_retriever = get_ui_retriever()
-        self.colbert_retriever = get_colbert_search_client()
-        self.knowledge_retriever = get_knowledge_retriever()
         self.adapter_registry = get_adapter_registry()
-        # Configurable source list (defaults to all known sources)
-        self._sources = sources
+        # Lazy-init all retrievers — only created when first accessed
+        self._docs_retriever = None
+        self._code_retriever = None
+        self._graph_retriever = None
+        self._code_graph_retriever = None
+        self._ticket_retriever = None
+        self._telemetry_retriever = None
+        self._diagram_retriever = None
+        self._hybrid_retriever = None
+        self._ui_retriever = None
+        self._colbert_retriever = None
+        self._knowledge_retriever = None
+
+    @property
+    def docs_retriever(self):
+        if self._docs_retriever is None:
+            self._docs_retriever = get_docs_retriever()
+        return self._docs_retriever
+
+    @property
+    def code_retriever(self):
+        if self._code_retriever is None:
+            self._code_retriever = get_code_retriever()
+        return self._code_retriever
+
+    @property
+    def graph_retriever(self):
+        if self._graph_retriever is None:
+            self._graph_retriever = get_graph_retriever()
+        return self._graph_retriever
+
+    @property
+    def code_graph_retriever(self):
+        if self._code_graph_retriever is None:
+            self._code_graph_retriever = get_code_graph_retriever()
+        return self._code_graph_retriever
+
+    @property
+    def ticket_retriever(self):
+        if self._ticket_retriever is None:
+            self._ticket_retriever = get_ticket_retriever()
+        return self._ticket_retriever
+
+    @property
+    def telemetry_retriever(self):
+        if self._telemetry_retriever is None:
+            self._telemetry_retriever = get_telemetry_retriever()
+        return self._telemetry_retriever
+
+    @property
+    def diagram_retriever(self):
+        if self._diagram_retriever is None:
+            self._diagram_retriever = get_diagram_retriever()
+        return self._diagram_retriever
+
+    @property
+    def hybrid_retriever(self):
+        if self._hybrid_retriever is None:
+            self._hybrid_retriever = get_hybrid_retriever()
+        return self._hybrid_retriever
+
+    @property
+    def ui_retriever(self):
+        if self._ui_retriever is None:
+            from ui.retriever import get_ui_retriever
+            self._ui_retriever = get_ui_retriever()
+        return self._ui_retriever
+
+    @property
+    def colbert_retriever(self):
+        if self._colbert_retriever is None:
+            self._colbert_retriever = get_colbert_search_client()
+        return self._colbert_retriever
+
+    @property
+    def knowledge_retriever(self):
+        if self._knowledge_retriever is None:
+            self._knowledge_retriever = get_knowledge_retriever()
+        return self._knowledge_retriever
 
     async def retrieve(
         self,
@@ -70,7 +131,7 @@ class RetrievalOrchestrator:
             query = normalized_query
 
         if not sources:
-            sources = self._sources if self._sources is not None else list(RetrievalSource)
+            sources = list(RetrievalSource)
 
         tasks = []
         for source in sources:
@@ -99,26 +160,15 @@ class RetrievalOrchestrator:
 
         valid_results = []
         errors = []
-        failed_sources = []
-        for source, r in zip(sources, results):
+        for r in results:
             if isinstance(r, Exception):
-                errors.append({"error": str(r), "type": type(r).__name__, "source": source.value})
-                failed_sources.append(source.value)
+                errors.append({"error": str(r), "type": type(r).__name__})
             else:
                 valid_results.append(r)
 
         total = sum(r.get("total", 0) for r in valid_results)
 
         took = int(time.time() * 1000) - start
-
-        has_partial_failure = len(errors) > 0 and len(valid_results) > 0
-        if has_partial_failure:
-            logger.warning(
-                "Partial retrieval failure: %d of %d sources failed (%s)",
-                len(failed_sources),
-                len(sources),
-                ", ".join(failed_sources),
-            )
 
         return {
             "query": query,
@@ -127,68 +177,89 @@ class RetrievalOrchestrator:
             "took_ms": took,
             "errors": errors,
             "success": len(errors) == 0,
-            "partial_failure": has_partial_failure,
-            "failed_sources": failed_sources,
-            "successful_sources": [s.value for s in sources if s.value not in failed_sources],
         }
 
-    async def _retrieve_docs(self, query: str, limit: int, filters: Optional[Dict]) -> Dict:
+    async def _retrieve_docs(
+        self, query: str, limit: int, filters: Optional[Dict]
+    ) -> Dict:
         try:
             return await self.docs_retriever.search(query, limit, filters=filters)
         except Exception as e:
-            logger.exception("docs retrieval failed")
+            import logging
+            logging.getLogger(__name__).error(f"docs retrieval failed: {e}")
             return {"source": "docs", "results": [], "total": 0, "took_ms": 0}
 
-    async def _retrieve_code(self, query: str, limit: int, filters: Optional[Dict]) -> Dict:
+    async def _retrieve_code(
+        self, query: str, limit: int, filters: Optional[Dict]
+    ) -> Dict:
         try:
             return await self.code_retriever.search(query, limit, filters=filters)
         except Exception as e:
-            logger.exception("code retrieval failed")
+            import logging
+            logging.getLogger(__name__).error(f"code retrieval failed: {e}")
             return {"source": "code", "results": [], "total": 0, "took_ms": 0}
 
-    async def _retrieve_graph(self, query: str, limit: int, filters: Optional[Dict]) -> Dict:
+    async def _retrieve_graph(
+        self, query: str, limit: int, filters: Optional[Dict]
+    ) -> Dict:
         try:
             return await self.graph_retriever.search(query, limit=limit)
         except Exception as e:
-            logger.exception("graph retrieval failed")
+            import logging
+            logging.getLogger(__name__).error(f"graph retrieval failed: {e}")
             return {"source": "graph", "results": [], "total": 0, "took_ms": 0}
 
-    async def _retrieve_code_graph(self, query: str, limit: int, filters: Optional[Dict]) -> Dict:
+    async def _retrieve_code_graph(
+        self, query: str, limit: int, filters: Optional[Dict]
+    ) -> Dict:
         try:
             return await self.code_graph_retriever.search(query, limit=limit)
         except Exception as e:
-            logger.exception("code_graph retrieval failed")
+            import logging
+            logging.getLogger(__name__).error(f"code_graph retrieval failed: {e}")
             return {"source": "code_graph", "results": [], "total": 0, "took_ms": 0}
 
-    async def _retrieve_tickets(self, query: str, limit: int, filters: Optional[Dict]) -> Dict:
+    async def _retrieve_tickets(
+        self, query: str, limit: int, filters: Optional[Dict]
+    ) -> Dict:
         try:
             return await self.ticket_retriever.search(query, limit=limit)
         except Exception as e:
-            logger.exception("tickets retrieval failed")
+            import logging
+            logging.getLogger(__name__).error(f"tickets retrieval failed: {e}")
             return {"source": "tickets", "results": [], "total": 0, "took_ms": 0}
 
-    async def _retrieve_telemetry(self, query: str, limit: int, filters: Optional[Dict]) -> Dict:
+    async def _retrieve_telemetry(
+        self, query: str, limit: int, filters: Optional[Dict]
+    ) -> Dict:
         try:
             return await self.telemetry_retriever.search_events(query, limit=limit)
         except Exception as e:
-            logger.exception("telemetry retrieval failed")
+            import logging
+            logging.getLogger(__name__).error(f"telemetry retrieval failed: {e}")
             return {"source": "telemetry", "results": [], "total": 0, "took_ms": 0}
 
-    async def _retrieve_diagram(self, query: str, limit: int, filters: Optional[Dict]) -> Dict:
+    async def _retrieve_diagram(
+        self, query: str, limit: int, filters: Optional[Dict]
+    ) -> Dict:
         try:
             return await self.diagram_retriever.search_diagrams(query, limit=limit)
         except Exception as e:
-            logger.exception("diagram retrieval failed")
+            import logging
+            logging.getLogger(__name__).error(f"diagram retrieval failed: {e}")
             return {"source": "diagram", "results": [], "total": 0, "took_ms": 0}
 
     async def _retrieve_ui(self, query: str, limit: int, filters: Optional[Dict]) -> Dict:
         try:
+            # Don't pass the full query as element type — search all types
+            # and let the retriever's similarity matching handle relevance
             results = await self.ui_retriever.search_combined(
-                element_types=[query.lower()], limit=limit
+                element_types=[], limit=limit
             )
             return {"source": "ui_sketch", "results": results, "total": len(results), "took_ms": 0}
         except Exception as e:
-            logger.exception("ui_sketch retrieval failed")
+            import logging
+            logging.getLogger(__name__).error(f"ui_sketch retrieval failed: {e}")
             return {"source": "ui_sketch", "results": [], "total": 0, "took_ms": 0}
 
     async def _retrieve_colbert(self, query: str, limit: int, filters: Optional[Dict]) -> Dict:
@@ -196,15 +267,11 @@ class RetrievalOrchestrator:
             if self.colbert_retriever:
                 result = await self.colbert_retriever.search(query, limit=limit)
                 results = result.get("results", [])
-                return {
-                    "source": "colbert",
-                    "results": results,
-                    "total": len(results),
-                    "took_ms": result.get("took_ms", 0),
-                }
+                return {"source": "colbert", "results": results, "total": len(results), "took_ms": result.get("took_ms", 0)}
             return {"source": "colbert", "results": [], "total": 0, "took_ms": 0}
         except Exception as e:
-            logger.exception("colbert retrieval failed")
+            import logging
+            logging.getLogger(__name__).error(f"colbert retrieval failed: {e}")
             return {"source": "colbert", "results": [], "total": 0, "took_ms": 0}
 
     async def _retrieve_knowledge(self, query: str, limit: int, filters: Optional[Dict]) -> Dict:
@@ -212,7 +279,8 @@ class RetrievalOrchestrator:
             result = await self.knowledge_retriever.search(query, limit=limit, filters=filters)
             return result
         except Exception as e:
-            logger.exception("knowledge retrieval failed")
+            import logging
+            logging.getLogger(__name__).error(f"knowledge retrieval failed: {e}")
             return {"source": "knowledge", "results": [], "total": 0, "took_ms": 0}
 
     def detect_platform_from_query(self, query: str) -> List[str]:
@@ -303,7 +371,9 @@ class RetrievalRouter:
 
         results = []
         for source in sources:
-            source_result = await self.orchestrator.retrieve(query, [source], limit, filters)
+            source_result = await self.orchestrator.retrieve(
+                query, [source], limit, filters
+            )
             results.append(source_result)
 
         return {

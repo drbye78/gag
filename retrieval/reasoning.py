@@ -48,7 +48,7 @@ class ReasoningEngine:
         self.max_branches = 3
         self._llm_router = None
         self._llm_available = False
-
+    
     def set_llm_router(self, router: Any) -> None:
         self._llm_router = router
         self._llm_available = True
@@ -89,7 +89,7 @@ class ReasoningEngine:
 
         if self.use_llm and self._llm_available and self._llm_router:
             return await self._llm_reason(query, facts)
-
+        
         top_fact = facts[0]
         answer = top_fact.get("content", "")
 
@@ -101,13 +101,50 @@ class ReasoningEngine:
             "confidence": top_fact.get("score", 0.5),
             "sources": [f.get("source", "") for f in facts[:3]],
         }
+    
+    def _extract_text(self, response: Any) -> str:
+        """Extract text from an LLM response, handling both real and mock objects."""
+        # ChatCompletionResponse has a .text property
+        if hasattr(response, "text"):
+            text = response.text
+            if isinstance(text, str):
+                return text.strip()
+        # Fallback: try dict-style access
+        if hasattr(response, "get"):
+            try:
+                content = response.get("content", "")
+                if isinstance(content, str):
+                    return content.strip()
+            except Exception:
+                pass
+        # Fallback: try choices[0].message.content
+        if hasattr(response, "choices"):
+            try:
+                choices = response.choices
+                if choices and len(choices) > 0:
+                    choice = choices[0]
+                    if isinstance(choice, dict):
+                        msg = choice.get("message", {})
+                        content = msg.get("content", "")
+                        if isinstance(content, str):
+                            return content.strip()
+            except Exception:
+                pass
+        return ""
+
+    def _build_facts_text(self, facts: List[Dict[str, Any]], max_facts: int = 5, max_len: int = 200) -> str:
+        """Format facts into a numbered text block for LLM prompts."""
+        return "\n".join(
+            f"{i+1}. {f.get('content', '')[:max_len]}"
+            for i, f in enumerate(facts[:max_facts])
+        )
 
     async def _llm_reason(
         self,
         query: str,
         facts: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
-        facts_text = "\n".join(f"- {f.get('content', '')[:200]}" for i, f in enumerate(facts[:5]))
+        facts_text = self._build_facts_text(facts, max_facts=5, max_len=200)
 
         prompt = f"""Based on the following facts, answer the query concisely.
 
@@ -120,10 +157,12 @@ Provide a direct answer in 2-3 sentences."""
 
         try:
             result = await self._llm_router.chat(
-                messages=[{"role": "user", "content": prompt}],
+                prompt=prompt,
                 temperature=0.3,
             )
-            answer = result.get("content", "").strip()
+            answer = self._extract_text(result)
+            if not answer:
+                answer = facts[0].get("content", "") if facts else "No answer found."
         except Exception:
             answer = facts[0].get("content", "") if facts else "No answer found."
 
@@ -141,9 +180,7 @@ Provide a direct answer in 2-3 sentences."""
         query: str,
         facts: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
-        facts_text = "\n".join(
-            f"{i + 1}. {f.get('content', '')[:250]}" for i, f in enumerate(facts[:7])
-        )
+        facts_text = self._build_facts_text(facts, max_facts=7, max_len=250)
 
         prompt = f"""Think step by step about this query. Show your reasoning.
 
@@ -156,12 +193,16 @@ Provide your reasoning steps and final answer."""
 
         try:
             result = await self._llm_router.chat(
-                messages=[{"role": "user", "content": prompt}],
+                prompt=prompt,
                 temperature=0.4,
             )
-            answer = result.get("content", "").strip()
+            answer = self._extract_text(result)
+            if not answer:
+                answer = " | ".join(
+                    f.get("content", "")[:100] for f in facts[:2])
         except Exception:
-            answer = " | ".join(f.get("content", "")[:100] for f in facts[:2])
+            answer = " | ".join(
+                f.get("content", "")[:100] for f in facts[:2])
 
         return {
             "query": query,
@@ -172,6 +213,324 @@ Provide your reasoning steps and final answer."""
             "sources": [f.get("source", "") for f in facts[:3]],
         }
 
+    async def _llm_tree_reason(
+        self,
+        query: str,
+        facts: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Tree of Thoughts: generate 3 independent answers, then select the best.
+
+        Makes 4 LLM calls: 3 exploratory (high temperature) + 1 selection.
+        """
+        facts_text = self._build_facts_text(facts, max_facts=5, max_len=200)
+        steps: List[ReasoningStep] = []
+
+        # Generate 3 independent answers at high temperature for diversity
+        branches = []
+        for i in range(3):
+            prompt = f"""Answer the following query from a different perspective.
+
+Query: {query}
+
+Facts:
+{facts_text}
+
+Provide a direct answer (perspective {i+1} of 3)."""
+            try:
+                result = await self._llm_router.chat(
+                    prompt=prompt,
+                    temperature=0.9,
+                )
+                answer = self._extract_text(result)
+            except Exception:
+                answer = facts[i % len(facts)].get("content", "") if facts else ""
+
+            branches.append(answer)
+            steps.append(ReasoningStep(
+                step_id=f"branch_{i}",
+                thought=f"Exploring perspective {i+1}",
+                action="explore",
+                observation=answer[:100],
+                score=0.0,
+                parent_id="root",
+            ))
+
+        # Selection call: ask the LLM which answer is best
+        selection_prompt = f"""You are evaluating 3 answers to the same query. Select the best one.
+
+Query: {query}
+
+Answer A: {branches[0]}
+
+Answer B: {branches[1]}
+
+Answer C: {branches[2]}
+
+Which answer (A, B, or C) is the best? Respond with the letter, then provide the full text of that answer."""
+
+        try:
+            selection_result = await self._llm_router.chat(
+                prompt=selection_prompt,
+                temperature=0.2,
+            )
+            selection_text = self._extract_text(selection_result)
+            # Extract the best answer based on the LLM's selection
+            best_answer = self._select_best_branch(branches, selection_text)
+            confidence = 0.8
+        except Exception:
+            # Fallback: pick the longest answer
+            best_answer = max(branches, key=len) if branches else "No answer found."
+            confidence = 0.6
+
+        steps.append(ReasoningStep(
+            step_id="select",
+            thought="Selecting best answer from branches",
+            action="select",
+            observation=best_answer[:100],
+            score=confidence,
+            parent_id="root",
+        ))
+
+        return {
+            "query": query,
+            "answer": best_answer,
+            "reasoning_mode": "llm_tree",
+            "steps": steps,
+            "confidence": confidence,
+            "sources": [f.get("source", "") for f in facts[:3]],
+            "explored_paths": 3,
+        }
+
+    def _select_best_branch(self, branches: List[str], selection_text: str) -> str:
+        """Extract the best branch based on LLM selection text."""
+        selection_lower = selection_text.lower()
+        # Check which letter the LLM selected
+        for i, letter in enumerate(["a", "b", "c"]):
+            if f"answer {letter}" in selection_lower or f"answer {letter.upper()}" in selection_text:
+                if i < len(branches):
+                    return branches[i]
+        # Fallback: return the selection text itself (it may contain the full answer)
+        if selection_text:
+            return selection_text
+        return max(branches, key=len) if branches else "No answer found."
+
+    async def _llm_reflect_reason(
+        self,
+        query: str,
+        facts: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Reflect: generate answer, critique it, then refine.
+
+        Makes 2-3 LLM calls: initial answer + critique + refinement.
+        """
+        facts_text = self._build_facts_text(facts, max_facts=5, max_len=200)
+        steps: List[ReasoningStep] = []
+
+        # Step 1: Generate initial answer
+        initial_prompt = f"""Answer the following query based on the facts.
+
+Query: {query}
+
+Facts:
+{facts_text}
+
+Provide a direct answer."""
+        try:
+            result = await self._llm_router.chat(
+                prompt=initial_prompt,
+                temperature=0.4,
+            )
+            initial_answer = self._extract_text(result)
+        except Exception:
+            initial_answer = facts[0].get("content", "") if facts else "No answer found."
+
+        steps.append(ReasoningStep(
+            step_id="0",
+            thought="Initial answer generated",
+            action="answer",
+            observation=initial_answer[:100],
+        ))
+
+        # Step 2: Critique the answer
+        critique_prompt = f"""Critique the following answer. What is wrong or missing?
+
+Query: {query}
+
+Answer: {initial_answer}
+
+Facts:
+{facts_text}
+
+List specific issues or say "No issues found" if the answer is correct."""
+        try:
+            critique_result = await self._llm_router.chat(
+                prompt=critique_prompt,
+                temperature=0.3,
+            )
+            critique = self._extract_text(critique_result)
+        except Exception:
+            critique = "Critique unavailable"
+
+        steps.append(ReasoningStep(
+            step_id="1",
+            thought="Critiquing initial answer",
+            action="critique",
+            observation=critique[:100],
+            parent_id="0",
+        ))
+
+        # Step 3: Refine based on critique (only if issues found)
+        if "no issues" in critique.lower() or not critique:
+            final_answer = initial_answer
+            confidence = 0.8
+        else:
+            refine_prompt = f"""Improve your answer based on the critique.
+
+Query: {query}
+
+Original answer: {initial_answer}
+
+Critique: {critique}
+
+Facts:
+{facts_text}
+
+Provide the improved answer."""
+            try:
+                refine_result = await self._llm_router.chat(
+                    prompt=refine_prompt,
+                    temperature=0.4,
+                )
+                final_answer = self._extract_text(refine_result)
+                confidence = 0.82
+            except Exception:
+                final_answer = initial_answer
+                confidence = 0.65
+
+        steps.append(ReasoningStep(
+            step_id="2",
+            thought="Refined answer based on critique",
+            action="refine",
+            observation=final_answer[:100],
+            score=confidence,
+            parent_id="1",
+        ))
+
+        return {
+            "query": query,
+            "answer": final_answer,
+            "reasoning_mode": "llm_reflect",
+            "steps": steps,
+            "confidence": confidence,
+            "sources": [f.get("source", "") for f in facts[:3]],
+        }
+
+    async def _llm_critique_reason(
+        self,
+        query: str,
+        facts: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Critique: generate answer, then self-evaluate against a rubric.
+
+        Makes 2 LLM calls: answer + self-evaluation.
+        """
+        facts_text = self._build_facts_text(facts, max_facts=5, max_len=200)
+        steps: List[ReasoningStep] = []
+
+        # Step 1: Generate answer
+        answer_prompt = f"""Answer the following query based on the facts.
+
+Query: {query}
+
+Facts:
+{facts_text}
+
+Provide a comprehensive answer."""
+        try:
+            result = await self._llm_router.chat(
+                prompt=answer_prompt,
+                temperature=0.4,
+            )
+            answer = self._extract_text(result)
+        except Exception:
+            answer = facts[0].get("content", "") if facts else "No answer found."
+
+        steps.append(ReasoningStep(
+            step_id="0",
+            thought="Initial answer generated",
+            action="answer",
+            observation=answer[:100],
+        ))
+
+        # Step 2: Self-evaluate against rubric
+        eval_prompt = f"""Evaluate the following answer against these criteria:
+- Correctness: Is it factually accurate based on the facts?
+- Completeness: Does it address all parts of the query?
+- Relevance: Is it relevant to the query?
+
+Query: {query}
+
+Answer: {answer}
+
+Facts:
+{facts_text}
+
+Rate each criterion from 0.0 to 1.0 and provide an overall confidence score.
+Format: Correctness: X.X, Completeness: X.X, Relevance: X.X, Overall: X.X"""
+        confidence = 0.7
+        try:
+            eval_result = await self._llm_router.chat(
+                prompt=eval_prompt,
+                temperature=0.2,
+            )
+            eval_text = self._extract_text(eval_result)
+            # Try to extract a confidence score from the evaluation
+            confidence = self._extract_confidence(eval_text)
+        except Exception:
+            eval_text = "Evaluation unavailable"
+
+        steps.append(ReasoningStep(
+            step_id="1",
+            thought="Self-evaluating against rubric",
+            action="evaluate",
+            observation=eval_text[:100] if eval_text else "",
+            score=confidence,
+            parent_id="0",
+        ))
+
+        return {
+            "query": query,
+            "answer": answer,
+            "reasoning_mode": "llm_critique",
+            "steps": steps,
+            "confidence": confidence,
+            "sources": [f.get("source", "") for f in facts[:3]],
+            "evaluation": eval_text if eval_text else "",
+        }
+
+    def _extract_confidence(self, text: str) -> float:
+        """Extract a confidence score from evaluation text."""
+        import re
+        # Look for "Overall: X.X" pattern
+        match = re.search(r'overall[:\s]+([0-9]*\.?[0-9]+)', text, re.IGNORECASE)
+        if match:
+            try:
+                val = float(match.group(1))
+                if 0.0 <= val <= 1.0:
+                    return val
+            except ValueError:
+                pass
+        # Fallback: look for any decimal between 0 and 1
+        matches = re.findall(r'([0-9]*\.?[0-9]+)', text)
+        for m in matches:
+            try:
+                val = float(m)
+                if 0.0 <= val <= 1.0:
+                    return val
+            except ValueError:
+                continue
+        return 0.7
+
     async def _chain_reason(
         self,
         query: str,
@@ -179,7 +538,7 @@ Provide your reasoning steps and final answer."""
     ) -> Dict[str, Any]:
         if self.use_llm and self._llm_available and self._llm_router:
             return await self._llm_chain_reason(query, facts)
-
+        
         steps: Dict[str, ReasoningStep] = {}
 
         current_step = ReasoningStep(
@@ -217,6 +576,9 @@ Provide your reasoning steps and final answer."""
         query: str,
         facts: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
+        if self.use_llm and self._llm_available and self._llm_router:
+            return await self._llm_tree_reason(query, facts)
+
         steps: Dict[str, ReasoningStep] = {}
         root = ReasoningStep(
             step_id="root",
@@ -241,7 +603,9 @@ Provide your reasoning steps and final answer."""
             steps[step.step_id] = step
             branch_paths[branch_idx].append(step.step_id)
 
-        best_path = max(branch_paths, key=lambda p: self._calculate_path_score(p, facts))
+        best_path = max(
+            branch_paths, key=lambda p: self._calculate_path_score(p, facts)
+        )
         answer = self._build_tree_answer(facts, query)
 
         return {
@@ -259,6 +623,9 @@ Provide your reasoning steps and final answer."""
         query: str,
         facts: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
+        if self.use_llm and self._llm_available and self._llm_router:
+            return await self._llm_reflect_reason(query, facts)
+
         steps: Dict[str, ReasoningStep] = {}
 
         analyze_step = ReasoningStep(
@@ -296,7 +663,8 @@ Provide your reasoning steps and final answer."""
             "answer": answer,
             "reasoning_mode": self.mode.value,
             "steps": list(steps.values()),
-            "confidence": sum(f.get("score", 0) for f in valid_facts) / max(len(valid_facts), 1),
+            "confidence": sum(f.get("score", 0) for f in valid_facts)
+            / max(len(valid_facts), 1),
             "sources": [f.get("source", "") for f in (valid_facts or facts)[:3]],
         }
 
@@ -305,6 +673,9 @@ Provide your reasoning steps and final answer."""
         query: str,
         facts: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
+        if self.use_llm and self._llm_available and self._llm_router:
+            return await self._llm_critique_reason(query, facts)
+
         steps: Dict[str, ReasoningStep] = {}
 
         claim_step = ReasoningStep(
@@ -384,7 +755,10 @@ def get_reasoning_engine(
     global _reasoning_engine
     if isinstance(mode, str):
         mode = ReasoningMode(mode)
-    needs_new = _reasoning_engine is None or isinstance(_reasoning_engine.mode, str)
+    needs_new = (
+        _reasoning_engine is None
+        or isinstance(_reasoning_engine.mode, str)
+    )
     if not isinstance(mode, ReasoningMode):
         mode = ReasoningMode.CHAIN_OF_THOUGHTS
     if needs_new or _reasoning_engine.mode != mode:

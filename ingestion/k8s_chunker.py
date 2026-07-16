@@ -1,29 +1,15 @@
 import hashlib
-from dataclasses import dataclass
-from typing import List
-
 import yaml
+from typing import Any, Dict, List
+from dataclasses import dataclass
 
 from ingestion.chunker import Chunk, ChunkResult, TextChunker
 
+
 K8S_KINDS = [
-    "Deployment",
-    "Service",
-    "ConfigMap",
-    "Secret",
-    "Pod",
-    "ReplicaSet",
-    "StatefulSet",
-    "DaemonSet",
-    "Job",
-    "CronJob",
-    "Ingress",
-    "PersistentVolume",
-    "PersistentVolumeClaim",
-    "Namespace",
-    "ServiceAccount",
-    "Role",
-    "RoleBinding",
+    "Deployment", "Service", "ConfigMap", "Secret", "Pod", "ReplicaSet",
+    "StatefulSet", "DaemonSet", "Job", "CronJob", "Ingress", "PersistentVolume",
+    "PersistentVolumeClaim", "Namespace", "ServiceAccount", "Role", "RoleBinding",
 ]
 
 
@@ -42,7 +28,6 @@ class KubernetesChunker(TextChunker):
 
     def chunk(self, text: str, source_id: str) -> ChunkResult:
         import time
-
         start = time.time()
 
         documents = self._split_yaml_documents(text)
@@ -54,20 +39,14 @@ class KubernetesChunker(TextChunker):
 
             entity = self._parse_k8s_document(doc)
             chunk_id = self._make_chunk_id(source_id, idx)
-            chunks.append(
-                Chunk(
-                    id=chunk_id,
-                    content=doc,
-                    chunk_index=idx,
-                    start_char=0,
-                    end_char=len(doc),
-                    metadata={
-                        "kind": entity.kind,
-                        "name": entity.name,
-                        "namespace": entity.namespace,
-                    },
-                )
-            )
+            chunks.append(Chunk(
+                id=chunk_id,
+                content=doc,
+                chunk_index=idx,
+                start_char=0,
+                end_char=len(doc),
+                metadata={"kind": entity.kind, "name": entity.name, "namespace": entity.namespace},
+            ))
 
         took = int((time.time() - start) * 1000)
         return ChunkResult(
@@ -97,18 +76,9 @@ class KubernetesChunker(TextChunker):
 
     def _parse_k8s_document(self, content: str) -> K8sResource:
         try:
-            # Support multi-document YAML: try safe_load_all first,
-            # then fall back to safe_load for single-document files.
-            docs = list(yaml.safe_load_all(content))
-            data = None
-            for doc in docs:
-                if isinstance(doc, dict):
-                    data = doc
-                    break
-            if data is None:
-                return K8sResource(
-                    kind="Unknown", name="unknown", namespace="default", content=content
-                )
+            data = yaml.safe_load(content)
+            if not isinstance(data, dict):
+                return K8sResource(kind="Unknown", name="unknown", namespace="default", content=content)
 
             kind = data.get("kind", "Unknown")
             metadata = data.get("metadata", {})

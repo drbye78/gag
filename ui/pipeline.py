@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from ui.ingestion_job import (
@@ -75,7 +75,7 @@ class UIIngestionPipeline:
             except Exception as e:
                 last_error = e
                 if attempt < self.max_retries - 1:
-                    delay = self.retry_delay * (2**attempt)
+                    delay = self.retry_delay * (2 ** attempt)
                     logger.warning(
                         f"Attempt {attempt + 1} failed for {job.image_url}: {e}. "
                         f"Retrying in {delay}s..."
@@ -159,7 +159,10 @@ class UIIngestionPipeline:
         self,
         items: List[Dict[str, str]],
     ) -> List[Optional[PipelineResult]]:
-        tasks = [self.ingest(item["image_url"], item.get("title")) for item in items]
+        tasks = [
+            self.ingest(item["image_url"], item.get("title"))
+            for item in items
+        ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         return [r if isinstance(r, PipelineResult) else None for r in results]
 

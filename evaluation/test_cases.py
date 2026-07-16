@@ -164,7 +164,8 @@ class EvaluationFramework:
             "count": len(results),
             "correctness_avg": sum(r.correctness for r in results) / len(results),
             "relevance_avg": sum(r.relevance for r in results) / len(results),
-            "architecture_quality_avg": sum(r.architecture_quality for r in results) / len(results),
+            "architecture_quality_avg": sum(r.architecture_quality for r in results)
+            / len(results),
         }
 
 

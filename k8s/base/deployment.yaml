@@ -6,7 +6,7 @@ metadata:
   labels:
     app.kubernetes.io/name: eis-api
     app.kubernetes.io/component: api
-    app.kubernetes.io/version: "3.2.0"
+    app.kubernetes.io/version: "4.0.0"
 spec:
   replicas: 3
   selector:

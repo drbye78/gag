@@ -9,45 +9,6 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-# Retry configuration
-_MAX_RETRIES = 3
-_BASE_DELAY = 1.0  # seconds
-
-
-async def _retry_request(
-    fn, *args, max_retries: int = _MAX_RETRIES, base_delay: float = _BASE_DELAY, **kwargs
-):
-    """Execute an async HTTP request with exponential backoff retry."""
-    last_exc = None
-    for attempt in range(max_retries):
-        try:
-            return await fn(*args, **kwargs)
-        except (httpx.ConnectError, httpx.TimeoutException) as e:
-            last_exc = e
-            if attempt < max_retries - 1:
-                delay = base_delay * (2**attempt)
-                logger.warning(
-                    "Request failed (attempt %d/%d), retrying in %.1fs: %s",
-                    attempt + 1,
-                    max_retries,
-                    delay,
-                    e,
-                )
-                import asyncio
-
-                await asyncio.sleep(delay)
-        except httpx.HTTPStatusError as e:
-            # Don't retry client errors (4xx) except 429
-            if e.response.status_code == 429 and attempt < max_retries - 1:
-                delay = base_delay * (2**attempt)
-                logger.warning("Rate limited (429), retrying in %.1fs", delay)
-                import asyncio
-
-                await asyncio.sleep(delay)
-                continue
-            raise
-    raise last_exc  # type: ignore[misc]  # last_exc always set: loop runs max_retries>=1 times
-
 
 class KBSource(str, Enum):
     STACKOVERFLOW = "stackoverflow"
@@ -107,8 +68,7 @@ class StackOverflowClient:
 
         try:
             client = self._get_client()
-            response = await _retry_request(
-                client.get,
+            response = await client.get(
                 "https://api.stackexchange.com/2.3/search/advanced",
                 params=params,
             )
@@ -146,8 +106,7 @@ class StackOverflowClient:
 
         try:
             client = self._get_client()
-            response = await _retry_request(
-                client.get,
+            response = await client.get(
                 f"https://api.stackexchange.com/2.3/questions/{question_id}/answers",
                 params={
                     "order": "desc",
@@ -205,7 +164,6 @@ class RedditClient:
             return self._token
 
         import base64
-
         if not self.client_id or not self.client_secret:
             return None
 
@@ -214,8 +172,7 @@ class RedditClient:
             credentials = base64.b64encode(
                 f"{self.client_id}:{self.client_secret}".encode()
             ).decode()
-            response = await _retry_request(
-                client.post,
+            response = await client.post(
                 "https://www.reddit.com/api/v1/access_token",
                 headers={"Authorization": f"Basic {credentials}"},
                 data={"grant_type": "client_credentials"},
@@ -240,8 +197,7 @@ class RedditClient:
 
         try:
             client = self._get_client()
-            response = await _retry_request(
-                client.get,
+            response = await client.get(
                 f"https://oauth.reddit.com/r/{subreddit}/search",
                 headers={"Authorization": f"Bearer {token}"},
                 params={"q": query, "limit": max_results},
@@ -303,8 +259,7 @@ class ForumClient:
 
         try:
             client = self._get_client()
-            response = await _retry_request(
-                client.get,
+            response = await client.get(
                 f"{self.base_url}/api/search",
                 params={"q": query, "limit": max_results},
             )

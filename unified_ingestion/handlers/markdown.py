@@ -4,6 +4,7 @@ import re
 from typing import Any, Dict, List
 
 from ingestion.structural_chunker import StructuralChunker
+
 from unified_ingestion.handlers.base import Handler, HandlerResult
 
 logger = logging.getLogger(__name__)
@@ -18,9 +19,7 @@ class MarkdownHandler(Handler):
         self._chunk_size = chunk_size
         self._chunk_overlap = chunk_overlap
 
-    async def handle(
-        self, content: bytes, source_id: str, metadata: Dict[str, Any]
-    ) -> HandlerResult:
+    async def handle(self, content: bytes, source_id: str, metadata: Dict[str, Any]) -> HandlerResult:
         try:
             text = content.decode("utf-8")
             frontmatter = self._parse_frontmatter(text)
@@ -32,9 +31,7 @@ class MarkdownHandler(Handler):
             current_idx = 0
 
             for lang, code in code_blocks:
-                chunk_id = hashlib.sha256(f"{source_id}:code:{current_idx}".encode()).hexdigest()[
-                    :16
-                ]
+                chunk_id = hashlib.sha256(f"{source_id}:code:{current_idx}".encode()).hexdigest()[:16]
                 chunks.append(
                     {
                         "id": chunk_id,
@@ -86,7 +83,10 @@ class MarkdownHandler(Handler):
             blocks.append((lang, code))
         return blocks
 
-    def _chunk_text(self, text: str, source_id: str, start_idx: int = 0) -> List[Dict[str, Any]]:
+    def _chunk_text(
+        self, text: str, source_id: str, start_idx: int = 0
+    ) -> List[Dict[str, Any]]:
+        from ingestion.chunker import ChunkResult
 
         result = self._chunker.chunk(text, source_id)
         chunks = []

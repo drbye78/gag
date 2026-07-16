@@ -2,9 +2,8 @@
 Tests for agent modules: planner, retrieval, reasoning, executor, orchestration, validator.
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
-
 import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 class TestPlannerAgent:
@@ -43,7 +42,7 @@ class TestPlannerAgent:
         assert plan.intent == "optimize"
 
     def test_plan_to_dict(self):
-        from agents.planner import ExecutionPlan, ExecutionStep
+        from agents.planner import PlannerAgent, ExecutionPlan, ExecutionStep
 
         plan = ExecutionPlan(
             query="test",
@@ -61,7 +60,9 @@ class TestRetrievalAgent:
 
         with patch("agents.retrieval.RetrievalOrchestrator") as mock_orch:
             mock_instance = MagicMock()
-            mock_instance.retrieve = AsyncMock(return_value={"results": [], "total_results": 0})
+            mock_instance.retrieve = AsyncMock(
+                return_value={"results": [], "total_results": 0}
+            )
             mock_orch.return_value = mock_instance
 
             agent = RetrievalAgent()
@@ -74,7 +75,9 @@ class TestRetrievalAgent:
 
         with patch("agents.retrieval.RetrievalOrchestrator") as mock_orch:
             mock_instance = MagicMock()
-            mock_instance.retrieve = AsyncMock(return_value={"results": [], "total_results": 0})
+            mock_instance.retrieve = AsyncMock(
+                return_value={"results": [], "total_results": 0}
+            )
             mock_orch.return_value = mock_instance
 
             agent = RetrievalAgent()
@@ -103,7 +106,7 @@ class TestReasoningAgent:
 
     @pytest.mark.asyncio
     async def test_reason_mode_selection(self):
-        from agents.reasoning import ReasonMode
+        from agents.reasoning import ReasonMode, get_reasoning_agent
 
         mode = ReasonMode.CHAIN_OF_THOUGHT
         assert mode == ReasonMode.CHAIN_OF_THOUGHT
@@ -149,18 +152,20 @@ class TestOrchestrationEngine:
         plan_mock.steps = []
         plan_mock.to_dict = MagicMock(return_value={"steps": [], "intent": "explain"})
 
-        with (
-            patch("agents.orchestration.PlannerAgent") as mock_planner,
-            patch("agents.orchestration.RetrievalAgent") as mock_retriever,
-            patch("agents.orchestration.ToolExecutor") as mock_executor,
-            patch("agents.orchestration.ReasoningAgent") as mock_reasoner,
-        ):
+        with patch("agents.orchestration.PlannerAgent") as mock_planner, \
+             patch("agents.orchestration.RetrievalAgent") as mock_retriever, \
+             patch("agents.orchestration.ToolExecutor") as mock_executor, \
+             patch("agents.orchestration.ReasoningAgent") as mock_reasoner:
             mock_planner.return_value.plan = AsyncMock(return_value=plan_mock)
             mock_retriever.return_value.retrieve_single = AsyncMock(
                 return_value={"results": [], "total": 0}
             )
-            mock_executor.return_value.execute = AsyncMock(return_value={"result": None})
-            mock_reasoner.return_value.generate_answer = AsyncMock(return_value="test answer")
+            mock_executor.return_value.execute = AsyncMock(
+                return_value={"result": None}
+            )
+            mock_reasoner.return_value.generate_answer = AsyncMock(
+                return_value="test answer"
+            )
 
             engine = OrchestrationEngine()
             result = await engine.execute("test query", {})
@@ -176,18 +181,20 @@ class TestOrchestrationEngine:
         plan_mock.steps = []
         plan_mock.to_dict = MagicMock(return_value={"steps": [], "intent": "explain"})
 
-        with (
-            patch("agents.orchestration.PlannerAgent") as mock_planner,
-            patch("agents.orchestration.RetrievalAgent") as mock_retriever,
-            patch("agents.orchestration.ToolExecutor") as mock_executor,
-            patch("agents.orchestration.ReasoningAgent") as mock_reasoner,
-        ):
+        with patch("agents.orchestration.PlannerAgent") as mock_planner, \
+             patch("agents.orchestration.RetrievalAgent") as mock_retriever, \
+             patch("agents.orchestration.ToolExecutor") as mock_executor, \
+             patch("agents.orchestration.ReasoningAgent") as mock_reasoner:
             mock_planner.return_value.plan = AsyncMock(return_value=plan_mock)
             mock_retriever.return_value.retrieve_single = AsyncMock(
                 return_value={"results": [], "total": 0}
             )
-            mock_executor.return_value.execute = AsyncMock(return_value={"result": None})
-            mock_reasoner.return_value.generate_answer = AsyncMock(return_value="test answer")
+            mock_executor.return_value.execute = AsyncMock(
+                return_value={"result": None}
+            )
+            mock_reasoner.return_value.generate_answer = AsyncMock(
+                return_value="test answer"
+            )
 
             engine = OrchestrationEngine()
             result = await engine.execute(

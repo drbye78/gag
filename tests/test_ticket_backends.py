@@ -1,11 +1,11 @@
 import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 class TestTicketBackend:
     def test_backend_is_abc(self):
-        from abc import ABC
-
         from retrieval.ticket import TicketBackend
+        from abc import ABC
 
         assert issubclass(TicketBackend, ABC)
 
@@ -60,7 +60,9 @@ class TestInMemoryTicketBackend:
         from retrieval.ticket import InMemoryTicketBackend
 
         backend = InMemoryTicketBackend()
-        backend.add_ticket({"key": "TEST-1", "title": "Test ticket", "status": "Open"})
+        backend.add_ticket(
+            {"key": "TEST-1", "title": "Test ticket", "status": "Open"}
+        )
         assert len(backend._tickets) == 1
 
     @pytest.mark.asyncio

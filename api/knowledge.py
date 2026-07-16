@@ -1,17 +1,13 @@
-from typing import Any, Dict, List, Optional
-
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-
-from core.auth import require_authenticated
-from core.knowledge.constraints import get_rule_engine
-from core.knowledge.graph import get_knowledge_graph
+from typing import List, Dict, Any, Optional
 from core.knowledge.resolver import get_resolver
+from core.knowledge.graph import get_knowledge_graph, NodeType
 from core.knowledge.taxonomy import get_patterns
+from core.knowledge.constraints import get_rule_engine
+from core.auth import require_authenticated
 
-router = APIRouter(
-    prefix="/knowledge", tags=["Knowledge"], dependencies=[Depends(require_authenticated)]
-)
+router = APIRouter(prefix="/knowledge", tags=["Knowledge"], dependencies=[Depends(require_authenticated)])
 
 
 class KnowledgeQueryRequest(BaseModel):
@@ -33,7 +29,7 @@ class KnowledgeQueryResponse(BaseModel):
 async def knowledge_query(req: KnowledgeQueryRequest):
     resolver = get_resolver()
     result = await resolver.resolve(req.query)
-
+    
     return KnowledgeQueryResponse(
         query=result.query,
         platform=result.platform,
@@ -59,7 +55,10 @@ async def knowledge_query(req: KnowledgeQueryRequest):
 async def get_graph():
     graph = get_knowledge_graph()
     return {
-        "nodes": [{"id": n.id, "name": n.name, "type": n.type.value} for n in graph.nodes.values()],
+        "nodes": [
+            {"id": n.id, "name": n.name, "type": n.type.value}
+            for n in graph.nodes.values()
+        ],
         "edges": [
             {"source": e.source_id, "target": e.target_id, "type": e.type.value}
             for e in graph.edges

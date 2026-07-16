@@ -1,35 +1,12 @@
-import logging
 import re
-from typing import Any, Dict, Optional
-
+from typing import List, Dict, Any, Optional
 import httpx
 
-logger = logging.getLogger(__name__)
-
 # Allowlists for parameter validation to prevent Cypher injection
-ALLOWED_ENTITY_TYPES = {
-    "Service",
-    "Component",
-    "API",
-    "Database",
-    "Queue",
-    "Function",
-    "Module",
-    "Person",
-    "Team",
-    "Repository",
-}
+ALLOWED_ENTITY_TYPES = {"Person", "Company", "Document", "UIElement", "UISketch"}
 ALLOWED_RELATIONSHIP_TYPES = {
-    "CONTAINS",
-    "DEPENDS_ON",
-    "IMPLEMENTS",
-    "EXTENDS",
-    "CALLED_BY",
-    "CALLS",
-    "REFERENCES",
-    "HAS_PROPERTY",
-    "LINKED_TO",
-    "RELATED_TO",
+    "CONTAINS", "DEPENDS_ON", "IMPLEMENTS", "EXTENDS", "CALLED_BY",
+    "CALLS", "REFERENCES", "HAS_PROPERTY", "LINKED_TO", "RELATED_TO"
 }
 
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -58,6 +35,16 @@ class EntityCentricRetriever:
         self.host = host
         self.port = port
         self.base_url = f"http://{host}:{port}"
+        self._client: Optional[httpx.AsyncClient] = None
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        """Cached HTTP client with connection pooling."""
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(30.0, connect=10.0),
+                limits=httpx.Limits(max_connections=20, max_keepalive_connections=5),
+            )
+        return self._client
 
     async def search_by_entity(
         self,
@@ -68,51 +55,44 @@ class EntityCentricRetriever:
     ) -> Dict[str, Any]:
         if entity_type:
             _safe_identifier(entity_type)
-            if entity_type not in ALLOWED_ENTITY_TYPES:
-                logger.warning(
-                    "Entity type '%s' not in allowlist; allowed: %s",
-                    entity_type,
-                    ALLOWED_ENTITY_TYPES,
-                )
-                # Still proceed but log warning - don't block, just warn
         depth_val = _validate_int(depth, "depth", 1, 10)
         limit_val = _validate_int(limit, "limit", 1, 100)
 
         if entity_type:
-            cypher = """
-            MATCH (e:`{lbl}` {name: $name})
-            CALL {
+            cypher = f"""
+            MATCH (e:`{_safe_identifier(entity_type)}` {{name: $name}})
+            CALL {{
                 WITH e
-                MATCH path = (e)-[r*1..$depth]-(other)
+                MATCH path = (e)-[r*1..{depth_val}]-(other)
                 RETURN path, length(path) as dist
                 ORDER BY dist
                 LIMIT $limit
-            }
-            RETURN path, dist
-            """.replace("{lbl}", _safe_identifier(entity_type))
-            params = {"name": entity_name, "depth": depth_val, "limit": limit_val}
-        else:
-            cypher = """
-            MATCH (e {name: $name})
-            CALL {
-                WITH e
-                MATCH path = (e)-[r*1..$depth]-(other)
-                RETURN path, length(path) as dist
-                ORDER BY dist
-                LIMIT $limit
-            }
+            }}
             RETURN path, dist
             """
-            params = {"name": entity_name, "depth": depth_val, "limit": limit_val}
+            params = {"name": entity_name, "limit": limit_val}
+        else:
+            cypher = f"""
+            MATCH (e {{name: $name}})
+            CALL {{
+                WITH e
+                MATCH path = (e)-[r*1..{depth_val}]-(other)
+                RETURN path, length(path) as dist
+                ORDER BY dist
+                LIMIT $limit
+            }}
+            RETURN path, dist
+            """
+            params = {"name": entity_name, "limit": limit_val}
 
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    f"{self.base_url}/query",
-                    json={"query": cypher, "params": params},
-                    timeout=30.0,
-                )
-                data = resp.json()
+            client = await self._get_client()
+            resp = await client.post(
+                f"{self.base_url}/query",
+                json={"query": cypher, "params": params},
+                timeout=30.0,
+            )
+            data = resp.json()
         except Exception as e:
             return {"error": str(e), "results": []}
 
@@ -180,13 +160,13 @@ class EntityCentricRetriever:
             params = {"limit": limit_val}
 
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    f"{self.base_url}/query",
-                    json={"query": cypher, "params": params},
-                    timeout=30.0,
-                )
-                data = resp.json()
+            client = await self._get_client()
+            resp = await client.post(
+                f"{self.base_url}/query",
+                json={"query": cypher, "params": params},
+                timeout=30.0,
+            )
+            data = resp.json()
         except Exception as e:
             return {"error": str(e), "results": []}
 
@@ -212,28 +192,25 @@ class EntityCentricRetriever:
         max_distance: int = 2,
     ) -> Dict[str, Any]:
         distance_val = _validate_int(max_distance, "max_distance", 1, 10)
-        cypher = """
-        MATCH (e {name: $name})
-        CALL {
+        cypher = f"""
+        MATCH (e {{name: $name}})
+        CALL {{
             WITH e
-            MATCH path = (e)-[r*1..$max_dist]-(neighbor)
+            MATCH path = (e)-[r*1..{distance_val}]-(neighbor)
             RETURN neighbor, length(path) as dist
             ORDER BY dist
-        }
-        RETURN collect({node: neighbor, distance: dist}) as neighborhood
+        }}
+        RETURN collect({{node: neighbor, distance: dist}}) as neighborhood
         """
 
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    f"{self.base_url}/query",
-                    json={
-                        "query": cypher,
-                        "params": {"name": entity_name, "max_dist": distance_val},
-                    },
-                    timeout=30.0,
-                )
-                data = resp.json()
+            client = await self._get_client()
+            resp = await client.post(
+                f"{self.base_url}/query",
+                json={"query": cypher, "params": {"name": entity_name, "max_dist": distance_val}},
+                timeout=30.0,
+            )
+            data = resp.json()
         except Exception as e:
             return {"error": str(e), "neighbors": []}
 

@@ -4,7 +4,7 @@ Iterative Refinement - Provides iterative retrieval with query refinement.
 
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
@@ -72,7 +72,9 @@ class IterativeRetrievalReasoner:
 
             retrieved = await self._retrieve_with_timeout(current_query, retriever)
 
-            new_facts = [f for f in retrieved if f.get("content", "") not in seen_contents]
+            new_facts = [
+                f for f in retrieved if f.get("content", "") not in seen_contents
+            ]
             for f in new_facts:
                 seen_contents.add(f.get("content", ""))
 
@@ -81,7 +83,8 @@ class IterativeRetrievalReasoner:
             confidence = self._calculate_confidence(new_facts, all_retrieved, iteration)
 
             is_done = (
-                len(all_retrieved) >= self.min_results and confidence >= self.confidence_threshold
+                len(all_retrieved) >= self.min_results
+                and confidence >= self.confidence_threshold
             )
 
             result = IterationResult(
@@ -171,7 +174,9 @@ class IterativeRetrievalReasoner:
 
         for fact in retrieved[:3]:
             content = fact.get("content", "")
-            new_terms = [w for w in content.lower().split() if len(w) > 4 and w not in terms]
+            new_terms = [
+                w for w in content.lower().split() if len(w) > 4 and w not in terms
+            ]
             if new_terms:
                 terms.update(new_terms[:2])
 

@@ -15,20 +15,16 @@ from datetime import datetime, timezone
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
-
-
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
+from typing import List, Dict, Any, Optional
 
 
 class PlatformContext(BaseModel):
     """Platform-agnostic platform context for any technology stack."""
-
-    platform: str = Field(
-        ..., description="Platform: sap, salesforce, powerplatform, tanzu, aws, azure, gcp"
-    )
+    platform: str = Field(..., description="Platform: sap, salesforce, powerplatform, tanzu, aws, azure, gcp")
     region: Optional[str] = Field(None, description="Region: eu10, us10, etc.")
     environment: Optional[str] = Field(None, description="Environment: dev, staging, prod")
     multi_tenant: bool = Field(default=False, description="Multi-tenant deployment")
@@ -38,85 +34,46 @@ class PlatformContext(BaseModel):
 
 class IRFeature(BaseModel):
     """Extracted features from IR for pattern matching and constraints."""
-
     # User-provided parameters for code generation
-    app_name: Optional[str] = Field(
-        default=None, description="Application name for code generation"
-    )
+    app_name: Optional[str] = Field(default=None, description="Application name for code generation")
     tenant_id: Optional[str] = Field(default=None, description="Tenant identifier")
     namespace: Optional[str] = Field(default=None, description="Namespace/project name")
-
+    
     # Core capabilities
-    has_async: Optional[bool] = Field(default=None, description="Uses async/event-driven patterns")
-    has_auth: Optional[bool] = Field(default=None, description="Requires authentication")
-    has_database: Optional[bool] = Field(default=None, description="Uses persistent storage")
-    has_api: Optional[bool] = Field(default=None, description="Exposes REST/GraphQL API")
-    has_ui: Optional[bool] = Field(default=None, description="Has user interface")
-    has_batch: Optional[bool] = Field(default=None, description="Has batch processing")
-
+    has_async: bool = Field(default=False, description="Uses async/event-driven patterns")
+    has_auth: bool = Field(default=False, description="Requires authentication")
+    has_database: bool = Field(default=False, description="Uses persistent storage")
+    has_api: bool = Field(default=False, description="Exposes REST/GraphQL API")
+    has_ui: bool = Field(default=False, description="Has user interface")
+    has_batch: bool = Field(default=False, description="Has batch processing")
+    
     # Architecture patterns
-    has_microservices: Optional[bool] = Field(
-        default=None, description="Microservices architecture"
-    )
-    has_event_driven: Optional[bool] = Field(default=None, description="Event-driven architecture")
-    has_serverless: Optional[bool] = Field(
-        default=None, description="Serverless/function as a service"
-    )
-    has_container: Optional[bool] = Field(default=None, description="Container-based")
-
+    has_microservices: bool = Field(default=False, description="Microservices architecture")
+    has_event_driven: bool = Field(default=False, description="Event-driven architecture")
+    has_serverless: bool = Field(default=False, description="Serverless/function as a service")
+    has_container: bool = Field(default=False, description="Container-based")
+    
     # Data & compliance
-    data_classification: str = Field(
-        default="internal", description="internal, pii, sensitive, public"
-    )
+    data_classification: str = Field(default="internal", description="internal, pii, sensitive, public")
     compliance_requirements: List[str] = Field(default_factory=list, description="PCI, HIPAA, etc.")
-    encryption_required: Optional[bool] = Field(
-        default=None, description="Data encryption required"
-    )
-
+    encryption_required: bool = Field(default=False, description="Data encryption required")
+    
     # Integration
-    integration_points: List[str] = Field(
-        default_factory=list, description="External service integrations"
-    )
-    uses_external_services: List[str] = Field(
-        default_factory=list, description="Cloud service dependencies"
-    )
-
+    integration_points: List[str] = Field(default_factory=list, description="External service integrations")
+    uses_external_services: List[str] = Field(default_factory=list, description="Cloud service dependencies")
+    
     # Operations
-    scalability_required: Optional[bool] = Field(
-        default=None, description="Requires horizontal scaling"
-    )
-    high_availability_required: Optional[bool] = Field(default=None, description="Needs 99.9%+ SLA")
-    multi_region_required: Optional[bool] = Field(
-        default=None, description="Multi-region deployment"
-    )
-
+    scalability_required: bool = Field(default=False, description="Requires horizontal scaling")
+    high_availability_required: bool = Field(default=False, description="Needs 99.9%+ SLA")
+    multi_region_required: bool = Field(default=False, description="Multi-region deployment")
+    
     # Cost sensitivity
-    cost_sensitive: Optional[bool] = Field(default=None, description="Cost optimization important")
+    cost_sensitive: bool = Field(default=False, description="Cost optimization important")
     startup_cost_limit: Optional[float] = Field(None, description="Max initial cost in USD")
-    monthly_budget: Optional[float] = Field(
-        None, description="Max monthly operational budget in USD"
-    )
-
-    # Extended compliance (Platform V / Russian Federation)
-    fstec_level: Optional[str] = Field(
-        None,
-        description="FSTEC certification level: fstec-l1 through fstec-l6 (1=basic, 6=maximum)",
-    )
-    compliance_frameworks: List[str] = Field(
-        default_factory=list,
-        description="Specific compliance frameworks: '152-fz', 'gos-sopka', 'rrpo', 'fz-63', etc.",
-    )
-    require_gost_crypto: Optional[bool] = Field(
-        default=None, description="GOST cryptographic operations required"
-    )
-    target_region: Optional[str] = Field(
-        None, description="Target deployment region (e.g. 'ru-central1', 'eu-west1')"
-    )
 
 
 class EnrichedIR(BaseModel):
     """IR enriched with extracted features for knowledge processing."""
-
     input_ir: IRNode = Field(..., description="Original IR node")
     platform_context: PlatformContext = Field(..., description="Platform context")
     features: IRFeature = Field(..., description="Extracted features")

@@ -1,22 +1,21 @@
+from pydantic import BaseModel, Field
 from typing import Any, Optional
-
-from pydantic import BaseModel
 
 
 class Constraint(BaseModel):
     id: str
     name: str
     domain: str
-
+    
     type: str
     feature: str
     operator: str
     threshold: Any
-
+    
     message: str
     fix_hint: str
     severity: str = "error"
-
+    
     platforms: list[str] = []
     min_confidence: float = 0.0
 
@@ -42,50 +41,48 @@ class ConstraintEngine:
     def __init__(self):
         self._constraint_sets: dict[str, ConstraintSet] = {}
         self._platform_index: dict[str, list[str]] = {}
-
+    
     def register_constraint_set(self, constraint_set: ConstraintSet) -> None:
         self._constraint_sets[constraint_set.id] = constraint_set
-
+        
         for constraint in constraint_set.constraints:
             for platform in constraint.platforms:
                 if platform not in self._platform_index:
                     self._platform_index[platform] = []
                 self._platform_index[platform].append(constraint.id)
-
+    
     def evaluate(self, features: dict, platform: str) -> list[ConstraintViolation]:
         violations = []
-
+        
         constraint_ids = self._platform_index.get(platform, [])
-
+        
         for constraint_id in constraint_ids:
             constraint_set = self._get_constraint_set_for_id(constraint_id)
             if not constraint_set:
                 continue
-
+            
             for constraint in constraint_set.constraints:
                 violation = self._evaluate_constraint(constraint, features)
                 if violation:
                     violations.append(violation)
-
+        
         return violations
-
+    
     def _get_constraint_set_for_id(self, constraint_id: str) -> Optional[ConstraintSet]:
         for cs in self._constraint_sets.values():
             if any(c.id == constraint_id for c in cs.constraints):
                 return cs
         return None
-
-    def _evaluate_constraint(
-        self, constraint: Constraint, features: dict
-    ) -> Optional[ConstraintViolation]:
+    
+    def _evaluate_constraint(self, constraint: Constraint, features: dict) -> Optional[ConstraintViolation]:
         actual = features.get(constraint.feature)
         if actual is None:
             return None
-
+        
         op = constraint.operator
         expected = constraint.threshold
         violated = False
-
+        
         if op == "eq":
             violated = actual != expected
         elif op == "ne":
@@ -100,7 +97,7 @@ class ConstraintEngine:
             violated = bool(actual) and actual >= expected
         elif op == "required":
             violated = not actual
-
+        
         if violated:
             return ConstraintViolation(
                 constraint=constraint,
@@ -110,79 +107,16 @@ class ConstraintEngine:
                 message=constraint.message,
                 fix_hint=constraint.fix_hint,
             )
-
+        
         return None
-
+    
     def apply_fix(self, features: dict, violation: ConstraintViolation) -> dict:
-        """Apply a fix for the given constraint violation.
-
-        Attempts to automatically resolve the violation by setting the feature
-        to the expected value.  Logs the fix hint for traceability and marks
-        the violation as applied in the returned features dict.
-
-        Args:
-            features: The current feature map to mutate.
-            violation: The violation to attempt to fix.
-
-        Returns:
-            The (possibly mutated) features dict.
-        """
-        import logging
-
-        _log = logging.getLogger(__name__)
-
         constraint = violation.constraint
-        if constraint is None:
-            _log.warning(
-                "Cannot apply fix — violation has no constraint attached: %s",
-                violation.message,
-            )
-            return features
-
         feature = constraint.feature
-        expected = constraint.threshold
-
-        # Log the fix hint for every application, regardless of domain
-        _log.info(
-            "Applying fix for constraint '%s' (domain=%s): hint=%s",
-            constraint.name,
-            constraint.domain,
-            violation.fix_hint,
-        )
-
-        # Domain-specific automatic fixes
-        if constraint.domain == "security" and feature == "has_auth":
+        
+        if constraint.domain == "security" and constraint.feature == "has_auth":
             features["has_auth"] = True
-        elif constraint.domain == "security" and feature == "encryption_required":
-            features["encryption_required"] = True
-        elif constraint.domain == "compliance" and feature == "multi_tenant":
-            features["multi_tenant"] = True
-        elif constraint.domain == "data" and feature == "has_database":
-            features["has_database"] = True
-        elif constraint.domain == "performance" and feature == "scalability_required":
-            features["scalability_required"] = True
-        else:
-            # Generic fallback: set the feature to the expected threshold value
-            op = constraint.operator
-            if op in ("eq", "required"):
-                features[feature] = expected
-                _log.info("Set feature '%s' to %r (operator=%s)", feature, expected, op)
-            else:
-                _log.warning(
-                    "Cannot auto-fix constraint '%s' with operator '%s' — manual intervention required",
-                    constraint.name,
-                    op,
-                )
-
-        # Mark that a fix was attempted
-        features.setdefault("_applied_fixes", []).append(
-            {
-                "constraint_id": constraint.id,
-                "feature": feature,
-                "fix_hint": violation.fix_hint,
-            }
-        )
-
+        
         return features
 
 
@@ -244,7 +178,7 @@ def _load_default_constraints(engine: ConstraintEngine) -> None:
             ),
         ],
     )
-
+    
     salesforce_constraints = ConstraintSet(
         id="salesforce",
         name="Salesforce Constraints",
@@ -265,7 +199,7 @@ def _load_default_constraints(engine: ConstraintEngine) -> None:
             ),
         ],
     )
-
+    
     powerplatform_constraints = ConstraintSet(
         id="powerplatform",
         name="Power Platform Constraints",
@@ -286,11 +220,11 @@ def _load_default_constraints(engine: ConstraintEngine) -> None:
             ),
         ],
     )
-
+    
     engine.register_constraint_set(sap_constraints)
     engine.register_constraint_set(salesforce_constraints)
     engine.register_constraint_set(powerplatform_constraints)
-
+    
     tanzu_constraints = ConstraintSet(
         id="tanzu",
         name="VMware Tanzu Constraints",
@@ -324,5 +258,5 @@ def _load_default_constraints(engine: ConstraintEngine) -> None:
             ),
         ],
     )
-
+    
     engine.register_constraint_set(tanzu_constraints)

@@ -98,7 +98,6 @@ class TestExecuteCypherException:
     def test_returns_empty_list_on_failure(self):
         # Test that _execute_cypher catches import errors when graph.client unavailable
         import sys
-
         original = sys.modules.get("graph.client")
         sys.modules["graph.client"] = None
 

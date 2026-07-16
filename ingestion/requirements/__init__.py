@@ -1,8 +1,8 @@
 from ingestion.requirements.client import (
-    ConfluenceRequirementsClient,
-    JiraRequirementsClient,
-    LocalRequirementsClient,
     RequirementsClient,
+    JiraRequirementsClient,
+    ConfluenceRequirementsClient,
+    LocalRequirementsClient,
     get_requirements_client,
 )
 from ingestion.requirements.pipeline import (

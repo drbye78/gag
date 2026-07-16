@@ -17,7 +17,9 @@ Integration:
 - Indexing: cgc index <path> to add repositories
 """
 
+import asyncio
 import logging
+import os
 import subprocess
 import time
 import uuid
@@ -26,39 +28,10 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from core.config import get_settings
+from core.errors import IngestionError
+
 logger = logging.getLogger(__name__)
-
-# MCP CodeGraphContext tool proxies — injected at runtime when running
-# inside the OpenCode MCP environment. Define stubs for standalone use.
-# These are overridden by the import below when available.
-try:
-    from CodeGraphContext import (  # type: ignore[import-untyped]  # MCP runtime-injected package, no stubs available
-        add_code_to_graph,
-        analyze_code_relationships,
-        calculate_cyclomatic_complexity,
-        execute_cypher_query,
-        find_code,
-        find_dead_code,
-        find_most_complex_functions,
-        watch_directory,
-    )
-except ImportError:
-    # Fallback stubs — will raise if called when MCP not available
-    async def _codegraph_stub(**kwargs: Any) -> Dict[str, Any]:  # type: ignore[misc]  # stub signature intentionally broad for any MCP tool
-        raise RuntimeError(
-            "CodeGraphContext MCP tools are not available in this environment. "
-            "Run inside OpenCode or install the cgc CLI."
-        )
-
-    add_code_to_graph = _codegraph_stub
-    find_code = _codegraph_stub
-    analyze_code_relationships = _codegraph_stub
-    calculate_cyclomatic_complexity = _codegraph_stub
-    watch_directory = _codegraph_stub
-    find_dead_code = _codegraph_stub
-    find_most_complex_functions = _codegraph_stub
-    execute_cypher_query = _codegraph_stub
-
 
 # Check CLI availability
 def _check_cgc_available() -> bool:
@@ -72,7 +45,6 @@ def _check_cgc_available() -> bool:
         return result.returncode == 0
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
-
 
 _cgc_available = _check_cgc_available()
 
@@ -178,8 +150,6 @@ class CodeGraphIndexer:
         self.watch = watch
         self.batch_size = batch_size
         self._indexed_files: set = set()
-        self._last_index_time: float = 0.0  # Debounce: minimum 2s between re-indexes
-        self._debounce_interval: float = 2.0
 
     async def index_codebase(
         self,
@@ -282,7 +252,7 @@ class CodeGraphIndexer:
             try:
                 # Query functions
                 result = await find_code(
-                    query="function",
+                    query=f"function",
                     repo_path=file_path,
                 )
                 for item in result.get("ranked_results", []):
@@ -303,7 +273,7 @@ class CodeGraphIndexer:
 
                 # Query classes
                 result = await find_code(
-                    query="class",
+                    query=f"class",
                     repo_path=file_path,
                 )
                 for item in result.get("ranked_results", []):
@@ -349,7 +319,9 @@ class CodeGraphIndexer:
                     relationships.append(rel)
 
             except Exception as e:
-                logger.warning(f"Relationship extraction failed for {entity.name}: {e}")
+                logger.warning(
+                    f"Relationship extraction failed for {entity.name}: {e}"
+                )
 
         return relationships
 
@@ -382,20 +354,9 @@ class CodeGraphIndexer:
         return "\n".join(lines[start:end])
 
     async def _start_watching(self) -> None:
-        """Start live directory watching with debouncing."""
+        """Start live directory watching."""
         if not CODEGRAPH_AVAILABLE:
             return
-
-        # Debounce: skip if called too recently
-        now = time.time()
-        if now - self._last_index_time < self._debounce_interval:
-            logger.debug(
-                "Skipping watch re-index, only %.1fs since last (debounce interval: %.1fs)",
-                now - self._last_index_time,
-                self._debounce_interval,
-            )
-            return
-        self._last_index_time = now
 
         try:
             await watch_directory(path=self.repo_path)
@@ -519,7 +480,11 @@ class CodeGraphFallbackIndexer:
                 content,
                 re.MULTILINE,
             ):
-                entity_type = "Function" if "def " in match.group() else "Class"
+                entity_type = (
+                    "Function"
+                    if "def " in match.group()
+                    else "Class"
+                )
                 entity = CodeGraphEntity(
                     id=str(uuid.uuid4()),
                     name=match.group(1).strip(),

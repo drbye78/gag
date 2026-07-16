@@ -399,22 +399,13 @@ class MyPlatformAdapter(PlatformAdapter):
 Register in `core/adapters/__init__.py`:
 
 ```python
-from core.adapters.base import AdapterRegistry
 from core.adapters.sap import SAPBTPAdapter
 from core.adapters.myplatform import MyPlatformAdapter
 
-_registry: AdapterRegistry = None
-
-def _ensure_registry() -> AdapterRegistry:
-    global _registry
-    if _registry is None:
-        _registry = AdapterRegistry()
-        _registry.register(SAPBTPAdapter())
-        _registry.register(MyPlatformAdapter())
-    return _registry
-
-def get_adapter_registry() -> AdapterRegistry:
-    return _ensure_registry()
+_ADAPTER_REGISTRY = {
+    "sap": SAPBTPAdapter(),
+    "myplatform": MyPlatformAdapter(),
+}
 ```
 
 ## Part 3: Platform Constraints (core/constraints/)
@@ -446,14 +437,12 @@ MYPLATFORM_CONSTRAINTS = ConstraintSet(
 )
 ```
 
-Register in `core/constraints/engine.py` (or wherever the engine is initialized):
+Register in `core/constraints/engine.py`:
 
 ```python
-from core.constraints.engine import get_constraint_engine
-from core.constraints.platforms.myplatform import MYPLATFORM_CONSTRAINTS
-
-engine = get_constraint_engine()
-engine.register_constraint_set(MYPLATFORM_CONSTRAINTS)
+def _load_platform_constraints():
+    from core.constraints.platforms.myplatform import MYPLATFORM_CONSTRAINTS
+    CONRAINT_SETS["myplatform"] = MYPLATFORM_CONSTRAINTS
 ```
 
 ## Part 4: Platform Knowledge (core/knowledge/)

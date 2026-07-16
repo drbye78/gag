@@ -1,13 +1,11 @@
-import logging
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
 import httpx
-
-logger = logging.getLogger(__name__)
 
 
 class RequirementsSource(str, Enum):
@@ -64,13 +62,6 @@ class JiraRequirementsClient(RequirementsClient):
         if not self.url:
             return []
 
-        if not self.email or not self.api_token:
-            logger.error(
-                "JiraRequirementsClient: missing credentials. "
-                "Set JIRA_EMAIL and JIRA_API_TOKEN environment variables."
-            )
-            return []
-
         jql = f'project = "{self.project}" AND issuetype = "{issue_type}" ORDER BY created DESC'
 
         try:
@@ -93,7 +84,9 @@ class JiraRequirementsClient(RequirementsClient):
                     req_id=issue.get("key", ""),
                     source=RequirementsSource.JIRA.value,
                     title=fields.get("summary", ""),
-                    description=self._extract_description(fields.get("description", {})),
+                    description=self._extract_description(
+                        fields.get("description", {})
+                    ),
                     status=fields.get("status", {}).get("name", ""),
                     priority=fields.get("priority", {}).get("name", ""),
                     type=fields.get("issuetype", {}).get("name", ""),
@@ -142,13 +135,6 @@ class ConfluenceRequirementsClient(RequirementsClient):
         label: Optional[str] = "requirements",
     ) -> List[Requirement]:
         if not self.url:
-            return []
-
-        if not self.email or not self.api_token:
-            logger.error(
-                "ConfluenceRequirementsClient: missing credentials. "
-                "Set CONFLUENCE_EMAIL and CONFLUENCE_API_TOKEN environment variables."
-            )
             return []
 
         cql = f"space = {space_key} AND type = page"

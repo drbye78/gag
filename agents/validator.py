@@ -9,11 +9,12 @@ Validates:
 """
 
 import re
-import threading
 import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
+
+from core.memory import get_memory_system
 
 
 class ValidationSeverity(str, Enum):
@@ -50,15 +51,6 @@ class ValidationResult:
 
 
 class ValidatorAgent:
-    """Optional validation agent for result quality assurance.
-
-    Note: This agent is not part of the core Plan→Retrieve→Reason→Execute
-    pipeline and is therefore not registered in agents._register by default.
-    It can be used as a post-processing step to validate responses, or
-    integrated into custom orchestration flows that require quality gates.
-    To use: ``from agents.validator import get_validator_agent``.
-    """
-
     def __init__(self, min_confidence: float = 0.7):
         self.min_confidence = min_confidence
 
@@ -85,7 +77,9 @@ class ValidatorAgent:
         if not coherence_issues:
             passed_checks += 1
 
-        completeness_issues = await self._check_completeness(query, response, retrieved_context)
+        completeness_issues = await self._check_completeness(
+            query, response, retrieved_context
+        )
         issues.extend(completeness_issues)
         total_checks += 1
         if not completeness_issues:
@@ -319,13 +313,10 @@ class ValidatorAgent:
 
 
 _validator: Optional[ValidatorAgent] = None
-_validator_lock = threading.Lock()
 
 
 def get_validator_agent() -> ValidatorAgent:
     global _validator
     if _validator is None:
-        with _validator_lock:
-            if _validator is None:
-                _validator = ValidatorAgent()
+        _validator = ValidatorAgent()
     return _validator

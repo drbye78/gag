@@ -1,6 +1,6 @@
 import logging
+from typing import Any, Dict, List, Optional
 import re
-from typing import Any, Dict, List
 
 from pydantic import BaseModel
 
@@ -52,16 +52,12 @@ class UserStoryGeneratorTool(BaseTool):
             method = "fallback"
 
         return ToolOutput(
-            result={
-                "stories": [s.model_dump() if hasattr(s, "model_dump") else s for s in stories],
-                "count": len(stories),
-            },
-            metadata={"generated": True, "method": method},
+            result={"stories": [s.model_dump() if hasattr(s, 'model_dump') else s for s in stories], "count": len(stories)},
+            metadata={"generated": True, "method": method}
         )
 
     async def _generate_llm(self, text: str, format_style: str) -> List[UserStory]:
         from llm.router import get_router
-
         router = get_router()
 
         prompt = f"""Extract user stories from the following requirements text.
@@ -79,22 +75,22 @@ Respond ONLY with JSON array of user stories."""
 
         response = await router.chat(prompt=prompt, temperature=0.3, max_tokens=1500)
         import json
-
-        data = json.loads(response.choices[0]["message"]["content"])
+        from core.llm_utils import extract_json_from_response
+        data = extract_json_from_response(response)
+        if data is None:
+            raise ValueError("Failed to parse LLM response as JSON")
         return [UserStory(**story) for story in data[:10]]
 
     async def _generate_fallback(self, text: str, format_style: str) -> List[UserStory]:
-        sentences = re.split(r"[.!?]", text)
+        sentences = re.split(r'[.!?]', text)
         stories = []
         for i, sentence in enumerate(sentences):
             if sentence.strip():
-                stories.append(
-                    UserStory(
-                        id=f"US-{i + 1}",
-                        text=f"As a user, I want to {sentence.strip()[:100]}, so that I can benefit",
-                        format=format_style,
-                    )
-                )
+                stories.append(UserStory(
+                    id=f"US-{i+1}",
+                    text=f"As a user, I want to {sentence.strip()[:100]}, so that I can benefit",
+                    format=format_style
+                ))
         return stories[:10]
 
     def validate_input(self, input: Dict[str, Any]) -> bool:
@@ -119,15 +115,12 @@ class AcceptanceCriteriaGeneratorTool(BaseTool):
             method = "fallback"
 
         return ToolOutput(
-            result={
-                "criteria": [c.model_dump() if hasattr(c, "model_dump") else c for c in criteria]
-            },
-            metadata={"generated": True, "method": method},
+            result={"criteria": [c.model_dump() if hasattr(c, 'model_dump') else c for c in criteria]},
+            metadata={"generated": True, "method": method}
         )
 
     async def _generate_llm(self, requirements: List[str]) -> List[AcceptanceCriterion]:
         from llm.router import get_router
-
         router = get_router()
 
         prompt = f"""Generate acceptance criteria for these requirements:
@@ -142,8 +135,10 @@ Respond ONLY with JSON array."""
 
         response = await router.chat(prompt=prompt, temperature=0.3, max_tokens=1500)
         import json
-
-        data = json.loads(response.choices[0]["message"]["content"])
+        from core.llm_utils import extract_json_from_response
+        data = extract_json_from_response(response)
+        if data is None:
+            raise ValueError("Failed to parse LLM response as JSON")
         return [AcceptanceCriterion(**c) for c in data]
 
     async def _generate_fallback(self, requirements: List[str]) -> List[AcceptanceCriterion]:
@@ -160,9 +155,6 @@ class RequirementsValidatorTool(BaseTool):
     name = "requirements_validate"
     description = "Validate requirements for completeness and consistency"
 
-    # Standard requirement ID format: e.g., REQ-001, US-12, BR-003, FR-42
-    REQUIREMENT_ID_PATTERN = re.compile(r"^[A-Z]{2,4}-\d{1,5}$")
-
     async def execute(self, input: ToolInput) -> ToolOutput:
         requirements = input.args.get("requirements", [])
 
@@ -170,7 +162,10 @@ class RequirementsValidatorTool(BaseTool):
 
         validation = await self._validate(requirements)
 
-        return ToolOutput(result=validation.model_dump(), metadata={"validated": True})
+        return ToolOutput(
+            result=validation.model_dump(),
+            metadata={"validated": True}
+        )
 
     async def _validate(self, requirements: List[str]) -> ValidationResult:
         issues = []
@@ -181,22 +176,16 @@ class RequirementsValidatorTool(BaseTool):
         required_keywords = ["shall", "must", "should", "will"]
         for i, req in enumerate(requirements):
             if not any(kw in req.lower() for kw in required_keywords):
-                issues.append(f"Requirement {i + 1} lacks measurable criteria")
-
-            # Validate requirement ID format if the requirement starts with an ID
-            id_match = re.match(r"^([A-Z]{2,4}-\d{1,5})\s*[:\-]?\s*", req.strip())
-            if id_match:
-                req_id = id_match.group(1)
-                if not self.REQUIREMENT_ID_PATTERN.match(req_id):
-                    issues.append(
-                        f"Requirement {i + 1} has invalid ID format '{req_id}'; "
-                        f"expected format: XX-### (e.g., REQ-001, US-12)"
-                    )
+                issues.append(f"Requirement {i+1} lacks measurable criteria")
 
         if len(requirements) < 3:
             issues.append("Insufficient requirements for complete feature")
 
-        return ValidationResult(valid=len(issues) == 0, count=len(requirements), issues=issues)
+        return ValidationResult(
+            valid=len(issues) == 0,
+            count=len(requirements),
+            issues=issues
+        )
 
     def validate_input(self, input: Dict[str, Any]) -> bool:
         return "requirements" in input
@@ -214,8 +203,8 @@ class GapAnalyzerTool(BaseTool):
         gaps = await self._analyze_gaps(requirements)
 
         return ToolOutput(
-            result={"gaps": [g.model_dump() if hasattr(g, "model_dump") else g for g in gaps]},
-            metadata={"analyzed": True},
+            result={"gaps": [g.model_dump() if hasattr(g, 'model_dump') else g for g in gaps]},
+            metadata={"analyzed": True}
         )
 
     async def _analyze_gaps(self, requirements: List[str]) -> List[Gap]:
@@ -223,25 +212,13 @@ class GapAnalyzerTool(BaseTool):
         req_text = " ".join(requirements).lower()
 
         if "security" not in req_text:
-            gaps.append(
-                Gap(type="security", severity="high", description="No security requirements found")
-            )
+            gaps.append(Gap(type="security", severity="high", description="No security requirements found"))
 
         if "performance" not in req_text and "scalability" not in req_text:
-            gaps.append(
-                Gap(
-                    type="performance", severity="medium", description="No performance requirements"
-                )
-            )
+            gaps.append(Gap(type="performance", severity="medium", description="No performance requirements"))
 
         if "error" not in req_text and "exception" not in req_text:
-            gaps.append(
-                Gap(
-                    type="error_handling",
-                    severity="medium",
-                    description="No error handling requirements",
-                )
-            )
+            gaps.append(Gap(type="error_handling", severity="medium", description="No error handling requirements"))
 
         if "test" not in req_text:
             gaps.append(Gap(type="testing", severity="low", description="No testing requirements"))
@@ -255,13 +232,12 @@ class GapAnalyzerTool(BaseTool):
 class RequirementsImporterTool(BaseTool):
     name = "requirements_import"
     description = "Import requirements from external sources"
-
+    
     def __init__(self):
         super().__init__()
         from core.config import get_settings
-
         self._settings = get_settings()
-
+    
     async def execute(self, input: ToolInput) -> ToolOutput:
         source = input.args.get("source", "jira")
         query = input.args.get("query", "")
@@ -282,7 +258,7 @@ class RequirementsImporterTool(BaseTool):
 
         return ToolOutput(
             result={"requirements": requirements, "source": source},
-            metadata={"imported": True, "method": method},
+            metadata={"imported": True, "method": method}
         )
 
     async def _import_from_source(self, source: str, query: str) -> List[Dict[str, Any]]:
@@ -298,64 +274,54 @@ class RequirementsImporterTool(BaseTool):
         JIRA_AVAILABLE = False
         try:
             from jira import JIRA
-
             JIRA_AVAILABLE = True
         except ImportError:
             pass
-
+        
         if not JIRA_AVAILABLE:
             return await self._import_jira_fallback(query)
-
+        
         jira_url = self._settings.get("JIRA_URL")
         jira_email = self._settings.get("JIRA_EMAIL")
         jira_token = self._settings.get("JIRA_API_TOKEN")
-
+        
         if not all([jira_url, jira_email, jira_token]):
             return await self._import_jira_fallback(query)
-
+        
         try:
             jira = JIRA(jira_url, basic_auth=(jira_email, jira_token))
             issues = jira.search_issues(query, maxResults=50)
             results = []
             for issue in issues:
-                results.append(
-                    {
-                        "id": issue.key,
-                        "summary": issue.fields.summary,
-                        "description": getattr(issue.fields, "description", ""),
-                        "type": issue.fields.issuetype.name
-                        if hasattr(issue.fields, "issuetype")
-                        else "Story",
-                        "status": getattr(issue.fields, "status", {}).name
-                        if hasattr(issue.fields, "status")
-                        else None,
-                        "url": f"{jira_url}/browse/{issue.key}",
-                    }
-                )
+                results.append({
+                    "id": issue.key,
+                    "summary": issue.fields.summary,
+                    "description": getattr(issue.fields, "description", ""),
+                    "type": issue.fields.issuetype.name if hasattr(issue.fields, "issuetype") else "Story",
+                    "status": getattr(issue.fields, "status", {}).name if hasattr(issue.fields, "status") else None,
+                    "url": f"{jira_url}/browse/{issue.key}",
+                })
             return results
         except Exception as e:
             logger.warning(f"Jira import failed: {e}")
             return await self._import_jira_fallback(query)
-
+    
     async def _import_jira_fallback(self, query: str) -> List[Dict[str, Any]]:
-        import os
-
         import httpx
-
+        import os
+        
         jira_url = os.getenv("JIRA_URL")
         jira_email = os.getenv("JIRA_EMAIL")
         jira_token = os.getenv("JIRA_API_TOKEN")
-
+        
         if not all([jira_url, jira_email, jira_token]):
-            return [
-                {
-                    "query": query,
-                    "status": "unconfigured",
-                    "note": "Set JIRA_URL, JIRA_EMAIL, JIRA_API_TOKEN environment variables",
-                    "results": [],
-                }
-            ]
-
+            return [{
+                "query": query,
+                "status": "unconfigured",
+                "note": "Set JIRA_URL, JIRA_EMAIL, JIRA_API_TOKEN environment variables",
+                "results": [],
+            }]
+        
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 headers = {
@@ -370,51 +336,42 @@ class RequirementsImporterTool(BaseTool):
                 results = []
                 for issue in data.get("issues", []):
                     field = issue.get("fields", {})
-                    results.append(
-                        {
-                            "id": issue.get("key"),
-                            "summary": field.get("summary"),
-                            "description": field.get("description", ""),
-                            "type": field.get("issuetype", {}).get("name", "Story")
-                            if isinstance(field.get("issuetype"), dict)
-                            else "Story",
-                            "status": field.get("status", {}).get("name")
-                            if isinstance(field.get("status"), dict)
-                            else None,
-                            "url": f"{jira_url}/browse/{issue.get('key')}",
-                        }
-                    )
+                    results.append({
+                        "id": issue.get("key"),
+                        "summary": field.get("summary"),
+                        "description": field.get("description", ""),
+                        "type": field.get("issuetype", {}).get("name", "Story") if isinstance(field.get("issuetype"), dict) else "Story",
+                        "status": field.get("status", {}).get("name") if isinstance(field.get("status"), dict) else None,
+                        "url": f"{jira_url}/browse/{issue.get('key')}",
+                    })
                 return results
         except Exception as e:
-            return [
-                {
-                    "query": query,
-                    "status": "error",
-                    "error": str(e),
-                    "results": [],
-                }
-            ]
-
+            return [{
+                "query": query,
+                "status": "error",
+                "error": str(e),
+                "results": [],
+            }]
+    
     async def _import_confluence(self, query: str) -> List[Dict[str, Any]]:
         logger.info(f"Importing from Confluence with query: {query}")
         CONFLUENCE_AVAILABLE = False
         try:
             from atlassian import Confluence
-
             CONFLUENCE_AVAILABLE = True
         except ImportError:
             pass
-
+        
         if not CONFLUENCE_AVAILABLE:
             return await self._import_confluence_fallback(query)
-
+        
         confluence_url = self._settings.get("CONFLUENCE_URL")
         confluence_email = self._settings.get("CONFLUENCE_EMAIL")
         confluence_token = self._settings.get("CONFLUENCE_API_TOKEN")
-
+        
         if not all([confluence_url, confluence_email, confluence_token]):
             return await self._import_confluence_fallback(query)
-
+        
         try:
             confluence = Confluence(
                 url=confluence_url,
@@ -424,40 +381,33 @@ class RequirementsImporterTool(BaseTool):
             pages = confluence.cql(query, expand="body.storage", limit=50)
             results = []
             for page in pages.get("results", []):
-                results.append(
-                    {
-                        "id": page.get("id"),
-                        "title": page.get("title"),
-                        "url": f"{confluence_url}/pages/{page.get('id')}",
-                        "space": page.get("space", {}).get("key")
-                        if isinstance(page.get("space"), dict)
-                        else None,
-                    }
-                )
+                results.append({
+                    "id": page.get("id"),
+                    "title": page.get("title"),
+                    "url": f"{confluence_url}/pages/{page.get('id')}",
+                    "space": page.get("space", {}).get("key") if isinstance(page.get("space"), dict) else None,
+                })
             return results
         except Exception as e:
             logger.warning(f"Confluence import failed: {e}")
             return await self._import_confluence_fallback(query)
-
+    
     async def _import_confluence_fallback(self, query: str) -> List[Dict[str, Any]]:
-        import os
-
         import httpx
-
+        import os
+        
         confluence_url = os.getenv("CONFLUENCE_URL")
         confluence_email = os.getenv("CONFLUENCE_EMAIL")
         confluence_token = os.getenv("CONFLUENCE_API_TOKEN")
-
+        
         if not all([confluence_url, confluence_email, confluence_token]):
-            return [
-                {
-                    "query": query,
-                    "status": "unconfigured",
-                    "note": "Set CONFLUENCE_URL, CONFLUENCE_EMAIL, CONFLUENCE_API_TOKEN",
-                    "results": [],
-                }
-            ]
-
+            return [{
+                "query": query,
+                "status": "unconfigured",
+                "note": "Set CONFLUENCE_URL, CONFLUENCE_EMAIL, CONFLUENCE_API_TOKEN",
+                "results": [],
+            }]
+        
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 headers = {
@@ -472,24 +422,20 @@ class RequirementsImporterTool(BaseTool):
                 results = []
                 for page in data.get("results", []):
                     body = page.get("body", {}).get("storage", {}).get("value", "")[:500]
-                    results.append(
-                        {
-                            "id": page.get("id"),
-                            "title": page.get("title"),
-                            "url": f"{confluence_url}/pages/{page.get('id')}",
-                            "body_preview": body,
-                        }
-                    )
+                    results.append({
+                        "id": page.get("id"),
+                        "title": page.get("title"),
+                        "url": f"{confluence_url}/pages/{page.get('id')}",
+                        "body_preview": body,
+                    })
                 return results
         except Exception as e:
-            return [
-                {
-                    "query": query,
-                    "status": "error",
-                    "error": str(e),
-                    "results": [],
-                }
-            ]
+            return [{
+                "query": query,
+                "status": "error",
+                "error": str(e),
+                "results": [],
+            }]
 
     def validate_input(self, input: Dict[str, Any]) -> bool:
         return "source" in input

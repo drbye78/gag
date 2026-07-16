@@ -13,13 +13,14 @@ import logging
 import os
 import time
 from collections import OrderedDict
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
 import httpx
 
 from core.config import get_settings
-from core.text_utils import TextLanguage, detect_language
+from core.text_utils import detect_language, TextLanguage
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,7 @@ class EmbeddingPipeline:
         self,
         provider: str = None,
         model: Optional[str] = None,
-        batch_size: int = 32,
+        batch_size: int = 100,
         max_concurrent: int = 5,
         dimensions: int = 1536,
         cache_capacity: int = 10_000,
@@ -45,8 +46,6 @@ class EmbeddingPipeline:
         # Default to openrouter if not specified
         self.provider = (provider or os.getenv("EMBEDDING_PROVIDER", "openrouter")).lower()
         self.dimensions = dimensions
-        if batch_size <= 0:
-            raise ValueError(f"batch_size must be positive, got {batch_size}")
         self.batch_size = batch_size
         self.max_concurrent = max_concurrent
         self._client: Optional[httpx.AsyncClient] = None
@@ -55,7 +54,9 @@ class EmbeddingPipeline:
         # Embedding cache: text hash → embedding vector
         self._cache_capacity = cache_capacity
         self._cache_ttl = cache_ttl
-        self._embedding_cache: OrderedDict[str, tuple] = OrderedDict()  # hash → (vector, timestamp)
+        self._embedding_cache: OrderedDict[str, tuple] = (
+            OrderedDict()
+        )  # hash → (vector, timestamp)
 
         settings = get_settings()
 
@@ -138,30 +139,19 @@ class EmbeddingPipeline:
         if not texts:
             return []
 
-        # Deduplicate input texts before embedding
-        seen: Dict[str, int] = {}  # text -> original index
-        unique_texts: List[str] = []
-        unique_indices: List[int] = []
-        for i, text in enumerate(texts):
-            if text in seen:
-                continue
-            seen[text] = i
-            unique_texts.append(text)
-            unique_indices.append(i)
-
-        # Check cache for each unique text
+        # Check cache for each text
         cached: Dict[int, List[float]] = {}
         to_embed: List[str] = []
         to_embed_indices: List[int] = []
 
-        for i, text in enumerate(unique_texts):
+        for i, text in enumerate(texts):
             text_hash = self._text_hash(text)
             cached_vec = self._cache_get(text_hash)
             if cached_vec is not None:
-                cached[unique_indices[i]] = cached_vec
+                cached[i] = cached_vec
             else:
                 to_embed.append(text)
-                to_embed_indices.append(unique_indices[i])
+                to_embed_indices.append(i)
 
         # Embed only the uncached texts
         fresh_embeddings: List[List[float]] = []
@@ -175,30 +165,19 @@ class EmbeddingPipeline:
             elif self.provider in ("openrouter", "or", "google"):
                 fresh_embeddings = await self._embed_openrouter(to_embed)
             else:
-                raise RuntimeError(
-                    f"Unknown embedding provider: {self.provider}. Use: openai, qwen, ollama, openrouter"
-                )
+                raise RuntimeError(f"Unknown embedding provider: {self.provider}. Use: openai, qwen, ollama, openrouter")
 
             # Cache the fresh embeddings
             for idx, embedding in zip(to_embed_indices, fresh_embeddings):
-                text_hash = self._text_hash(unique_texts[to_embed_indices.index(idx)])
+                text_hash = self._text_hash(texts[idx])
                 self._cache_put(text_hash, embedding)
 
-        # Assemble final result in original order (fill duplicates from seen map)
-        results: List[Optional[List[float]]] = [None] * len(texts)
+        # Assemble final result in original order
+        results: List[List[float]] = [None] * len(texts)  # type: ignore
         for i, vec in cached.items():
             results[i] = vec
         for pos, idx in enumerate(to_embed_indices):
             results[idx] = fresh_embeddings[pos]
-
-        # Fill in duplicate entries
-        text_to_embedding: Dict[str, List[float]] = {}
-        for i, text in enumerate(texts):
-            if results[i] is not None:
-                text_to_embedding[text] = results[i]
-        for i, text in enumerate(texts):
-            if results[i] is None:
-                results[i] = text_to_embedding.get(text, [])
 
         return results
 
@@ -256,7 +235,9 @@ class EmbeddingPipeline:
             )
             resp.raise_for_status()
             data = resp.json()
-            return data.get("output", {}).get("embeddings", [{}])[0].get("embedding", [])
+            return (
+                data.get("output", {}).get("embeddings", [{}])[0].get("embedding", [])
+            )
 
         results = await asyncio.gather(
             *[_embed_one(t) for t in texts],
@@ -297,19 +278,18 @@ class EmbeddingPipeline:
 
     async def _embed_openrouter(self, texts: List[str]) -> List[List[float]]:
         from core.config import get_settings
-
         settings = get_settings()
         api_key = settings.llm_api_key or os.getenv("OPENROUTER_API_KEY", "")
         if not api_key:
             raise RuntimeError("OPENROUTER_API_KEY not configured")
-
+        
         model = "openai/text-embedding-3-small"
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
         client = await self._get_client()
-
+        
         async def _embed_one(text: str) -> List[float]:
             resp = await client.post(
                 "https://openrouter.ai/api/v1/embeddings",

@@ -1,5 +1,7 @@
 """Tests for UI Component Knowledge Registry."""
 
+import pytest
+
 from ui.knowledge import (
     ComponentType,
     UIComponent,

@@ -18,6 +18,9 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
+from ingestion.chunker import Chunk, ChunkResult
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -43,7 +46,7 @@ class ColBERTIndexResult:
 class ColBERTQdrantIndexer:
     """
     ColBERT indexer that stores multi-vector embeddings in Qdrant.
-
+    
     Uses Qdrant's multi-vector capability to store per-token embeddings,
     enabling MaxSIM late-interaction scoring at query time.
     """
@@ -92,7 +95,9 @@ class ColBERTQdrantIndexer:
             "vectors": {
                 "size": self.vector_dim,
                 "distance": "Dot",
-                "multivector_config": {"mode": "max_sim"},
+                "multivector_config": {
+                    "mode": "max_sim"
+                }
             }
         }
 
@@ -219,7 +224,13 @@ class ColBERTQdrantIndexer:
             client = await self._get_client()
             resp = await client.post(
                 f"{self.base_url}/collections/{self.collection}/points/delete",
-                json={"filter": {"must": [{"key": "source_id", "match": {"value": source_id}}]}},
+                json={
+                    "filter": {
+                        "must": [
+                            {"key": "source_id", "match": {"value": source_id}}
+                        ]
+                    }
+                },
                 timeout=30.0,
             )
             return {"success": resp.status_code in (200, 201), "deleted_source": source_id}
@@ -230,7 +241,7 @@ class ColBERTQdrantIndexer:
 class ColBERTQdrantRetriever:
     """
     ColBERT retriever that uses Qdrant's native MaxSIM scoring.
-
+    
     Leverages Qdrant's multi-vector search with max_sim configuration
     for efficient late-interaction retrieval.
     """
@@ -341,16 +352,14 @@ class ColBERTQdrantRetriever:
             data = resp.json()
             results = []
             for point in data.get("result", []):
-                results.append(
-                    {
-                        "id": point.get("id"),
-                        "score": point.get("score", 0.0),
-                        "content": point.get("payload", {}).get("content", ""),
-                        "source_id": point.get("payload", {}).get("source_id", ""),
-                        "source_type": point.get("payload", {}).get("source_type", "document"),
-                        "chunk_index": point.get("payload", {}).get("chunk_index", 0),
-                    }
-                )
+                results.append({
+                    "id": point.get("id"),
+                    "score": point.get("score", 0.0),
+                    "content": point.get("payload", {}).get("content", ""),
+                    "source_id": point.get("payload", {}).get("source_id", ""),
+                    "source_type": point.get("payload", {}).get("source_type", "document"),
+                    "chunk_index": point.get("payload", {}).get("chunk_index", 0),
+                })
 
             took = int((time.time() - start) * 1000)
             return {
@@ -377,13 +386,10 @@ class ColBERTIndexer:
         self,
         model_name: str = "colbert-ir/colbertv2.0",
         max_length: int = 512,
-        persistence_path: Optional[str] = None,
     ):
         self.model_name = model_name
         self.max_length = max_length
-        self.persistence_path = persistence_path
         self._model = None
-        self._index_data: Dict[str, ColBERTIndexResult] = {}
 
     @property
     def available(self) -> bool:
@@ -433,7 +439,9 @@ class ColBERTIndexer:
                 },
             )
         except Exception as e:
-            return ColBERTIndexResult(chunks=chunks, vectors=[], metadata={"error": str(e)})
+            return ColBERTIndexResult(
+                chunks=chunks, vectors=[], metadata={"error": str(e)}
+            )
 
     def index(self, chunks: List[Any], source_id: str) -> ColBERTIndexResult:
         """Synchronous version."""
@@ -474,90 +482,9 @@ class ColBERTIndexer:
                 },
             )
         except Exception as e:
-            return ColBERTIndexResult(chunks=chunks, vectors=[], metadata={"error": str(e)})
-
-    def save(self, path: Optional[str] = None) -> str:
-        """Persist the ColBERT index to disk.
-
-        Args:
-            path: Directory path for the index files. Falls back to self.persistence_path.
-
-        Returns:
-            The path where the index was saved.
-        """
-        import json
-
-        save_path = path or self.persistence_path
-        if not save_path:
-            raise ValueError("No persistence path configured for ColBERT index")
-
-        os.makedirs(save_path, exist_ok=True)
-
-        index_meta = {
-            "model_name": self.model_name,
-            "max_length": self.max_length,
-            "num_documents": len(self._index_data),
-            "saved_at": time.time(),
-        }
-
-        meta_path = os.path.join(save_path, "index_meta.json")
-        with open(meta_path, "w") as f:
-            json.dump(index_meta, f)
-
-        for doc_id, result in self._index_data.items():
-            doc_path = os.path.join(save_path, f"{doc_id}.json")
-            serializable = {
-                "vectors": result.vectors,
-                "metadata": result.metadata,
-                "num_chunks": len(result.chunks) if result.chunks else 0,
-            }
-            with open(doc_path, "w") as f:
-                json.dump(serializable, f)
-
-        logger.info("ColBERT index saved to %s (%d documents)", save_path, len(self._index_data))
-        return save_path
-
-    def load(self, path: Optional[str] = None) -> int:
-        """Load a previously saved ColBERT index from disk.
-
-        Args:
-            path: Directory path for the index files. Falls back to self.persistence_path.
-
-        Returns:
-            Number of documents loaded.
-        """
-        import json
-
-        load_path = path or self.persistence_path
-        if not load_path:
-            raise ValueError("No persistence path configured for ColBERT index")
-
-        meta_path = os.path.join(load_path, "index_meta.json")
-        if not os.path.exists(meta_path):
-            raise FileNotFoundError(f"No ColBERT index found at {load_path}")
-
-        with open(meta_path, "r") as f:
-            index_meta = json.load(f)
-
-        loaded = 0
-        for filename in os.listdir(load_path):
-            if filename.endswith(".json") and filename != "index_meta.json":
-                doc_id = filename[:-5]  # strip .json
-                doc_path = os.path.join(load_path, filename)
-                try:
-                    with open(doc_path, "r") as f:
-                        data = json.load(f)
-                    self._index_data[doc_id] = ColBERTIndexResult(
-                        chunks=[],
-                        vectors=data.get("vectors", []),
-                        metadata=data.get("metadata", {}),
-                    )
-                    loaded += 1
-                except Exception as e:
-                    logger.warning("Failed to load ColBERT doc %s: %s", doc_id, e)
-
-        logger.info("ColBERT index loaded from %s (%d documents)", load_path, loaded)
-        return loaded
+            return ColBERTIndexResult(
+                chunks=chunks, vectors=[], metadata={"error": str(e)}
+            )
 
 
 class ColBERTRetriever:
@@ -568,42 +495,25 @@ class ColBERTRetriever:
 
     def compute_maxsim(
         self,
-        query_emb: List[List[float]],
-        doc_embeddings: List[List[List[float]]],
+        query_emb: List[float],
+        doc_embeddings: List[List[float]],
     ) -> float:
-        """Compute MaxSIM score between query and document.
-
-        Args:
-            query_emb: 2D array of shape [num_query_tokens, dim] — per-token embeddings for the query.
-            doc_embeddings: List of 2D arrays, each of shape [num_doc_tokens, dim] —
-                            per-token embeddings for one document.
-
-        Returns:
-            The MaxSIM score: for each query token, take the maximum dot-product
-            with any document token, then sum across all query tokens.
-        """
+        """Compute MaxSIM score between query and document."""
         if not doc_embeddings:
             return 0.0
 
-        max_score = float("-inf")
-        for doc_token_embs in doc_embeddings:
-            if not doc_token_embs or not query_emb:
+        max_score = 0.0
+        for doc_emb in doc_embeddings:
+            if not doc_emb or not query_emb:
                 continue
 
-            score = 0.0
-            for q_tok in query_emb:
-                # For each query token, find the maximum similarity (dot product)
-                # across ALL document tokens — this is the "Max" in MaxSIM.
-                best_sim = float("-inf")
-                for d_tok in doc_token_embs:
-                    sim = sum(q * d for q, d in zip(q_tok, d_tok))
-                    if sim > best_sim:
-                        best_sim = sim
-                # Sum the per-query-token max similarities
-                score += best_sim
+            score = sum(
+                max(0, query_emb[t] * doc_emb[t])
+                for t in range(min(len(query_emb), len(doc_emb)))
+            )
             max_score = max(max_score, score)
 
-        return max_score if max_score != float("-inf") else 0.0
+        return max_score
 
     async def search(
         self,
@@ -632,13 +542,11 @@ class ColBERTRetriever:
                 continue
 
             score = self.compute_maxsim(query_emb, doc_result.vectors)
-            results.append(
-                {
-                    "doc_id": doc_id,
-                    "score": score,
-                    "chunks": doc_result.chunks,
-                }
-            )
+            results.append({
+                "doc_id": doc_id,
+                "score": score,
+                "chunks": doc_result.chunks,
+            })
 
         results.sort(key=lambda x: x["score"], reverse=True)
         return results[:top_k]

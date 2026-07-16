@@ -1,5 +1,4 @@
 import pytest
-
 from multimodal.diagram_ir import (
     DiagramEdge,
     DiagramEdgeType,

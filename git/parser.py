@@ -5,8 +5,8 @@ Extracts functions, classes, imports, exports
 with per-language parsers.
 """
 
-import hashlib
 import re
+import hashlib
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
@@ -99,12 +99,8 @@ class CodeParser:
             return "maven"
         if "build.gradle" in file_path or "build.gradle.kts" in file_path:
             return "gradle"
-
-        if (
-            "istio" in file_path.lower()
-            or "virtualservice" in file_path.lower()
-            or "destinationrule" in file_path.lower()
-        ):
+        
+        if "istio" in file_path.lower() or "virtualservice" in file_path.lower() or "destinationrule" in file_path.lower():
             return "istio"
 
         match = re.search(r"\.(\w+)$", file_path)
@@ -179,7 +175,9 @@ class CodeParser:
 
         if current_entity:
             entities.append(
-                self._build_entity(current_entity, file_path, entity_lines, entity_start, language)
+                self._build_entity(
+                    current_entity, file_path, entity_lines, entity_start, language
+                )
             )
 
         export_match = re.search(r"^__all__\s*=\s*\[(.*)\]", content, re.MULTILINE)
@@ -196,7 +194,9 @@ class CodeParser:
             total_lines=len(lines),
         )
 
-    def _parse_javascript(self, content: str, file_path: str, language: str) -> ParsedFile:
+    def _parse_javascript(
+        self, content: str, file_path: str, language: str
+    ) -> ParsedFile:
         lines = content.split("\n")
         entities = []
         imports = []
@@ -265,7 +265,9 @@ class CodeParser:
             total_lines=len(lines),
         )
 
-    def _parse_typescript(self, content: str, file_path: str, language: str) -> ParsedFile:
+    def _parse_typescript(
+        self, content: str, file_path: str, language: str
+    ) -> ParsedFile:
         result = self._parse_javascript(content, file_path, language)
 
         interface_pattern = r"(?:export\s+)?interface\s+(\w+)"
@@ -284,67 +286,52 @@ class CodeParser:
                 )
             )
 
-        if file_path.endswith(".tsx") or "react" in content.lower():
+        if file_path.endswith('.tsx') or 'react' in content.lower():
             hooks = self._extract_react_hooks(content)
             for hook in hooks:
-                result.entities.append(
-                    CodeEntity(
-                        entity_id=self._generate_id(file_path, hook["name"]),
-                        name=hook["name"],
-                        entity_type=EntityType.FUNCTION,
-                        file_path=file_path,
-                        start_line=hook["line"],
-                        end_line=hook["line"],
-                        content=hook["content"],
-                        language=language,
-                        metadata={"is_hook": True},
-                    )
-                )
+                result.entities.append(CodeEntity(
+                    entity_id=self._generate_id(file_path, hook["name"]),
+                    name=hook["name"],
+                    entity_type=EntityType.FUNCTION,
+                    file_path=file_path,
+                    start_line=hook["line"],
+                    end_line=hook["line"],
+                    content=hook["content"],
+                    language=language,
+                    metadata={"is_hook": True},
+                ))
 
             components = self._extract_jsx_components(content)
             for comp in components:
-                result.entities.append(
-                    CodeEntity(
-                        entity_id=self._generate_id(file_path, comp["name"]),
-                        name=comp["name"],
-                        entity_type=EntityType.CLASS,
-                        file_path=file_path,
-                        start_line=comp["line"],
-                        end_line=comp["line"],
-                        content=comp["content"],
-                        language=language,
-                        metadata={"is_jsx_component": True},
-                    )
-                )
+                result.entities.append(CodeEntity(
+                    entity_id=self._generate_id(file_path, comp["name"]),
+                    name=comp["name"],
+                    entity_type=EntityType.CLASS,
+                    file_path=file_path,
+                    start_line=comp["line"],
+                    end_line=comp["line"],
+                    content=comp["content"],
+                    language=language,
+                    metadata={"is_jsx_component": True},
+                ))
 
         return result
 
     def _extract_react_hooks(self, content: str) -> List[Dict[str, Any]]:
         hooks = []
-        hook_names = [
-            "useState",
-            "useEffect",
-            "useContext",
-            "useReducer",
-            "useRef",
-            "useMemo",
-            "useCallback",
-            "useLayoutEffect",
-            "useImperativeHandle",
-        ]
+        hook_names = ["useState", "useEffect", "useContext", "useReducer", "useRef",
+                       "useMemo", "useCallback", "useLayoutEffect", "useImperativeHandle"]
 
         for name in hook_names:
             pattern = rf"const\s+(\w+)\s*=\s*{name}"
             for match in re.finditer(pattern, content):
-                line_num = content[: match.start()].count("\n")
-                hooks.append(
-                    {
-                        "name": match.group(1),
-                        "hook_type": name,
-                        "line": line_num,
-                        "content": match.group(0),
-                    }
-                )
+                line_num = content[:match.start()].count("\n")
+                hooks.append({
+                    "name": match.group(1),
+                    "hook_type": name,
+                    "line": line_num,
+                    "content": match.group(0),
+                })
 
         return hooks
 
@@ -353,27 +340,23 @@ class CodeParser:
 
         pattern = r"const\s+([A-Z]\w*)\s*=\s*(?:\([^)]*\)|[^\s=])\s*=>"
         for match in re.finditer(pattern, content):
-            line_num = content[: match.start()].count("\n")
-            components.append(
-                {
-                    "name": match.group(1),
-                    "type": "arrow",
-                    "line": line_num,
-                    "content": match.group(0),
-                }
-            )
+            line_num = content[:match.start()].count("\n")
+            components.append({
+                "name": match.group(1),
+                "type": "arrow",
+                "line": line_num,
+                "content": match.group(0),
+            })
 
         pattern = r"function\s+([A-Z]\w*)\s*\("
         for match in re.finditer(pattern, content):
-            line_num = content[: match.start()].count("\n")
-            components.append(
-                {
-                    "name": match.group(1),
-                    "type": "function",
-                    "line": line_num,
-                    "content": match.group(0),
-                }
-            )
+            line_num = content[:match.start()].count("\n")
+            components.append({
+                "name": match.group(1),
+                "type": "function",
+                "line": line_num,
+                "content": match.group(0),
+            })
 
         return components
 
@@ -401,7 +384,9 @@ class CodeParser:
                     imports.append(match.group(1))
 
             if re.match(r"^func\s+", stripped):
-                match = re.match(r"^func\s+(?:\((\w+)\s+\*)?(\w+)\))?\s*(\w+)", stripped)
+                match = re.match(
+                    r"^func\s+(?:\((\w+)\s+\*)?(\w+)\))?\s*(\w+)", stripped
+                )
                 if match:
                     name = match.group(3)
                     entities.append(
@@ -534,7 +519,9 @@ class CodeParser:
             elif interface_match:
                 entities.append(
                     CodeEntity(
-                        entity_id=self._generate_id(file_path, interface_match.group(1)),
+                        entity_id=self._generate_id(
+                            file_path, interface_match.group(1)
+                        ),
                         name=interface_match.group(1),
                         entity_type=EntityType.INTERFACE,
                         file_path=file_path,
@@ -583,8 +570,12 @@ class CodeParser:
                 if match:
                     imports.append(match.group(1))
 
-            class_match = re.match(r"^(?:public|private|internal)?\s*class\s+(\w+)", stripped)
-            interface_match = re.match(r"^(?:public|private)?\s*interface\s+(\w+)", stripped)
+            class_match = re.match(
+                r"^(?:public|private|internal)?\s*class\s+(\w+)", stripped
+            )
+            interface_match = re.match(
+                r"^(?:public|private)?\s*interface\s+(\w+)", stripped
+            )
 
             if class_match:
                 entities.append(
@@ -602,7 +593,9 @@ class CodeParser:
             elif interface_match:
                 entities.append(
                     CodeEntity(
-                        entity_id=self._generate_id(file_path, interface_match.group(1)),
+                        entity_id=self._generate_id(
+                            file_path, interface_match.group(1)
+                        ),
                         name=interface_match.group(1),
                         entity_type=EntityType.INTERFACE,
                         file_path=file_path,
@@ -627,7 +620,7 @@ class CodeParser:
         entities = []
         imports = []
         exports = []
-
+        
         kind = None
         name = None
 
@@ -638,19 +631,17 @@ class CodeParser:
                 kind_match = re.search(r"kind:\s*(\w+)", stripped)
                 if kind_match:
                     kind = kind_match.group(1)
-                    entities.append(
-                        CodeEntity(
-                            entity_id=self._generate_id(file_path, kind),
-                            name=kind,
-                            entity_type=EntityType.CLASS,
-                            file_path=file_path,
-                            start_line=idx,
-                            end_line=idx,
-                            content=stripped,
-                            language=language,
-                            metadata={"istio_resource": True},
-                        )
-                    )
+                    entities.append(CodeEntity(
+                        entity_id=self._generate_id(file_path, kind),
+                        name=kind,
+                        entity_type=EntityType.CLASS,
+                        file_path=file_path,
+                        start_line=idx,
+                        end_line=idx,
+                        content=stripped,
+                        language=language,
+                        metadata={"istio_resource": True},
+                    ))
 
             if stripped.startswith("name:"):
                 name_match = re.search(r"name:\s*(.+)", stripped)
@@ -673,7 +664,7 @@ class CodeParser:
 
         if kind:
             exports.insert(0, kind)
-
+        
         return ParsedFile(
             file_path=file_path,
             language=language,
@@ -717,102 +708,88 @@ class CodeParser:
             func_match = re.match(r"^(?:suspend\s+)?fun\s+(\w+)", stripped)
 
             if data_match:
-                entities.append(
-                    CodeEntity(
-                        entity_id=self._generate_id(file_path, data_match.group(1)),
-                        name=data_match.group(1),
-                        entity_type=EntityType.CLASS,
-                        file_path=file_path,
-                        start_line=idx,
-                        end_line=idx,
-                        content=stripped,
-                        language=language,
-                        metadata={"data_class": True},
-                    )
-                )
+                entities.append(CodeEntity(
+                    entity_id=self._generate_id(file_path, data_match.group(1)),
+                    name=data_match.group(1),
+                    entity_type=EntityType.CLASS,
+                    file_path=file_path,
+                    start_line=idx,
+                    end_line=idx,
+                    content=stripped,
+                    language=language,
+                    metadata={"data_class": True},
+                ))
             elif sealed_match:
-                entities.append(
-                    CodeEntity(
-                        entity_id=self._generate_id(file_path, sealed_match.group(1)),
-                        name=sealed_match.group(1),
-                        entity_type=EntityType.CLASS,
-                        file_path=file_path,
-                        start_line=idx,
-                        end_line=idx,
-                        content=stripped,
-                        language=language,
-                        metadata={"sealed_class": True},
-                    )
-                )
+                entities.append(CodeEntity(
+                    entity_id=self._generate_id(file_path, sealed_match.group(1)),
+                    name=sealed_match.group(1),
+                    entity_type=EntityType.CLASS,
+                    file_path=file_path,
+                    start_line=idx,
+                    end_line=idx,
+                    content=stripped,
+                    language=language,
+                    metadata={"sealed_class": True},
+                ))
             elif object_match:
-                entities.append(
-                    CodeEntity(
-                        entity_id=self._generate_id(file_path, object_match.group(1)),
-                        name=object_match.group(1),
-                        entity_type=EntityType.CLASS,
-                        file_path=file_path,
-                        start_line=idx,
-                        end_line=idx,
-                        content=stripped,
-                        language=language,
-                        metadata={"singleton": True},
-                    )
-                )
+                entities.append(CodeEntity(
+                    entity_id=self._generate_id(file_path, object_match.group(1)),
+                    name=object_match.group(1),
+                    entity_type=EntityType.CLASS,
+                    file_path=file_path,
+                    start_line=idx,
+                    end_line=idx,
+                    content=stripped,
+                    language=language,
+                    metadata={"singleton": True},
+                ))
             elif interface_match:
-                entities.append(
-                    CodeEntity(
-                        entity_id=self._generate_id(file_path, interface_match.group(1)),
-                        name=interface_match.group(1),
-                        entity_type=EntityType.INTERFACE,
-                        file_path=file_path,
-                        start_line=idx,
-                        end_line=idx,
-                        content=stripped,
-                        language=language,
-                    )
-                )
+                entities.append(CodeEntity(
+                    entity_id=self._generate_id(file_path, interface_match.group(1)),
+                    name=interface_match.group(1),
+                    entity_type=EntityType.INTERFACE,
+                    file_path=file_path,
+                    start_line=idx,
+                    end_line=idx,
+                    content=stripped,
+                    language=language,
+                ))
             elif enum_match:
-                entities.append(
-                    CodeEntity(
-                        entity_id=self._generate_id(file_path, enum_match.group(1)),
-                        name=enum_match.group(1),
-                        entity_type=EntityType.CLASS,
-                        file_path=file_path,
-                        start_line=idx,
-                        end_line=idx,
-                        content=stripped,
-                        language=language,
-                        metadata={"enum": True},
-                    )
-                )
+                entities.append(CodeEntity(
+                    entity_id=self._generate_id(file_path, enum_match.group(1)),
+                    name=enum_match.group(1),
+                    entity_type=EntityType.CLASS,
+                    file_path=file_path,
+                    start_line=idx,
+                    end_line=idx,
+                    content=stripped,
+                    language=language,
+                    metadata={"enum": True},
+                ))
             elif class_match:
-                entities.append(
-                    CodeEntity(
-                        entity_id=self._generate_id(file_path, class_match.group(1)),
-                        name=class_match.group(1),
-                        entity_type=EntityType.CLASS,
-                        file_path=file_path,
-                        start_line=idx,
-                        end_line=idx,
-                        content=stripped,
-                        language=language,
-                    )
-                )
+                entities.append(CodeEntity(
+                    entity_id=self._generate_id(file_path, class_match.group(1)),
+                    name=class_match.group(1),
+                    entity_type=EntityType.CLASS,
+                    file_path=file_path,
+                    start_line=idx,
+                    end_line=idx,
+                    content=stripped,
+                    language=language,
+                ))
             elif func_match:
                 is_suspend = "suspend" in stripped
-                entities.append(
-                    CodeEntity(
-                        entity_id=self._generate_id(file_path, func_match.group(1)),
-                        name=func_match.group(1),
-                        entity_type=EntityType.FUNCTION,
-                        file_path=file_path,
-                        start_line=idx,
-                        end_line=idx,
-                        content=stripped,
-                        language=language,
-                        metadata={"suspend": is_suspend},
-                    )
-                )
+                entities.append(CodeEntity(
+                    entity_id=self._generate_id(file_path, func_match.group(1)),
+                    name=func_match.group(1),
+                    entity_type=EntityType.FUNCTION,
+                    file_path=file_path,
+                    start_line=idx,
+                    end_line=idx,
+                    content=stripped,
+                    language=language,
+                    metadata={"suspend": is_suspend},
+                ))
 
         return ParsedFile(
             file_path=file_path,
@@ -832,22 +809,20 @@ class CodeParser:
 
         try:
             root = ET.fromstring(content)
-            ns = {"m": "http://maven.apache.org/POM/4.0.0"}
+            ns = {'m': 'http://maven.apache.org/POM/4.0.0'}
 
             project = root.find(".//{*}artifactId")
             if project is not None:
-                entities.append(
-                    CodeEntity(
-                        entity_id=self._generate_id(file_path, "project"),
-                        name=project.text or "unknown",
-                        entity_type=EntityType.MODULE,
-                        file_path=file_path,
-                        start_line=0,
-                        end_line=0,
-                        content=project.text or "",
-                        language=language,
-                    )
-                )
+                entities.append(CodeEntity(
+                    entity_id=self._generate_id(file_path, "project"),
+                    name=project.text or "unknown",
+                    entity_type=EntityType.MODULE,
+                    file_path=file_path,
+                    start_line=0,
+                    end_line=0,
+                    content=project.text or "",
+                    language=language,
+                ))
 
             for dep in root.findall(".//{*}dependency"):
                 group_id = dep.find("{*}groupId")
@@ -856,36 +831,32 @@ class CodeParser:
                 if group_id is not None and artifact_id is not None:
                     dep_name = f"{group_id.text}:{artifact_id.text}"
                     imports.append(dep_name)
-                    entities.append(
-                        CodeEntity(
-                            entity_id=self._generate_id(file_path, dep_name),
-                            name=dep_name,
-                            entity_type=EntityType.IMPORT,
-                            file_path=file_path,
-                            start_line=0,
-                            end_line=0,
-                            content=dep_name,
-                            language=language,
-                            metadata={"version": version.text if version is not None else None},
-                        )
-                    )
+                    entities.append(CodeEntity(
+                        entity_id=self._generate_id(file_path, dep_name),
+                        name=dep_name,
+                        entity_type=EntityType.IMPORT,
+                        file_path=file_path,
+                        start_line=0,
+                        end_line=0,
+                        content=dep_name,
+                        language=language,
+                        metadata={"version": version.text if version is not None else None},
+                    ))
 
             for plugin in root.findall(".//{*}plugin"):
                 artifact_id = plugin.find("{*}artifactId")
                 if artifact_id is not None:
-                    entities.append(
-                        CodeEntity(
-                            entity_id=self._generate_id(file_path, artifact_id.text),
-                            name=artifact_id.text,
-                            entity_type=EntityType.IMPORT,
-                            file_path=file_path,
-                            start_line=0,
-                            end_line=0,
-                            content=artifact_id.text,
-                            language=language,
-                            metadata={"plugin": True},
-                        )
-                    )
+                    entities.append(CodeEntity(
+                        entity_id=self._generate_id(file_path, artifact_id.text),
+                        name=artifact_id.text,
+                        entity_type=EntityType.IMPORT,
+                        file_path=file_path,
+                        start_line=0,
+                        end_line=0,
+                        content=artifact_id.text,
+                        language=language,
+                        metadata={"plugin": True},
+                    ))
         except ET.ParseError:
             pass
 
@@ -925,69 +896,61 @@ class CodeParser:
                 if match:
                     plugin_name = match.group(1)
                     imports.append(f"plugin:{plugin_name}")
-                    entities.append(
-                        CodeEntity(
-                            entity_id=self._generate_id(file_path, plugin_name),
-                            name=plugin_name,
-                            entity_type=EntityType.IMPORT,
-                            file_path=file_path,
-                            start_line=idx,
-                            end_line=idx,
-                            content=stripped,
-                            language=language,
-                            metadata={"plugin": True},
-                        )
-                    )
+                    entities.append(CodeEntity(
+                        entity_id=self._generate_id(file_path, plugin_name),
+                        name=plugin_name,
+                        entity_type=EntityType.IMPORT,
+                        file_path=file_path,
+                        start_line=idx,
+                        end_line=idx,
+                        content=stripped,
+                        language=language,
+                        metadata={"plugin": True},
+                    ))
 
             if in_dependencies_block:
                 match = re.search(r"(?:implementation|api|compile)\s+['\"](.+?)['\"]", stripped)
                 if match:
                     dep = match.group(1)
                     imports.append(dep)
-                    entities.append(
-                        CodeEntity(
-                            entity_id=self._generate_id(file_path, dep),
-                            name=dep,
-                            entity_type=EntityType.IMPORT,
-                            file_path=file_path,
-                            start_line=idx,
-                            end_line=idx,
-                            content=stripped,
-                            language=language,
-                            metadata={"dependency": True},
-                        )
-                    )
-
-            task_match = re.match(r"task\s+(\w+)", stripped)
-            if task_match:
-                entities.append(
-                    CodeEntity(
-                        entity_id=self._generate_id(file_path, task_match.group(1)),
-                        name=task_match.group(1),
-                        entity_type=EntityType.FUNCTION,
+                    entities.append(CodeEntity(
+                        entity_id=self._generate_id(file_path, dep),
+                        name=dep,
+                        entity_type=EntityType.IMPORT,
                         file_path=file_path,
                         start_line=idx,
                         end_line=idx,
                         content=stripped,
                         language=language,
-                        metadata={"task": True},
-                    )
-                )
+                        metadata={"dependency": True},
+                    ))
+
+            task_match = re.match(r"task\s+(\w+)", stripped)
+            if task_match:
+                entities.append(CodeEntity(
+                    entity_id=self._generate_id(file_path, task_match.group(1)),
+                    name=task_match.group(1),
+                    entity_type=EntityType.FUNCTION,
+                    file_path=file_path,
+                    start_line=idx,
+                    end_line=idx,
+                    content=stripped,
+                    language=language,
+                    metadata={"task": True},
+                ))
 
         for match in re.finditer(r"apply\s+from:\s+['\"](.+?)['\"]", content):
-            entities.append(
-                CodeEntity(
-                    entity_id=self._generate_id(file_path, match.group(1)),
-                    name=match.group(1),
-                    entity_type=EntityType.IMPORT,
-                    file_path=file_path,
-                    start_line=content[: match.start()].count("\n"),
-                    end_line=0,
-                    content=match.group(0),
-                    language=language,
-                    metadata={"apply": True},
-                )
-            )
+            entities.append(CodeEntity(
+                entity_id=self._generate_id(file_path, match.group(1)),
+                name=match.group(1),
+                entity_type=EntityType.IMPORT,
+                file_path=file_path,
+                start_line=content[:match.start()].count("\n"),
+                end_line=0,
+                content=match.group(0),
+                language=language,
+                metadata={"apply": True},
+            ))
 
         return ParsedFile(
             file_path=file_path,

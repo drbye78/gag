@@ -1,13 +1,14 @@
 import hashlib
 import re
+from typing import Any, Dict, List
 from dataclasses import dataclass
-from typing import List
 
 from ingestion.chunker import Chunk, ChunkResult, TextChunker
 
+
 ISTIO_KINDS = [
     "VirtualService",
-    "DestinationRule",
+    "DestinationRule", 
     "Gateway",
     "ServiceEntry",
     "EnvoyFilter",
@@ -51,7 +52,6 @@ class IstioChunker(TextChunker):
 
     def chunk(self, text: str, source_id: str) -> ChunkResult:
         import time
-
         start = time.time()
 
         documents = self._split_yaml_documents(text)
@@ -63,23 +63,21 @@ class IstioChunker(TextChunker):
 
             entity = self._parse_istio_document(doc)
             chunk_id = self._make_chunk_id(source_id, idx)
-            chunks.append(
-                Chunk(
-                    id=chunk_id,
-                    content=doc,
-                    chunk_index=idx,
-                    start_char=0,
-                    end_char=len(doc),
-                    metadata={
-                        "kind": entity.kind,
-                        "name": entity.name,
-                        "namespace": entity.namespace,
-                        "api_version": entity.api_version,
-                        "hosts": entity.hosts,
-                        "gateways": entity.gateways,
-                    },
-                )
-            )
+            chunks.append(Chunk(
+                id=chunk_id,
+                content=doc,
+                chunk_index=idx,
+                start_char=0,
+                end_char=len(doc),
+                metadata={
+                    "kind": entity.kind,
+                    "name": entity.name,
+                    "namespace": entity.namespace,
+                    "api_version": entity.api_version,
+                    "hosts": entity.hosts,
+                    "gateways": entity.gateways,
+                },
+            ))
 
         took = int((time.time() - start) * 1000)
         return ChunkResult(
@@ -118,7 +116,7 @@ class IstioChunker(TextChunker):
 
         for line in lines:
             stripped = line.strip()
-
+            
             if stripped.startswith("kind:"):
                 kind_val = stripped.split(":", 1)[1].strip()
                 if kind_val in ISTIO_KINDS:
@@ -141,7 +139,7 @@ class IstioChunker(TextChunker):
         if "hosts:" in content:
             for match in re.finditer(r"hosts:\s*\n\s*-\s*(.+?)\n", content, re.MULTILINE):
                 hosts.append(match.group(1).strip().strip('"'))
-
+        
         if "gateways:" in content:
             for match in re.finditer(r"gateways:\s*\n\s*-\s*(.+?)\n", content, re.MULTILINE):
                 gateways.append(match.group(1).strip().strip('"'))

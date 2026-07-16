@@ -1,18 +1,17 @@
 import hashlib
 import json
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from documents.diagram_formats import OpenAPIParser
+
 from unified_ingestion.handlers.base import Handler, HandlerResult
 
 logger = logging.getLogger(__name__)
 
 
 class APISpecHandler(Handler):
-    async def handle(
-        self, content: bytes, source_id: str, metadata: Dict[str, Any]
-    ) -> HandlerResult:
+    async def handle(self, content: bytes, source_id: str, metadata: Dict[str, Any]) -> HandlerResult:
         filename = metadata.get("filename", "api spec")
         text = content.decode("utf-8")
 
@@ -21,7 +20,6 @@ class APISpecHandler(Handler):
                 spec = json.loads(text)
             elif filename.endswith((".yaml", ".yml")):
                 import yaml
-
                 spec = yaml.safe_load(text)
             else:
                 spec = self._try_parse(text)
@@ -35,9 +33,7 @@ class APISpecHandler(Handler):
             chunks = []
             for path, methods in result.paths.items():
                 for method, op in methods.items():
-                    chunk_id = hashlib.sha256(f"{source_id}:{path}:{method}".encode()).hexdigest()[
-                        :16
-                    ]
+                    chunk_id = hashlib.sha256(f"{source_id}:{path}:{method}".encode()).hexdigest()[:16]
                     chunks.append(
                         {
                             "id": chunk_id,
@@ -105,7 +101,6 @@ class APISpecHandler(Handler):
     def _try_parse(self, text: str) -> Dict[str, Any]:
         try:
             import yaml
-
             return yaml.safe_load(text)
         except Exception:
             pass

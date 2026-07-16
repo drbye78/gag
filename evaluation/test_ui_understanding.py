@@ -6,7 +6,6 @@ Skipped if no sample images present or VLM API keys not configured.
 """
 
 import os
-
 import pytest
 
 SAMPLES_DIR = os.path.join(os.path.dirname(__file__), "samples")
@@ -51,7 +50,8 @@ def _compute_element_f1(extracted, expected):
         return 1.0 if not extracted else 0.0
 
     true_positives = sum(
-        1 for exp in expected if any(ext.get("type") == exp["type"] for ext in extracted)
+        1 for exp in expected
+        if any(ext.get("type") == exp["type"] for ext in extracted)
     )
 
     precision = true_positives / len(extracted) if extracted else 0.0
@@ -61,17 +61,16 @@ def _compute_element_f1(extracted, expected):
 
 @pytest.mark.skipif(
     not os.path.exists(SAMPLES_DIR) or not os.listdir(SAMPLES_DIR),
-    reason="No sample images in evaluation/samples/",
+    reason="No sample images in evaluation/samples/"
 )
 @pytest.mark.parametrize("test_case", TEST_CASES, ids=[tc.sketch_path for tc in TEST_CASES])
 def test_ui_understanding(test_case):
     """End-to-end test."""
     pytest.importorskip("ui.vlm_extractor")
     import asyncio
-
+    from ui.vlm_extractor import VLMUIExtractor
     from ui.evidence_aggregator import EvidenceAggregator
     from ui.sap_knowledge import get_sap_catalog
-    from ui.vlm_extractor import VLMUIExtractor
 
     async def run_test():
         extractor = VLMUIExtractor()

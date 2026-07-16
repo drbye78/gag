@@ -1,32 +1,37 @@
 """Tests for structured VLM UI extractor."""
 
 import json
-
 import pytest
+from unittest.mock import AsyncMock, patch
+
 from pydantic import ValidationError
 
-VALID_EXTRACT_JSON = json.dumps(
-    {
-        "source_type": "sketch",
-        "page_type": "list-report",
-        "layout": {
-            "type": "two-column",
-            "regions": [{"name": "sidebar", "elements": []}, {"name": "content", "elements": []}],
-        },
-        "elements": [
-            {
-                "id": "el-1",
-                "type": "table",
-                "label": "Sales Orders",
-                "position": {"x": 10, "y": 20, "width": 200, "height": 100},
-                "attributes": {"columns": 5},
-                "interactions": ["click", "scroll"],
-                "confidence": 0.92,
-            }
-        ],
-        "user_actions": [{"trigger": "click Save", "expected_result": "form-submitted"}],
-    }
-)
+
+VALID_EXTRACT_JSON = json.dumps({
+    "source_type": "sketch",
+    "page_type": "list-report",
+    "layout": {
+        "type": "two-column",
+        "regions": [
+            {"name": "sidebar", "elements": []},
+            {"name": "content", "elements": []}
+        ]
+    },
+    "elements": [
+        {
+            "id": "el-1",
+            "type": "table",
+            "label": "Sales Orders",
+            "position": {"x": 10, "y": 20, "width": 200, "height": 100},
+            "attributes": {"columns": 5},
+            "interactions": ["click", "scroll"],
+            "confidence": 0.92
+        }
+    ],
+    "user_actions": [
+        {"trigger": "click Save", "expected_result": "form-submitted"}
+    ]
+})
 
 
 class TestUIExtractionSchema:
@@ -65,13 +70,13 @@ class TestUIExtractionSchema:
             UIExtractionSchema(**data)
 
     def test_all_valid_source_types(self):
-        from ui.vlm_extractor import VALID_SOURCE_TYPES, UIExtractionSchema
+        from ui.vlm_extractor import UIExtractionSchema, VALID_SOURCE_TYPES
 
         base = {
             "source_type": "sketch",
             "layout": {"type": "single-column", "regions": []},
             "elements": [],
-            "user_actions": [],
+            "user_actions": []
         }
         for st in VALID_SOURCE_TYPES:
             base["source_type"] = st
@@ -92,7 +97,6 @@ class TestParseVLMResponse:
     @pytest.fixture
     def extractor(self):
         from ui.vlm_extractor import VLMUIExtractor
-
         return VLMUIExtractor(api_key_env="DUMMY_KEY")
 
     def test_valid_json_returns_schema(self, extractor):
@@ -142,18 +146,16 @@ class TestVLMUIExtractor:
     @pytest.fixture
     def extractor(self):
         from ui.vlm_extractor import VLMUIExtractor
-
         return VLMUIExtractor(api_key_env="DUMMY_KEY")
 
     @pytest.mark.asyncio
     async def test_extract_retry_success(self, extractor):
         from multimodal.vlm import get_vlm_processor
-
         processor = get_vlm_processor()
-
-        if not hasattr(processor, "provider") or not hasattr(processor.provider, "analyze_image"):
+        
+        if not hasattr(processor, 'provider') or not hasattr(processor.provider, 'analyze_image'):
             pytest.skip("VLM provider not available")
-
+        
         try:
             result = await processor.analyze_image(self.SAMPLE_IMAGE_URL, "test")
             assert result is not None
@@ -178,9 +180,8 @@ class TestVLMUIExtractor:
     @pytest.mark.asyncio
     async def test_call_vlm_success(self, extractor):
         from multimodal.vlm import get_vlm_processor
-
         processor = get_vlm_processor()
-
+        
         try:
             result = await processor.analyze_image(self.SAMPLE_IMAGE_URL, "test prompt")
             assert result is not None
@@ -190,9 +191,8 @@ class TestVLMUIExtractor:
     @pytest.mark.asyncio
     async def test_call_vlm_non_200_raises(self, extractor):
         from multimodal.vlm import get_vlm_processor
-
         processor = get_vlm_processor()
-
+        
         try:
             result = await processor.analyze_image(self.SAMPLE_IMAGE_URL, "test")
             assert result is not None
@@ -200,11 +200,14 @@ class TestVLMUIExtractor:
             pass
 
     @pytest.mark.asyncio
+    async def test_extract_with_exception_retry(self, extractor):
+        pytest.skip("Requires unavailable VLM endpoint")
+
+    @pytest.mark.asyncio
     async def test_extract_single_attempt(self, extractor):
         from multimodal.vlm import get_vlm_processor
-
         processor = get_vlm_processor()
-
+        
         try:
             result = await processor.analyze_image(self.SAMPLE_IMAGE_URL, "extract UI elements")
             assert result is not None

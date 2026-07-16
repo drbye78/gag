@@ -6,14 +6,14 @@ Provides /health, /query, /mcp, /multimodal/extract,
 /ingestion, /git, and /documents endpoints.
 """
 
+from contextlib import asynccontextmanager
 import base64
 import logging
-from contextlib import asynccontextmanager
-from typing import Any, Dict, List, Optional
-
+import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
+from typing import Any, Dict, List, Optional
 
 import models.mcp
 from core.middleware import setup_middleware
@@ -27,7 +27,6 @@ async def lifespan(app: FastAPI):
     # Shutdown - cleanup resources
     logging.getLogger(__name__).info("Shutting down Engineering Intelligence System...")
     from llm.router import LLMRouter
-
     await LLMRouter.close_client()
     logging.getLogger(__name__).info("Resources cleaned up.")
 
@@ -35,7 +34,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Engineering Intelligence System API",
     description="Production-grade engineering intelligence system with multi-RAG, multimodal diagrams, and multilingual support",
-    version="4.2.0",
+    version="4.0.0",
     lifespan=lifespan,
 )
 
@@ -49,7 +48,6 @@ _allow_credentials = False
 
 if "*" in _cors_origins:
     import logging
-
     logging.getLogger(__name__).critical(
         "Wildcard CORS origin is forbidden when credentials are enabled. "
         "Restricting to localhost only."
@@ -58,7 +56,6 @@ if "*" in _cors_origins:
     _allow_credentials = False
 elif not _cors_settings.debug:
     import logging
-
     logger = logging.getLogger(__name__)
     for origin in _cors_origins:
         if not origin.startswith("https://"):
@@ -151,19 +148,25 @@ except ImportError as e:
 
     logging.getLogger(__name__).warning("Knowledge API not available: %s", e)
 
+# Unified Ingestion API
+try:
+    from unified_ingestion.api import router as unified_ingestion_router
+
+    app.include_router(unified_ingestion_router)
+except ImportError as e:
+    import logging
+
+    logging.getLogger(__name__).warning("Unified Ingestion API not available: %s", e)
+
 # Configure middleware
 setup_middleware(app)
-
-# NOTE: The API does not currently expose an OpenTelemetry traces endpoint
-# (e.g., /v1/traces). To add distributed tracing support, integrate an
-# OTLP exporter and mount a traces endpoint using the opentelemetry-sdk.
 
 # ---------------------------------------------------------------------------
 # Authentication - DEFAULT DENY POLICY
 # ---------------------------------------------------------------------------
 from fastapi import Depends
+from core.auth import require_authenticated, PublicEndpoint
 
-from core.auth import require_authenticated
 
 # ---------------------------------------------------------------------------
 # Request / Response models
@@ -180,10 +183,7 @@ class QueryRequest(BaseModel):
     def query_not_empty(cls, v: str) -> str:
         if not v or not v.strip():
             raise ValueError("query must not be empty")
-        v = v.strip()
-        if len(v) > 10000:
-            raise ValueError("query must not exceed 10000 characters")
-        return v
+        return v.strip()
 
 
 class QueryResponse(BaseModel):
@@ -191,6 +191,9 @@ class QueryResponse(BaseModel):
     answer: str
     sources: List[Dict[str, Any]]
     metadata: Dict[str, Any]
+    validation: Optional[Dict[str, Any]] = None
+    intent: Optional[str] = None
+    reliable: bool = True
 
 
 class HealthResponse(BaseModel):
@@ -207,10 +210,7 @@ class ImageExtractionRequest(BaseModel):
     def image_url_not_empty(cls, v: str) -> str:
         if not v or not v.strip():
             raise ValueError("image_url must not be empty")
-        v = v.strip()
-        if len(v) > 5000:
-            raise ValueError("image_url must not exceed 5000 characters")
-        return v
+        return v.strip()
 
 
 class ImageExtractionResponse(BaseModel):
@@ -228,10 +228,7 @@ class ReasoningRequest(BaseModel):
     def query_not_empty(cls, v: str) -> str:
         if not v or not v.strip():
             raise ValueError("query must not be empty")
-        v = v.strip()
-        if len(v) > 10000:
-            raise ValueError("query must not exceed 10000 characters")
-        return v
+        return v.strip()
 
 
 class ReasoningResponse(BaseModel):
@@ -253,10 +250,7 @@ class RerankRequest(BaseModel):
     def query_not_empty(cls, v: str) -> str:
         if not v or not v.strip():
             raise ValueError("query must not be empty")
-        v = v.strip()
-        if len(v) > 10000:
-            raise ValueError("query must not exceed 10000 characters")
-        return v
+        return v.strip()
 
 
 class RerankResponse(BaseModel):
@@ -275,10 +269,7 @@ class CitationRequest(BaseModel):
     def answer_not_empty(cls, v: str) -> str:
         if not v or not v.strip():
             raise ValueError("answer must not be empty")
-        v = v.strip()
-        if len(v) > 100000:
-            raise ValueError("answer must not exceed 100000 characters")
-        return v
+        return v.strip()
 
 
 class CitationResponse(BaseModel):
@@ -301,15 +292,55 @@ async def health():
 
     return HealthResponse(
         status=status_info["status"],
-        version="4.2.0",
+        version="4.0.0",
     )
+
+
+@app.get("/metrics", tags=["public"])
+async def metrics():
+    """Prometheus-compatible metrics endpoint.
+
+    Returns metrics in Prometheus text format for scraping by
+    Prometheus/Grafana/Datadog.
+    """
+    from core.observability import get_metrics_collector
+
+    collector = get_metrics_collector()
+    data = collector.get_metrics()
+
+    lines = []
+    # Latency histograms
+    lines.append("# HELP eis_latency_ms Latency in milliseconds")
+    lines.append("# TYPE eis_latency_ms histogram")
+    for op, stats in data.get("latencies", {}).items():
+        safe_op = op.replace(".", "_").replace("-", "_")
+        lines.append(f'eis_latency_ms{{operation="{safe_op}",percentile="p50"}} {stats["p50"]}')
+        lines.append(f'eis_latency_ms{{operation="{safe_op}",percentile="p95"}} {stats["p95"]}')
+        lines.append(f'eis_latency_ms{{operation="{safe_op}",percentile="p99"}} {stats["p99"]}')
+        lines.append(f'eis_latency_count{{operation="{safe_op}"}} {stats["count"]}')
+
+    # Counters
+    lines.append("# HELP eis_counter_total Counter metrics")
+    lines.append("# TYPE eis_counter_total counter")
+    for key, value in data.get("counters", {}).items():
+        safe_key = key.replace(".", "_").replace("-", "_")
+        lines.append(f'eis_counter_total{{metric="{safe_key}"}} {value}')
+
+    # Gauges
+    lines.append("# HELP eis_gauge Gauge metrics")
+    lines.append("# TYPE eis_gauge gauge")
+    for key, value in data.get("gauges", {}).items():
+        safe_key = key.replace(".", "_").replace("-", "_")
+        lines.append(f'eis_gauge{{metric="{safe_key}"}} {value}')
+
+    return {"metrics": "\n".join(lines), "format": "prometheus_text"}
 
 
 @app.get("/", tags=["public"])
 async def root():
     return {
         "service": "Engineering Intelligence System",
-        "version": "3.2.0",
+        "version": "4.0.0",
         "endpoints": [
             "/health",
             "/query",
@@ -338,13 +369,23 @@ async def query(request: QueryRequest):
     from agents.orchestration import get_orchestration_engine
 
     engine = get_orchestration_engine()
-    result = await engine.execute(request.query)
+    result = await engine.execute(
+        request.query,
+        ir_context={},
+        max_iterations=None,
+    )
+
+    validation = result.get("validation", {})
+    reliable = validation.get("valid", True) if validation else True
 
     return QueryResponse(
         query=result["query"],
         answer=result["answer"],
         sources=result.get("retrieval_results", {}).get("results", []),
         metadata=result.get("metadata", {}),
+        validation=validation,
+        intent=result.get("intent"),
+        reliable=reliable,
     )
 
 
@@ -355,9 +396,7 @@ async def mcp(request: models.mcp.MCPRequest):
     handler = get_mcp_handler()
     result = await handler.handle_request(request)
 
-    if result.error:
-        raise HTTPException(status_code=400, detail=result.error)
-
+    # JSON-RPC 2.0: errors are returned in the body with HTTP 200, not as HTTP errors
     return result
 
 
@@ -372,11 +411,7 @@ async def mcp_list():
     return {"tools": tools, "schema": MCP_JSON_SCHEMA}
 
 
-@app.post(
-    "/multimodal/extract",
-    response_model=ImageExtractionResponse,
-    dependencies=[Depends(require_authenticated)],
-)
+@app.post("/multimodal/extract", response_model=ImageExtractionResponse, dependencies=[Depends(require_authenticated)])
 async def extract_from_image(request: ImageExtractionRequest):
     from multimodal.vlm import get_vlm_processor
 
@@ -389,11 +424,7 @@ async def extract_from_image(request: ImageExtractionRequest):
     )
 
 
-@app.post(
-    "/reasoning/chain",
-    response_model=ReasoningResponse,
-    dependencies=[Depends(require_authenticated)],
-)
+@app.post("/reasoning/chain", response_model=ReasoningResponse, dependencies=[Depends(require_authenticated)])
 async def chain_reasoning(request: ReasoningRequest):
     from retrieval.reasoning import ReasoningMode, get_reasoning_engine
 
@@ -406,21 +437,13 @@ async def chain_reasoning(request: ReasoningRequest):
         reasoning_mode=result["reasoning_mode"],
         confidence=result["confidence"],
         steps=[
-            {
-                "thought": s.get("thought", "") if isinstance(s, dict) else s.thought,
-                "action": s.get("action", "") if isinstance(s, dict) else s.action,
-                "observation": s.get("observation", "") if isinstance(s, dict) else s.observation,
-            }
+            {"thought": s.thought, "action": s.action, "observation": s.observation}
             for s in result.get("steps", [])
         ],
     )
 
 
-@app.post(
-    "/reasoning/entity",
-    response_model=ReasoningResponse,
-    dependencies=[Depends(require_authenticated)],
-)
+@app.post("/reasoning/entity", response_model=ReasoningResponse, dependencies=[Depends(require_authenticated)])
 async def entity_reasoning(request: ReasoningRequest):
     from retrieval.reasoning.entity_aware import get_entity_aware_reasoning_engine
 
@@ -433,11 +456,7 @@ async def entity_reasoning(request: ReasoningRequest):
         reasoning_mode=result["reasoning_mode"],
         confidence=result["confidence"],
         steps=[
-            {
-                "thought": s.get("thought", "") if isinstance(s, dict) else s.thought,
-                "action": s.get("action", "") if isinstance(s, dict) else s.action,
-                "observation": s.get("observation", "") if isinstance(s, dict) else s.observation,
-            }
+            {"thought": s.thought, "action": s.action, "observation": s.observation}
             for s in result.get("steps", [])
         ],
     )
@@ -452,26 +471,33 @@ async def rerank(request: RerankRequest):
 
     return RerankResponse(
         query=request.query,
-        results=[{"content": r.content, "score": r.score, "id": r.node_id} for r in reranked],
+        results=[
+            {"content": r.content, "score": r.score, "id": r.node_id} for r in reranked
+        ],
         reranked=True,
     )
 
 
-@app.post(
-    "/citations", response_model=CitationResponse, dependencies=[Depends(require_authenticated)]
-)
+@app.post("/citations", response_model=CitationResponse, dependencies=[Depends(require_authenticated)])
 async def generate_citations(request: CitationRequest):
     from retrieval.citations import CitationBuilder, CitationStyle
 
-    style = CitationStyle(request.style) if request.style else CitationStyle.PARENTHETICAL
+    style = (
+        CitationStyle(request.style) if request.style else CitationStyle.PARENTHETICAL
+    )
     builder = CitationBuilder(style=style)
 
     annotated = builder.build(request.answer, request.sources)
 
     return CitationResponse(
         answer=annotated.answer,
-        citations=[{"id": c.id, "confidence": c.confidence} for c in annotated.citations],
-        sources=[{"source_id": s.source_id, "content": s.content[:100]} for s in annotated.sources],
+        citations=[
+            {"id": c.id, "confidence": c.confidence} for c in annotated.citations
+        ],
+        sources=[
+            {"source_id": s.source_id, "content": s.content[:100]}
+            for s in annotated.sources
+        ],
     )
 
 
@@ -503,11 +529,7 @@ class EntityCacheStatsResponse(BaseModel):
     oldest_entry: Optional[Dict[str, Any]]
 
 
-@app.get(
-    "/entity/cache/stats",
-    response_model=EntityCacheStatsResponse,
-    dependencies=[Depends(require_authenticated)],
-)
+@app.get("/entity/cache/stats", response_model=EntityCacheStatsResponse, dependencies=[Depends(require_authenticated)])
 async def entity_cache_stats():
     from retrieval.hybrid import get_enhanced_hybrid_retriever
 
@@ -534,11 +556,7 @@ class EntityCacheInvalidateResponse(BaseModel):
     message: str
 
 
-@app.post(
-    "/entity/cache/invalidate",
-    response_model=EntityCacheInvalidateResponse,
-    dependencies=[Depends(require_authenticated)],
-)
+@app.post("/entity/cache/invalidate", response_model=EntityCacheInvalidateResponse, dependencies=[Depends(require_authenticated)])
 async def entity_cache_invalidate(request: EntityCacheInvalidateRequest):
     from retrieval.hybrid import get_enhanced_hybrid_retriever
 
@@ -566,10 +584,7 @@ class ToolingSearchRequest(BaseModel):
     def query_not_empty(cls, v: str) -> str:
         if not v or not v.strip():
             raise ValueError("query must not be empty")
-        v = v.strip()
-        if len(v) > 10000:
-            raise ValueError("query must not exceed 10000 characters")
-        return v
+        return v.strip()
 
 
 class ToolingSearchResponse(BaseModel):
@@ -601,6 +616,10 @@ class CodeGraphRelationshipRequest(BaseModel):
 
 class CodeGraphComplexRequest(BaseModel):
     limit: Optional[int] = 10
+    repo_path: Optional[str] = None
+
+
+class CodeGraphRequest(BaseModel):
     repo_path: Optional[str] = None
 
 
@@ -772,11 +791,7 @@ class DiagramSearchResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-@app.post(
-    "/search/kubernetes",
-    response_model=ToolingSearchResponse,
-    dependencies=[Depends(require_authenticated)],
-)
+@app.post("/search/kubernetes", response_model=ToolingSearchResponse, dependencies=[Depends(require_authenticated)])
 async def search_kubernetes(request: ToolingSearchRequest):
     from retrieval.tooling.kubernetes import KubernetesRetriever
 
@@ -794,11 +809,7 @@ async def search_kubernetes(request: ToolingSearchRequest):
     )
 
 
-@app.post(
-    "/search/helm",
-    response_model=ToolingSearchResponse,
-    dependencies=[Depends(require_authenticated)],
-)
+@app.post("/search/helm", response_model=ToolingSearchResponse, dependencies=[Depends(require_authenticated)])
 async def search_helm(request: ToolingSearchRequest):
     from retrieval.tooling.helm import HelmRetriever
 
@@ -816,11 +827,7 @@ async def search_helm(request: ToolingSearchRequest):
     )
 
 
-@app.post(
-    "/search/dockerfile",
-    response_model=ToolingSearchResponse,
-    dependencies=[Depends(require_authenticated)],
-)
+@app.post("/search/dockerfile", response_model=ToolingSearchResponse, dependencies=[Depends(require_authenticated)])
 async def search_dockerfile(request: ToolingSearchRequest):
     from retrieval.tooling.dockerfile import DockerfileRetriever
 
@@ -838,11 +845,7 @@ async def search_dockerfile(request: ToolingSearchRequest):
     )
 
 
-@app.post(
-    "/search/graphql",
-    response_model=ToolingSearchResponse,
-    dependencies=[Depends(require_authenticated)],
-)
+@app.post("/search/graphql", response_model=ToolingSearchResponse, dependencies=[Depends(require_authenticated)])
 async def search_graphql(request: ToolingSearchRequest):
     from retrieval.tooling.graphql import GraphQLRetriever
 
@@ -860,11 +863,7 @@ async def search_graphql(request: ToolingSearchRequest):
     )
 
 
-@app.post(
-    "/search/istio",
-    response_model=ToolingSearchResponse,
-    dependencies=[Depends(require_authenticated)],
-)
+@app.post("/search/istio", response_model=ToolingSearchResponse, dependencies=[Depends(require_authenticated)])
 async def search_istio(request: ToolingSearchRequest):
     from retrieval.tooling.istio import IstioRetriever
 
@@ -887,11 +886,7 @@ async def search_istio(request: ToolingSearchRequest):
 # ---------------------------------------------------------------------------
 
 
-@app.post(
-    "/codegraph/find",
-    response_model=CodeGraphResponse,
-    dependencies=[Depends(require_authenticated)],
-)
+@app.post("/codegraph/find", response_model=CodeGraphResponse, dependencies=[Depends(require_authenticated)])
 async def codegraph_find(request: CodeGraphFindRequest):
     from retrieval.code_graph import CodeGraphRetriever
 
@@ -910,11 +905,7 @@ async def codegraph_find(request: CodeGraphFindRequest):
     )
 
 
-@app.post(
-    "/codegraph/relationships",
-    response_model=CodeGraphResponse,
-    dependencies=[Depends(require_authenticated)],
-)
+@app.post("/codegraph/relationships", response_model=CodeGraphResponse, dependencies=[Depends(require_authenticated)])
 async def codegraph_relationships(request: CodeGraphRelationshipRequest):
     from retrieval.code_graph import CodeGraphRetriever
 
@@ -933,11 +924,7 @@ async def codegraph_relationships(request: CodeGraphRelationshipRequest):
     )
 
 
-@app.get(
-    "/codegraph/complex",
-    response_model=CodeGraphResponse,
-    dependencies=[Depends(require_authenticated)],
-)
+@app.get("/codegraph/complex", response_model=CodeGraphResponse, dependencies=[Depends(require_authenticated)])
 async def codegraph_complex(request: CodeGraphComplexRequest = CodeGraphComplexRequest()):
     from retrieval.code_graph import CodeGraphRetriever
 
@@ -956,11 +943,67 @@ async def codegraph_complex(request: CodeGraphComplexRequest = CodeGraphComplexR
     )
 
 
-@app.get(
-    "/codegraph/dead-code",
-    response_model=CodeGraphResponse,
-    dependencies=[Depends(require_authenticated)],
-)
+@app.get("/codegraph/complexity/{function_name}", response_model=CodeGraphResponse, dependencies=[Depends(require_authenticated)])
+async def codegraph_complexity(function_name: str, request: CodeGraphRequest = CodeGraphRequest()):
+    from retrieval.code_graph import CodeGraphRetriever
+
+    retriever = CodeGraphRetriever(repo_path=request.repo_path)
+    result = await retriever.get_complexity(function_name)
+
+    return CodeGraphResponse(
+        query=f"complexity:{function_name}",
+        results=[{"function": function_name, "complexity": result.get("complexity", 0)}],
+        method="complexity",
+        count=1,
+    )
+
+
+@app.get("/codegraph/callers/{function_name}", response_model=CodeGraphResponse, dependencies=[Depends(require_authenticated)])
+async def codegraph_callers(function_name: str, request: CodeGraphRequest = CodeGraphRequest()):
+    from retrieval.code_graph import CodeGraphRetriever
+
+    retriever = CodeGraphRetriever(repo_path=request.repo_path)
+    result = await retriever.find_callers(function_name)
+
+    return CodeGraphResponse(
+        query=f"callers:{function_name}",
+        results=result.get("results", []),
+        method="callers",
+        count=result.get("total", 0),
+    )
+
+
+@app.get("/codegraph/callees/{function_name}", response_model=CodeGraphResponse, dependencies=[Depends(require_authenticated)])
+async def codegraph_callees(function_name: str, request: CodeGraphRequest = CodeGraphRequest()):
+    from retrieval.code_graph import CodeGraphRetriever
+
+    retriever = CodeGraphRetriever(repo_path=request.repo_path)
+    result = await retriever.find_callees(function_name)
+
+    return CodeGraphResponse(
+        query=f"callees:{function_name}",
+        results=result.get("results", []),
+        method="callees",
+        count=result.get("total", 0),
+    )
+
+
+@app.get("/codegraph/deps/{module_name}", response_model=CodeGraphResponse, dependencies=[Depends(require_authenticated)])
+async def codegraph_deps(module_name: str, request: CodeGraphRequest = CodeGraphRequest()):
+    from retrieval.code_graph import CodeGraphRetriever
+
+    retriever = CodeGraphRetriever(repo_path=request.repo_path)
+    result = await retriever.get_module_deps(module_name)
+
+    return CodeGraphResponse(
+        query=f"deps:{module_name}",
+        results=result.get("dependencies", []),
+        method="deps",
+        count=len(result.get("dependencies", [])),
+    )
+
+
+@app.get("/codegraph/dead-code", response_model=CodeGraphResponse, dependencies=[Depends(require_authenticated)])
 async def codegraph_dead_code(request: CodeGraphDeadCodeRequest = CodeGraphDeadCodeRequest()):
     from retrieval.code_graph import CodeGraphRetriever
 
@@ -987,17 +1030,12 @@ async def codegraph_visualize(request: CodeGraphVisualizeRequest):
     # SECURITY: Only allow pre-defined visualization queries — raw Cypher is not supported
     allowed_query_types = {"show_all_nodes", "show_relationships"}
     if request.query_type not in allowed_query_types:
-        return {
-            "error": f"Unsupported query_type '{request.query_type}'. Allowed: {allowed_query_types}",
-            "url": None,
-        }
+        return {"error": f"Unsupported query_type '{request.query_type}'. Allowed: {allowed_query_types}", "url": None}
 
     retriever = CodeGraphRetriever()
 
     if request.query_type == "show_all_nodes":
-        builder = CypherBuilder(
-            allowed_types={"Component", "Service", "Function", "Class", "Module", "File", "Entity"}
-        )
+        builder = CypherBuilder(allowed_types={"Component", "Service", "Function", "Class", "Module", "File", "Entity"})
         builder.match_node(["Entity"], {})
         builder.return_clause("n")
         builder.limit_clause(100)
@@ -1006,11 +1044,8 @@ async def codegraph_visualize(request: CodeGraphVisualizeRequest):
         if not request.node_name:
             return {"error": "node_name is required for show_relationships query", "url": None}
         from core.security import sanitize_filename
-
         safe_name = sanitize_filename(request.node_name)
-        builder = CypherBuilder(
-            allowed_types={"Component", "Service", "Function", "Class", "Module", "File", "Entity"}
-        )
+        builder = CypherBuilder(allowed_types={"Component", "Service", "Function", "Class", "Module", "File", "Entity"})
         builder.match_node(["Entity"], {"name": safe_name})
         builder.return_clause("n")
         builder.limit_clause(100)
@@ -1028,14 +1063,10 @@ async def codegraph_visualize(request: CodeGraphVisualizeRequest):
 # ---------------------------------------------------------------------------
 
 
-@app.post(
-    "/codegraph/index/git",
-    response_model=CodeGraphIndexResponse,
-    dependencies=[Depends(require_authenticated)],
-)
+@app.post("/codegraph/index/git", response_model=CodeGraphIndexResponse, dependencies=[Depends(require_authenticated)])
 async def codegraph_index_git(request: CodeGraphIndexGitRequest):
     from retrieval.code_graph import index_git_repository
-
+    
     result = await index_git_repository(
         url=request.url,
         branch=request.branch or "main",
@@ -1050,14 +1081,10 @@ async def codegraph_index_git(request: CodeGraphIndexGitRequest):
     )
 
 
-@app.post(
-    "/codegraph/index/zip",
-    response_model=CodeGraphIndexResponse,
-    dependencies=[Depends(require_authenticated)],
-)
+@app.post("/codegraph/index/zip", response_model=CodeGraphIndexResponse, dependencies=[Depends(require_authenticated)])
 async def codegraph_index_zip(request: CodeGraphIndexZipRequest):
     from retrieval.code_graph import index_zip_archive
-
+    
     content = base64.b64decode(request.content)
     result = await index_zip_archive(content, request.filename or "archive.zip")
     return CodeGraphIndexResponse(
@@ -1068,14 +1095,10 @@ async def codegraph_index_zip(request: CodeGraphIndexZipRequest):
     )
 
 
-@app.post(
-    "/codegraph/index/url",
-    response_model=CodeGraphIndexResponse,
-    dependencies=[Depends(require_authenticated)],
-)
+@app.post("/codegraph/index/url", response_model=CodeGraphIndexResponse, dependencies=[Depends(require_authenticated)])
 async def codegraph_index_url(request: CodeGraphIndexURLRequest):
     from retrieval.code_graph import index_from_url
-
+    
     result = await index_from_url(
         url=request.url,
         url_type=request.url_type or "zip",
@@ -1088,14 +1111,10 @@ async def codegraph_index_url(request: CodeGraphIndexURLRequest):
     )
 
 
-@app.post(
-    "/codegraph/index/markdown",
-    response_model=CodeGraphIndexResponse,
-    dependencies=[Depends(require_authenticated)],
-)
+@app.post("/codegraph/index/markdown", response_model=CodeGraphIndexResponse, dependencies=[Depends(require_authenticated)])
 async def codegraph_index_markdown(request: CodeGraphIndexMarkdownRequest):
     from retrieval.code_graph import index_markdown_content
-
+    
     result = await index_markdown_content(
         content=request.content,
         source_name=request.source_name or "document.md",
@@ -1108,14 +1127,10 @@ async def codegraph_index_markdown(request: CodeGraphIndexMarkdownRequest):
     )
 
 
-@app.post(
-    "/codegraph/index/confluence",
-    response_model=CodeGraphIndexResponse,
-    dependencies=[Depends(require_authenticated)],
-)
+@app.post("/codegraph/index/confluence", response_model=CodeGraphIndexResponse, dependencies=[Depends(require_authenticated)])
 async def codegraph_index_confluence(request: CodeGraphIndexConfluenceRequest):
     from retrieval.code_graph import index_confluence_page
-
+    
     result = await index_confluence_page(
         base_url=request.base_url,
         page_id=request.page_id,
@@ -1130,25 +1145,19 @@ async def codegraph_index_confluence(request: CodeGraphIndexConfluenceRequest):
     )
 
 
-@app.post(
-    "/codegraph/index/confluence/space",
-    response_model=CodeGraphIndexConfluenceSpaceResponse,
-    dependencies=[Depends(require_authenticated)],
-)
+@app.post("/codegraph/index/confluence/space", response_model=CodeGraphIndexConfluenceSpaceResponse, dependencies=[Depends(require_authenticated)])
 async def codegraph_index_confluence_space(request: CodeGraphIndexConfluenceSpaceRequest):
     from documents.confluence import ConfluenceClient
-    from retrieval.code_graph import _html_to_markdown, index_markdown_content
-
-    client = ConfluenceClient(
-        url=request.base_url, email=request.email, api_token=request.api_token
-    )
-
+    from retrieval.code_graph import index_markdown_content, _html_to_markdown
+    
+    client = ConfluenceClient(url=request.base_url, email=request.email, api_token=request.api_token)
+    
     pages = await client.sync_space(
         space_key=request.space_key,
         include_children=request.include_children,
         max_depth=request.max_depth,
     )
-
+    
     indexed = 0
     errors = []
     for page in pages:
@@ -1159,19 +1168,46 @@ async def codegraph_index_confluence_space(request: CodeGraphIndexConfluenceSpac
                 indexed += 1
         except Exception as e:
             errors.append(f"{page.page_id}: {str(e)}")
-
+    
     attachments_indexed = 0
     if request.include_attachments:
         for page in pages:
             try:
+                from unified_ingestion.handlers.confluence import ConfluenceAttachmentHandler
+                handler = ConfluenceAttachmentHandler()
                 attachments = await client.get_page_attachments(page.page_id)
                 for att in attachments:
                     binary = await client.download_attachment(page.page_id, att.attachment_id)
                     if binary:
-                        attachments_indexed += 1
+                        result = await handler.handle(
+                            content=binary,
+                            path=att.title,
+                            metadata={
+                                "mime_type": att.mime_type,
+                                "title": att.title,
+                                "attachment_id": att.attachment_id,
+                                "page_id": page.page_id,
+                            },
+                        )
+                        if result.chunks:
+                            from ingestion.indexer import VectorIndexer
+                            indexer = VectorIndexer()
+                            for chunk in result.chunks:
+                                await indexer.index(
+                                    collection="confluence_attachments",
+                                    text=chunk.content,
+                                    metadata={
+                                        "source": "confluence_attachment",
+                                        "page_id": page.page_id,
+                                        "attachment_id": att.attachment_id,
+                                        "handler_type": result.metadata.get("handler_type"),
+                                        "title": att.title,
+                                    },
+                                )
+                            attachments_indexed += 1
             except Exception:
                 pass
-
+    
     return CodeGraphIndexConfluenceSpaceResponse(
         source="confluence",
         space_key=request.space_key,
@@ -1181,26 +1217,20 @@ async def codegraph_index_confluence_space(request: CodeGraphIndexConfluenceSpac
     )
 
 
-@app.post(
-    "/codegraph/index/confluence/tree",
-    response_model=CodeGraphIndexConfluenceTreeResponse,
-    dependencies=[Depends(require_authenticated)],
-)
+@app.post("/codegraph/index/confluence/tree", response_model=CodeGraphIndexConfluenceTreeResponse, dependencies=[Depends(require_authenticated)])
 async def codegraph_index_confluence_tree(request: CodeGraphIndexConfluenceTreeRequest):
     from documents.confluence import ConfluenceClient
-    from retrieval.code_graph import _html_to_markdown, index_markdown_content
-
-    client = ConfluenceClient(
-        url=request.base_url, email=request.email, api_token=request.api_token
-    )
-
+    from retrieval.code_graph import index_markdown_content, _html_to_markdown
+    
+    client = ConfluenceClient(url=request.base_url, email=request.email, api_token=request.api_token)
+    
     page = await client.get_page_tree(
         page_id=request.page_id,
         include_attachments=request.include_attachments,
     )
-
+    
     pages_indexed = 0
-
+    
     async def _index_page_recursive(p):
         nonlocal pages_indexed
         try:
@@ -1212,17 +1242,44 @@ async def codegraph_index_confluence_tree(request: CodeGraphIndexConfluenceTreeR
             pass
         for child in p.children:
             await _index_page_recursive(child)
-
+    
     await _index_page_recursive(page)
-
+    
     attachments_indexed = 0
     if request.include_attachments:
+        from unified_ingestion.handlers.confluence import ConfluenceAttachmentHandler
+        handler = ConfluenceAttachmentHandler()
         attachments = await client.get_page_attachments(request.page_id)
         for att in attachments:
             binary = await client.download_attachment(request.page_id, att.attachment_id)
             if binary:
-                attachments_indexed += 1
-
+                result = await handler.handle(
+                    content=binary,
+                    path=att.title,
+                    metadata={
+                        "mime_type": att.mime_type,
+                        "title": att.title,
+                        "attachment_id": att.attachment_id,
+                        "page_id": request.page_id,
+                    },
+                )
+                if result.chunks:
+                    from ingestion.indexer import VectorIndexer
+                    indexer = VectorIndexer()
+                    for chunk in result.chunks:
+                        await indexer.index(
+                            collection="confluence_attachments",
+                            text=chunk.content,
+                            metadata={
+                                "source": "confluence_attachment",
+                                "page_id": request.page_id,
+                                "attachment_id": att.attachment_id,
+                                "handler_type": result.metadata.get("handler_type"),
+                                "title": att.title,
+                            },
+                        )
+                    attachments_indexed += 1
+    
     return CodeGraphIndexConfluenceTreeResponse(
         source="confluence",
         root_page_id=request.page_id,
@@ -1232,19 +1289,13 @@ async def codegraph_index_confluence_tree(request: CodeGraphIndexConfluenceTreeR
     )
 
 
-@app.post(
-    "/codegraph/index/confluence/page",
-    response_model=CodeGraphIndexConfluencePageResponse,
-    dependencies=[Depends(require_authenticated)],
-)
+@app.post("/codegraph/index/confluence/page", response_model=CodeGraphIndexConfluencePageResponse, dependencies=[Depends(require_authenticated)])
 async def codegraph_index_confluence_page(request: CodeGraphIndexConfluencePageRequest):
     from documents.confluence import ConfluenceClient
-    from retrieval.code_graph import _html_to_markdown, index_markdown_content
-
-    client = ConfluenceClient(
-        url=request.base_url, email=request.email, api_token=request.api_token
-    )
-
+    from retrieval.code_graph import index_markdown_content, _html_to_markdown
+    
+    client = ConfluenceClient(url=request.base_url, email=request.email, api_token=request.api_token)
+    
     page = await client.get_page(request.page_id)
     if not page:
         return CodeGraphIndexConfluencePageResponse(
@@ -1253,12 +1304,12 @@ async def codegraph_index_confluence_page(request: CodeGraphIndexConfluencePageR
             success=False,
             indexed=False,
         )
-
+    
     body = await client.get_page_body(request.page_id)
     content = _html_to_markdown(body or "")
     result = await index_markdown_content(content, f"confluence_{request.page_id}.md")
     indexed = result.get("success", False)
-
+    
     children_count = 0
     if request.include_children:
         children = await client.get_page_children(request.page_id, depth=request.children_depth)
@@ -1267,14 +1318,14 @@ async def codegraph_index_confluence_page(request: CodeGraphIndexConfluencePageR
             child_body = await client.get_page_body(child.page_id)
             child_content = _html_to_markdown(child_body or "")
             await index_markdown_content(child_content, f"confluence_{child.page_id}.md")
-
+    
     attachments_count = 0
     if request.include_attachments:
         attachments = await client.get_page_attachments(request.page_id)
         attachments_count = len(attachments)
         for att in attachments:
             await client.download_attachment(request.page_id, att.attachment_id)
-
+    
     return CodeGraphIndexConfluencePageResponse(
         source="confluence",
         page_id=request.page_id,
@@ -1290,11 +1341,7 @@ async def codegraph_index_confluence_page(request: CodeGraphIndexConfluencePageR
 # ---------------------------------------------------------------------------
 
 
-@app.post(
-    "/search/colpal",
-    response_model=ColPALSearchResponse,
-    dependencies=[Depends(require_authenticated)],
-)
+@app.post("/search/colpal", response_model=ColPALSearchResponse, dependencies=[Depends(require_authenticated)])
 async def search_colpal(request: ColPALSearchRequest):
     from ui.retriever import get_ui_retriever
 
@@ -1311,11 +1358,7 @@ async def search_colpal(request: ColPALSearchRequest):
     )
 
 
-@app.post(
-    "/search/ui-sketch",
-    response_model=UISketchSearchResponse,
-    dependencies=[Depends(require_authenticated)],
-)
+@app.post("/search/ui-sketch", response_model=UISketchSearchResponse, dependencies=[Depends(require_authenticated)])
 async def search_ui_sketch(request: UISketchSearchRequest):
     from ui.retriever import get_ui_retriever
 
@@ -1333,7 +1376,7 @@ async def search_ui_sketch(request: UISketchSearchRequest):
 
 @app.post("/multimodal/diagram/extract", dependencies=[Depends(require_authenticated)])
 async def extract_diagram(request: DiagramExtractRequest):
-    from multimodal.diagram_ir import get_diagram_ir_builder
+    from multimodal.diagram_ir import DiagramFormat, get_diagram_ir_builder
 
     builder = get_diagram_ir_builder()
     if request.image_url:
@@ -1388,9 +1431,7 @@ async def get_diagram(diagram_id: str):
     return ir.to_dict()
 
 
-@app.get(
-    "/multimodal/diagram/visualize/{diagram_id}", dependencies=[Depends(require_authenticated)]
-)
+@app.get("/multimodal/diagram/visualize/{diagram_id}", dependencies=[Depends(require_authenticated)])
 async def visualize_diagram(diagram_id: str):
     from multimodal.diagram_registry import DiagramRegistry
 
@@ -1405,14 +1446,107 @@ async def visualize_diagram(diagram_id: str):
     return {"graph": graph}
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# CONFLUENCE ATTACHMENT INDEXING WITH UNIFIED INGESTION
+# ═══════════════════════════════════════════════════════════════
+
+
+async def index_confluence_attachments(
+    page_id: str,
+    client: Any,
+    index_to_vector: bool = True,
+    index_to_graph: bool = True,
+) -> Dict[str, Any]:
+    """Index Confluence page attachments using unified_ingestion.
+    
+    Handles:
+    - Images (PNG, JPG, SVG) → VLM for diagram extraction
+    - PDF/DOCX/PPTX → Document parsing
+    - draw.io diagrams → Diagram extraction
+    - PlantUML/Mermaid → UML entities
+    - Config files (JSON, YAML, XML) → Structured data
+    - Source code → Entity extraction
+    """
+    from unified_ingestion.handlers.confluence import ConfluenceAttachmentHandler
+    
+    handler = ConfluenceAttachmentHandler()
+    
+    # Get all attachments
+    attachments = await client.get_page_attachments(page_id)
+    if not attachments:
+        return {"indexed": 0, "errors": []}
+    
+    stats = {"indexed": 0, "by_type": {}, "errors": []}
+    
+    for att in attachments:
+        try:
+            # Download binary content
+            binary = await client.download_attachment(page_id, att.attachment_id)
+            if not binary:
+                stats["errors"].append(f"Download failed: {att.title}")
+                continue
+            
+            # Process through handler
+            result = await handler.handle(
+                content=binary,
+                path=att.title,
+                metadata={
+                    "mime_type": att.mime_type,
+                    "title": att.title,
+                    "attachment_id": att.attachment_id,
+                    "page_id": page_id,
+                },
+            )
+            
+            if result.error:
+                stats["errors"].append(f"{att.title}: {result.error}")
+                continue
+            
+            # Index chunks to Qdrant
+            if index_to_vector and result.chunks:
+                from ingestion.indexer import VectorIndexer
+                indexer = VectorIndexer()
+                for chunk in result.chunks:
+                    await indexer.index(
+                        collection="confluence_attachments",
+                        text=chunk.content,
+                        metadata={
+                            "source": "confluence_attachment",
+                            "page_id": page_id,
+                            "attachment_id": att.attachment_id,
+                            "handler_type": result.metadata.get("handler_type"),
+                            "title": att.title,
+                        },
+                    )
+            
+            # Index entities to FalkorDB
+            if index_to_graph and result.metadata.get("entities"):
+                from graph.falkor_db import FalkorDB
+                db = FalkorDB()
+                for entity in result.metadata.get("entities", []):
+                    await db.add_entity(
+                        entity_type=entity.get("type"),
+                        name=entity.get("name"),
+                        properties={
+                            "source": "confluence_attachment",
+                            "page_id": page_id,
+                            "attachment_id": att.attachment_id,
+                            "title": att.title,
+                        },
+                    )
+            
+            # Update stats
+            stats["indexed"] += 1
+            handler_type = result.metadata.get("handler_type", "unknown")
+            stats["by_type"][handler_type] = stats["by_type"].get(handler_type, 0) + 1
+            
+        except Exception as e:
+            stats["errors"].append(f"{att.title}: {str(e)}")
+    
+    return stats
+
+
 if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
-
-def cli_main():
-    """Entry point for the ``eis`` console script (pyproject.toml [project.scripts])."""
-    import uvicorn
-
-    uvicorn.run("api.main:app", host="0.0.0.0", port=8000, workers=4)

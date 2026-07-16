@@ -1,17 +1,13 @@
-"""Protocol interfaces for core layer — inverts dependency from core to models.
+"""Protocol interfaces for core layer - inverts dependency from core->models."""
 
-Protocols define structural typing interfaces that the models layer
-implements.  This way core never needs to import from models at
-import-time, avoiding circular dependencies.
-"""
-
+from typing import Protocol, Any, Dict, List, Optional
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Protocol
+
+from models.ir import ArtifactType, ArtifactStatus, Technology
 
 
 class IRFeatureProtocol(Protocol):
     """Extracted features from IR for pattern matching and constraints."""
-
     has_async: bool
     has_auth: bool
     has_database: bool
@@ -36,7 +32,6 @@ class IRFeatureProtocol(Protocol):
 
 class PlatformContextProtocol(Protocol):
     """Platform-agnostic platform context for any technology stack."""
-
     platform: str
     region: Optional[str]
     environment: Optional[str]
@@ -47,17 +42,16 @@ class PlatformContextProtocol(Protocol):
 
 class IRNodeProtocol(Protocol):
     """IR node representing an artifact."""
-
     id: str
     content: str
-    artifact_type: Any  # Forward reference — avoids importing models.ir.ArtifactType
+    artifact_type: "ArtifactType"
     content_format: str
     title: Optional[str]
     description: Optional[str]
-    status: Any  # Forward reference — avoids importing models.ir.ArtifactStatus
+    status: "ArtifactStatus"
     source_id: Optional[str]
     parent_id: Optional[str]
-    technologies: List[Any]  # Forward reference — avoids importing models.ir.Technology
+    technologies: List["Technology"]
     created_at: datetime
     updated_at: datetime
     indexed_at: Optional[datetime]
@@ -66,7 +60,6 @@ class IRNodeProtocol(Protocol):
 
 class EnrichedIRProtocol(Protocol):
     """IR enriched with extracted features for knowledge processing."""
-
     input_ir: IRNodeProtocol
     platform_context: PlatformContextProtocol
     features: IRFeatureProtocol

@@ -1,8 +1,7 @@
-import asyncio
+from retrieval.rerank.base import BaseReranker, RerankResult, RerankProvider
+
 import os
 from typing import Any, Dict, List, Optional
-
-from retrieval.rerank.base import BaseReranker, RerankProvider, RerankResult
 
 
 class CohereReranker(BaseReranker):
@@ -121,10 +120,6 @@ class BGEReranker(BaseReranker):
         except ImportError:
             return False
 
-    def _predict(self, pairs):
-        """Synchronous CPU-bound prediction — call via run_in_executor."""
-        return self._model.predict(pairs)
-
     async def rerank(
         self,
         query: str,
@@ -139,8 +134,7 @@ class BGEReranker(BaseReranker):
         docs = [r.get("content", r.get("text", "")) for r in results]
         pairs = [(query, doc) for doc in docs]
 
-        loop = asyncio.get_running_loop()
-        scores = await loop.run_in_executor(None, self._predict, pairs)
+        scores = self._model.predict(pairs)
 
         ranked = sorted(zip(results, scores), key=lambda x: x[1], reverse=True)
 
@@ -184,10 +178,6 @@ class SentenceTransformerReranker(BaseReranker):
         except ImportError:
             return False
 
-    def _predict(self, pairs):
-        """Synchronous CPU-bound prediction — call via run_in_executor."""
-        return self._model.predict(pairs)
-
     async def rerank(
         self,
         query: str,
@@ -202,8 +192,7 @@ class SentenceTransformerReranker(BaseReranker):
         docs = [r.get("content", r.get("text", "")) for r in results]
         pairs = [(query, doc) for doc in docs]
 
-        loop = asyncio.get_running_loop()
-        scores = await loop.run_in_executor(None, self._predict, pairs)
+        scores = self._model.predict(pairs)
 
         ranked = sorted(zip(results, scores), key=lambda x: x[1], reverse=True)
 
@@ -335,7 +324,7 @@ class LlamaIndexReranker(BaseReranker):
         top_n: Optional[int] = None,
     ) -> List[RerankResult]:
         try:
-            from llama_index.core import NodeWithScore, TextNode
+            from llama_index.core import TextNode, NodeWithScore
             from llama_index.retrievers.reranker import FlashRankReranker
         except ImportError:
             return self._fallback_results(results, top_n)

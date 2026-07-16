@@ -1,7 +1,6 @@
-from enum import Enum
-from typing import Dict, List, Optional
-
 from pydantic import BaseModel, Field
+from typing import List, Dict, Any, Optional
+from enum import Enum
 
 
 class ReferenceArchitectureType(str, Enum):
@@ -28,26 +27,41 @@ class ReferenceArchitecture(BaseModel):
 class ReferenceArchitectureRepository:
     def __init__(self):
         self._refs: Dict[str, ReferenceArchitecture] = {}
-
+    
     def add(self, ref: ReferenceArchitecture) -> None:
         self._refs[ref.id] = ref
-
+    
     def get(self, ref_id: str) -> Optional[ReferenceArchitecture]:
         return self._refs.get(ref_id)
-
+    
     def find_by_type(self, ref_type: ReferenceArchitectureType) -> List[ReferenceArchitecture]:
         return [r for r in self._refs.values() if r.type == ref_type]
-
+    
     def find_by_platform(self, platform: str) -> List[ReferenceArchitecture]:
-        return [r for r in self._refs.values() if platform in r.platforms]
+        normalized = self._normalize_platform(platform)
+        return [
+            r for r in self._refs.values()
+            if any(self._normalize_platform(p) == normalized for p in r.platforms)
+        ]
 
+    @staticmethod
+    def _normalize_platform(p: str) -> str:
+        n = p.replace("_", "").lower()
+        if n == "sapbtp":
+            n = "sap"
+        return n
+    
     def list_all(self) -> List[ReferenceArchitecture]:
         return list(self._refs.values())
+
+    # Alias for test/API compatibility
+    def get_all(self) -> List[ReferenceArchitecture]:
+        return self.list_all()
 
 
 def _create_default_references() -> ReferenceArchitectureRepository:
     repo = ReferenceArchitectureRepository()
-
+    
     refs = [
         ReferenceArchitecture(
             id="ref-serverless-aws",
@@ -162,10 +176,10 @@ def _create_default_references() -> ReferenceArchitectureRepository:
             },
         ),
     ]
-
+    
     for ref in refs:
         repo.add(ref)
-
+    
     return repo
 
 
@@ -177,3 +191,8 @@ def get_reference_architecture_repository() -> ReferenceArchitectureRepository:
     if _ref_arch_repo is None:
         _ref_arch_repo = _create_default_references()
     return _ref_arch_repo
+
+
+# Alias for test/API compatibility
+def get_reference_library() -> ReferenceArchitectureRepository:
+    return get_reference_architecture_repository()

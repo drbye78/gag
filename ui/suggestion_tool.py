@@ -24,17 +24,15 @@ class UISuggestionTool(BaseTool):
 
         for elem_type in ["table", "form", "button", "input", "select"]:
             for domain_id, comp in registry.find_components(elem_type):
-                suggestions.append(
-                    {
-                        "domain": domain_id,
-                        "component": comp.name,
-                        "library": comp.library,
-                        "element_type": elem_type,
-                        "complexity": comp.complexity,
-                        "properties": comp.properties[:5],
-                        "events": comp.events[:3],
-                    }
-                )
+                suggestions.append({
+                    "domain": domain_id,
+                    "component": comp.name,
+                    "library": comp.library,
+                    "element_type": elem_type,
+                    "complexity": comp.complexity,
+                    "properties": comp.properties[:5],
+                    "events": comp.events[:3],
+                })
 
         return ToolOutput(
             result={

@@ -134,32 +134,37 @@ class QueryClassifier:
         ]
 
         self.tooling_patterns = [
-            r"\bkubernetes\b",
-            r"\bk8s\b",
-            r"\bdeployment\b",
-            r"\bservice\b\s+(?:mesh|account|port)",
-            r"\bconfigmap\b",
-            r"\bkubernetes\s+secret\b",
-            r"\bingress\b",
-            r"\bhelm\b",
-            r"\bhelm\s+chart\b",
-            r"\bvalues\.yaml\b",
-            r"\bdockerfile\b",
-            r"\bdocker\s+build\b",
-            r"\bgraphql\b",
-            r"\bgraphql\s+schema\b",
-            r"\bgraphql\s+(?:query|mutation)\b",
-            r"\bistio\b",
-            r"\bvirtualservice\b",
-            r"\bdestinationrule\b",
-            r"\bistio\s+gateway\b",
+            r"kubernetes",
+            r"k8s",
+            r"deployment",
+            r"service",
+            r"configmap",
+            r"secret",
+            r"ingress",
+            r"helm",
+            r"chart",
+            r"values\.yaml",
+            r"dockerfile",
+            r"from\s+\w+",
+            r"docker\s+build",
+            r"graphql",
+            r"schema",
+            r"query",
+            r"mutation",
+            r"type\s+\w+",
+            r"istio",
+            r"virtualservice",
+            r"destinationrule",
+            r"gateway",
         ]
 
         self._compile_patterns()
 
     def _compile_patterns(self):
         self.fact_re = [re.compile(p, re.IGNORECASE) for p in self.fact_patterns]
-        self.relationship_re = [re.compile(p, re.IGNORECASE) for p in self.relationship_patterns]
+        self.relationship_re = [
+            re.compile(p, re.IGNORECASE) for p in self.relationship_patterns
+        ]
         self.code_relationship_re = [
             re.compile(p, re.IGNORECASE) for p in self.code_relationship_patterns
         ]
@@ -173,83 +178,78 @@ class QueryClassifier:
         query_lower = query.lower()
         words = query_lower.split()
 
-        intents: List[Dict[str, Any]] = []
-
+        intents = []
         for pattern in self.fact_re:
             if pattern.search(query):
-                intents.append({"intent": QueryIntent.FACT.value, "confidence": 0.8})
+                intents.append(QueryIntent.FACT)
                 break
 
         for pattern in self.relationship_re:
             if pattern.search(query):
-                intents.append({"intent": QueryIntent.RELATIONSHIP.value, "confidence": 0.9})
+                intents.append(QueryIntent.RELATIONSHIP)
                 break
 
         for pattern in self.code_relationship_re:
             if pattern.search(query):
-                intents.append({"intent": QueryIntent.CODE_RELATIONSHIP.value, "confidence": 0.9})
+                intents.append(QueryIntent.CODE_RELATIONSHIP)
                 break
 
         for pattern in self.causal_re:
             if pattern.search(query):
-                intents.append({"intent": QueryIntent.CAUSAL.value, "confidence": 0.9})
+                intents.append(QueryIntent.CAUSAL)
                 break
 
         for pattern in self.list_re:
             if pattern.search(query):
-                intents.append({"intent": QueryIntent.LIST.value, "confidence": 0.7})
+                intents.append(QueryIntent.LIST)
                 break
 
         for pattern in self.code_re:
             if pattern.search(query):
-                intents.append({"intent": QueryIntent.CODE.value, "confidence": 0.6})
+                intents.append(QueryIntent.CODE)
                 break
 
         for pattern in self.doc_re:
             if pattern.search(query):
-                intents.append({"intent": QueryIntent.DOCUMENTATION.value, "confidence": 0.7})
+                intents.append(QueryIntent.DOCUMENTATION)
                 break
 
         for pattern in self.tooling_re:
             if pattern.search(query):
-                intents.append({"intent": QueryIntent.TOOLING.value, "confidence": 0.7})
+                intents.append(QueryIntent.TOOLING)
                 break
 
         if len(words) > 10:
-            if not any(i["intent"] == QueryIntent.COMPLEX.value for i in intents):
-                intents.append({"intent": QueryIntent.COMPLEX.value, "confidence": 0.5})
+            if QueryIntent.COMPLEX not in intents:
+                intents.append(QueryIntent.COMPLEX)
 
         if not intents:
-            intents.append({"intent": QueryIntent.FACT.value, "confidence": 0.3})
+            intents.append(QueryIntent.FACT)
 
-        # Sort by confidence descending
-        intents.sort(key=lambda x: x["confidence"], reverse=True)
-
-        primary_intent = QueryIntent(intents[0]["intent"])
-        intent_enums = [QueryIntent(i["intent"]) for i in intents]
-        strategy = self._determine_strategy(primary_intent, intent_enums)
+        primary = intents[0]
+        strategy = self._determine_strategy(primary, intents)
 
         result = {
             "query": query,
-            "intents": intents,
-            "primary_intent": primary_intent.value,
+            "intents": [i.value for i in intents],
+            "primary_intent": primary.value,
             "strategy": strategy.value,
-            "requires_graph": primary_intent
+            "requires_graph": primary
             in [
                 QueryIntent.RELATIONSHIP,
                 QueryIntent.CAUSAL,
                 QueryIntent.CODE_RELATIONSHIP,
             ],
-            "requires_code_graph": primary_intent == QueryIntent.CODE_RELATIONSHIP,
-            "requires_vector": primary_intent
+            "requires_code_graph": primary == QueryIntent.CODE_RELATIONSHIP,
+            "requires_vector": primary
             in [QueryIntent.FACT, QueryIntent.LIST, QueryIntent.DOCUMENTATION],
             "complexity": self._estimate_complexity(query),
         }
 
-        if any(i["intent"] == QueryIntent.TOOLING.value for i in intents):
+        if QueryIntent.TOOLING in intents:
             result["tooling_sources"] = self._extract_tooling_sources(query)
 
-        if any(i["intent"] == QueryIntent.CODE_RELATIONSHIP.value for i in intents):
+        if QueryIntent.CODE_RELATIONSHIP in intents:
             result["codegraph_method"] = self._extract_codegraph_method(query)
 
         return result
@@ -257,6 +257,9 @@ class QueryClassifier:
     def _determine_strategy(
         self, primary: QueryIntent, intents: List[QueryIntent]
     ) -> RetrievalStrategy:
+        # Note: complexity is estimated from the query text, not the intent name.
+        # The query is stored in the classify() method's scope.
+        # We use the primary intent's value as a proxy only for keyword checks.
         complexity = self._estimate_complexity(primary.value)
 
         if complexity == "high":
@@ -277,12 +280,22 @@ class QueryClassifier:
             return RetrievalStrategy.VECTOR_ONLY
 
     def _estimate_complexity(self, query: str) -> str:
+        """Estimate query complexity. Accepts either the query text or an intent name."""
         words = query.split()
-        has_comparison = any(w in query.lower() for w in ["vs", "versus", "compared", "difference"])
-        has_negation = any(w in query.lower() for w in ["not", "without", "except"])
-        has_aggregation = any(w in query.lower() for w in ["all", "every", "total", "sum"])
+        query_lower = query.lower()
+        has_comparison = any(
+            w in query_lower for w in ["vs", "versus", "compared", "difference"]
+        )
+        has_negation = any(w in query_lower for w in ["not", "without", "except"])
+        has_aggregation = any(
+            w in query_lower for w in ["all", "every", "total", "sum"]
+        )
 
-        score = len(words) / 10.0
+        # Word count only meaningful for actual queries (not intent names)
+        if len(words) > 3:
+            score = len(words) / 10.0
+        else:
+            score = 0.0
         if has_comparison:
             score += 1
         if has_negation:
@@ -327,21 +340,18 @@ class QueryClassifier:
         query_lower = query.lower()
         sources = []
         if any(p.search(query_lower) for p in self.tooling_re):
-            if (
-                re.search(r"\bkubernetes\b|\bk8s\b|\bdeployment\b", query_lower)
-                or re.search(r"\bservice\b\s+(?:mesh|account|port)", query_lower)
-                or re.search(r"\bconfigmap\b|\bingress\b|\bsecret\b", query_lower)
-            ):
+            if "kubernetes" in query_lower or "k8s" in query_lower or \
+               "deployment" in query_lower or "service" in query_lower or \
+               "configmap" in query_lower or "ingress" in query_lower:
                 sources.append("kubernetes")
-            if re.search(r"\bhelm\b|\bchart\b|\bvalues\.yaml\b", query_lower):
+            if "helm" in query_lower or "chart" in query_lower:
                 sources.append("helm")
-            if re.search(r"\bdockerfile\b|\bdocker\s+build\b", query_lower):
+            if "dockerfile" in query_lower or "docker" in query_lower:
                 sources.append("dockerfile")
-            if re.search(r"\bgraphql\b|\bschema\b", query_lower):
+            if "graphql" in query_lower or "schema" in query_lower:
                 sources.append("graphql")
-            if re.search(r"\bistio\b|\bvirtualservice\b", query_lower) or re.search(
-                r"\bdestinationrule\b|\bgateway\b", query_lower
-            ):
+            if "istio" in query_lower or "virtualservice" in query_lower or \
+               "destinationrule" in query_lower or "gateway" in query_lower:
                 sources.append("istio")
             if not sources:
                 sources.append("kubernetes")
@@ -349,7 +359,7 @@ class QueryClassifier:
 
     def _extract_codegraph_method(self, query: str) -> Optional[str]:
         query_lower = query.lower()
-
+        
         patterns = {
             "find_callers": [r"find callers", r"who calls", r"functions that call"],
             "find_callees": [r"find callees", r"called by", r"callees"],
@@ -359,7 +369,7 @@ class QueryClassifier:
             "module_deps": [r"module dependencies", r"depends on module"],
             "call_chain": [r"call chain", r"execution trace"],
         }
-
+        
         for method, pattern_list in patterns.items():
             for pattern in pattern_list:
                 if re.search(pattern, query_lower):

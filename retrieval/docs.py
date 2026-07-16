@@ -5,9 +5,9 @@ Supports Qdrant and OpenAI embedding providers,
 with in-memory fallback for development.
 """
 
-import logging
 import os
 import time
+import logging
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
@@ -41,14 +41,12 @@ class QdrantEmbeddingProvider(EmbeddingProvider):
         if results:
             return results[0]
         from ingestion.embedder import EmbeddingPipeline
-
         pipeline = EmbeddingPipeline()
         return await pipeline.embed(text)
 
     async def embed_batch(self, texts: List[str]) -> List[List[float]]:
         try:
             from ingestion.embedder import get_embedder
-
             embedder = get_embedder()
             return await embedder.embed_batch(texts)
         except Exception as e:
@@ -57,11 +55,13 @@ class QdrantEmbeddingProvider(EmbeddingProvider):
 
 
 class OpenAIEmbeddingProvider(EmbeddingProvider):
-    def __init__(self, api_key: Optional[str] = None, model: str = "text-embedding-3-small"):
+    def __init__(
+        self, api_key: Optional[str] = None, model: str = "text-embedding-3-small"
+    ):
         self.api_key = api_key or os.getenv("OPENAI_API_KEY", "")
         self.model = model
         self._client = None
-
+    
     def _get_client(self) -> httpx.AsyncClient:
         if self._client is None:
             self._client = httpx.AsyncClient(
@@ -90,14 +90,15 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
 
 
 class OpenRouterEmbeddingProvider(EmbeddingProvider):
-    def __init__(self, api_key: Optional[str] = None, model: str = "openai/text-embedding-3-small"):
+    def __init__(
+        self, api_key: Optional[str] = None, model: str = "openai/text-embedding-3-small"
+    ):
         from core.config import get_settings
-
         settings = get_settings()
         self.api_key = api_key or settings.llm_api_key or os.getenv("OPENROUTER_API_KEY", "")
         self.model = model
         self._client = None
-
+    
     def _get_client(self) -> httpx.AsyncClient:
         if self._client is None:
             self._client = httpx.AsyncClient(
@@ -161,6 +162,16 @@ class QdrantDocsBackend(DocsBackend):
         self.collection = collection
         self.base_url = f"http://{self.host}:{self.port}"
         self.embedding_provider = embedding_provider or QdrantEmbeddingProvider()
+        self._client: Optional[httpx.AsyncClient] = None
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        """Cached HTTP client with connection pooling."""
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(30.0, connect=10.0),
+                limits=httpx.Limits(max_connections=20, max_keepalive_connections=5),
+            )
+        return self._client
 
     @staticmethod
     def _create_embedding_provider() -> EmbeddingProvider:
@@ -186,30 +197,31 @@ class QdrantDocsBackend(DocsBackend):
             "limit": limit,
             "score_threshold": score_threshold,
             "filter": filters or {},
+            "with_payload": True,
         }
 
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{self.base_url}/collections/{self.collection}/points/search",
-                    json=payload,
-                    timeout=30.0,
-                )
-                response.raise_for_status()
-                data = response.json()
-                return data.get("result", [])
+            client = await self._get_client()
+            response = await client.post(
+                f"{self.base_url}/collections/{self.collection}/points/search",
+                json=payload,
+                timeout=30.0,
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data.get("result", [])
         except Exception as e:
             logger.warning("Error searching Qdrant: %s", e)
             return []
 
     async def get(self, doc_id: str) -> Optional[Dict[str, Any]]:
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"{self.base_url}/collections/{self.collection}/points/{doc_id}"
-                )
-                response.raise_for_status()
-                return response.json().get("result")
+            client = await self._get_client()
+            response = await client.get(
+                f"{self.base_url}/collections/{self.collection}/points/{doc_id}"
+            )
+            response.raise_for_status()
+            return response.json().get("result")
         except Exception as e:
             logger.warning("Error getting doc from Qdrant: %s", e)
             return None
@@ -273,30 +285,10 @@ class DocsRetriever:
         limit: int = 10,
         score_threshold: Optional[float] = None,
         filters: Optional[Dict[str, Any]] = None,
-        page_range: Optional[tuple] = None,
     ) -> Dict[str, Any]:
         start = int(time.time() * 1000)
 
         results = await self.backend.search(query, limit, score_threshold, filters)
-
-        # Apply page_range filter if specified: (start_page, end_page) inclusive
-        if page_range is not None:
-            start_page, end_page = page_range
-            filtered = []
-            for r in results:
-                page = r.get("page", r.get("page_num", r.get("metadata", {}).get("page")))
-                if page is not None:
-                    try:
-                        page_int = int(page)
-                        if start_page <= page_int <= end_page:
-                            filtered.append(r)
-                    except (ValueError, TypeError):
-                        # If page can't be converted, include the result
-                        filtered.append(r)
-                else:
-                    # No page info — include by default
-                    filtered.append(r)
-            results = filtered
 
         took = int(time.time() * 1000) - start
 

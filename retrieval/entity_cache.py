@@ -74,17 +74,11 @@ class EntityGraphCache:
             self._misses += 1
             return None
 
-        # LRU: move to end to reflect access-time ordering (not insertion time)
+        # LRU: move to end
         self._store.move_to_end(entity_name)
         entry.touch()
         self._hits += 1
         return entry
-
-    def _touch(self, entity_name: str) -> None:
-        """Update the access time and LRU position for an entry on read."""
-        if entity_name in self._store:
-            self._store.move_to_end(entity_name)
-            self._store[entity_name].touch()
 
     def put(
         self,

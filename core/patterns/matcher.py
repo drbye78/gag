@@ -1,52 +1,73 @@
-from typing import Optional
-
+from typing import Any, Optional
+from pydantic import BaseModel
+from models.ir import IRFeature
 from core.constraints.engine import ConstraintViolation
 from core.patterns.schema import (
     Pattern,
     PatternCondition,
-    PatternLibrary,
     PatternMatchResult,
+    PatternLibrary,
     get_pattern_library,
 )
-from models.ir import IRFeature
 
 
 class PatternMatcher:
     def __init__(self, library: Optional[PatternLibrary] = None):
         self.library = library or get_pattern_library()
-
+    
     def match(self, features: IRFeature) -> list[PatternMatchResult]:
         candidates = self._get_candidates(features)
-
+        
         results = []
         for pattern in candidates:
             match_result = self._evaluate_pattern(pattern, features)
             if match_result.match_score > 0.3:
                 results.append(match_result)
-
+        
         return sorted(results, key=lambda r: r.match_score, reverse=True)
-
+    
     def _get_candidates(self, features: IRFeature) -> list[Pattern]:
+        """Get candidate patterns by matching triggers against IR feature fields.
+
+        Uses field-level matching instead of substring on dict string representation
+        to avoid false positives (e.g., "spring" matching "offspring").
+        """
         candidates = set()
         feature_dict = features.model_dump()
-        feature_str = str(feature_dict).lower()
 
+        # Build a set of all feature values (strings, bools as strings) for matching
+        feature_values = set()
+        for key, value in feature_dict.items():
+            if isinstance(value, str):
+                feature_values.add(value.lower())
+            elif isinstance(value, bool) and value:
+                feature_values.add(key.lower().replace("has_", ""))
+            elif isinstance(value, list):
+                for item in value:
+                    if isinstance(item, str):
+                        feature_values.add(item.lower())
+
+        # Match triggers against feature values (word-boundary)
         for trigger, pattern_ids in self.library._index_by_trigger.items():
-            if trigger.lower() in feature_str:
-                candidates.update(pattern_ids)
+            trigger_lower = trigger.lower()
+            for fv in feature_values:
+                # Check if trigger appears as a word in the feature value
+                if trigger_lower == fv or trigger_lower in fv.split("_"):
+                    candidates.update(pattern_ids)
+                    break
 
         if not candidates:
             return self.library.all()[:5]
 
         return [self.library._patterns[pid] for pid in candidates if pid in self.library._patterns]
-
+    
     def _evaluate_pattern(self, pattern: Pattern, features: IRFeature) -> PatternMatchResult:
         matched = []
         unmatched = []
         total_score = 0.0
-
+        
         feature_dict = features.model_dump()
-
+        
         for condition in pattern.conditions:
             score = self._evaluate_condition(condition, feature_dict)
             if score > 0:
@@ -54,10 +75,10 @@ class PatternMatcher:
                 total_score += score
             else:
                 unmatched.append(condition.feature)
-
+        
         boost = pattern.priority / 10.0
         final_score = min(1.0, total_score + boost)
-
+        
         return PatternMatchResult(
             pattern=pattern,
             match_score=final_score,
@@ -65,16 +86,16 @@ class PatternMatcher:
             unmatched_conditions=unmatched,
             confidence_boost=boost,
         )
-
+    
     def _evaluate_condition(self, condition: PatternCondition, features: dict) -> float:
         actual = features.get(condition.feature)
-
+        
         if actual is None:
             return 0.0
-
+        
         op = condition.operator
         expected = condition.value
-
+        
         if op == "eq":
             return 1.0 if actual == expected else 0.0
         elif op == "ne":
@@ -87,31 +108,18 @@ class PatternMatcher:
             return 1.0 if actual in expected else 0.0
         elif op == "contains":
             return 1.0 if expected in str(actual) else 0.0
-
+        
         return 0.0
 
 
 class PatternScorer:
-    def score(
-        self, match: PatternMatchResult, constraints: list["ConstraintViolation"] = None
-    ) -> float:
-        if match is None:
-            return 0.0
-
+    def score(self, match: PatternMatchResult, constraints: list["ConstraintViolation"] = None) -> float:
         base = match.match_score
         boost = match.pattern.priority / 10.0
-
+        
         penalty = 0.0
         if constraints:
             hard_violations = [c for c in constraints if c.severity == "error"]
             penalty = len(hard_violations) * 0.15
-
+        
         return max(0.0, min(1.0, base + boost - penalty))
-
-    def score_batch(
-        self, matches: list[PatternMatchResult], constraints: list["ConstraintViolation"] = None
-    ) -> list[float]:
-        """Score a batch of match results, guarding against empty lists."""
-        if not matches:
-            return []
-        return [self.score(m, constraints) for m in matches]

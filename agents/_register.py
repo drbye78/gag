@@ -1,12 +1,15 @@
 """Register all built-in agents with the registry."""
 
-from agents.executor import ToolExecutor
-from agents.orchestration import OrchestrationEngine
-from agents.planner import PlannerAgent
-from agents.reasoning import ReasoningAgent
 from agents.registry import register_agent
-from agents.retrieval import RetrievalAgent
-from agents.types import AgentMeta, AgentType
+from agents.types import AgentType, AgentMeta
+from agents import (
+    PlannerAgent,
+    RetrievalAgent,
+    ReasoningAgent,
+    ToolExecutor,
+    OrchestrationEngine,
+    ValidatorAgent,
+)
 
 
 @register_agent(
@@ -19,7 +22,7 @@ from agents.types import AgentMeta, AgentType
     ),
 )
 def create_planner(**config):
-    return PlannerAgent(**{k: v for k, v in config.items() if k in ("default_sources",)})
+    return PlannerAgent()
 
 
 @register_agent(
@@ -32,9 +35,7 @@ def create_planner(**config):
     ),
 )
 def create_retrieval(**config):
-    return RetrievalAgent(
-        **{k: v for k, v in config.items() if k in ("max_sources", "default_limit")}
-    )
+    return RetrievalAgent()
 
 
 @register_agent(
@@ -47,8 +48,7 @@ def create_retrieval(**config):
     ),
 )
 def create_reasoning(**config):
-    allowed = {"mode", "max_retries", "temperature"}
-    return ReasoningAgent(**{k: v for k, v in config.items() if k in allowed})
+    return ReasoningAgent()
 
 
 @register_agent(
@@ -61,8 +61,20 @@ def create_reasoning(**config):
     ),
 )
 def create_executor(**config):
-    allowed = {"max_concurrent", "default_timeout", "max_retries"}
-    return ToolExecutor(**{k: v for k, v in config.items() if k in allowed})
+    return ToolExecutor()
+
+
+@register_agent(
+    AgentType.VALIDATOR,
+    AgentMeta(
+        agent_type=AgentType.VALIDATOR,
+        name="ValidatorAgent",
+        description="Validates response accuracy, coherence, completeness, and safety",
+        capabilities=["accuracy_check", "coherence_check", "completeness_check", "safety_check"],
+    ),
+)
+def create_validator(**config):
+    return ValidatorAgent()
 
 
 @register_agent(
@@ -75,5 +87,4 @@ def create_executor(**config):
     ),
 )
 def create_orchestration(**config):
-    allowed = {"max_iterations", "max_retries", "parallel_execution", "orchestration_mode"}
-    return OrchestrationEngine(**{k: v for k, v in config.items() if k in allowed})
+    return OrchestrationEngine()

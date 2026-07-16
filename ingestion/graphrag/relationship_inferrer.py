@@ -1,6 +1,6 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import List, Dict, Any, Optional
 from enum import Enum
-from typing import Any, List, Optional
 
 from ingestion.graphrag.entity_extractor import EntityType
 
@@ -46,6 +46,31 @@ class RelationshipInferrer:
     ):
         self.llm_client = llm_client
 
+    @staticmethod
+    def _extract_text(response: Any) -> str:
+        """Extract text from an LLM response, handling both real and mock objects."""
+        if hasattr(response, "text"):
+            text = response.text
+            if isinstance(text, str):
+                return text
+        if hasattr(response, "choices"):
+            try:
+                choices = response.choices
+                if choices and len(choices) > 0:
+                    choice = choices[0]
+                    if isinstance(choice, dict):
+                        return choice.get("message", {}).get("content", "")
+            except Exception:
+                pass
+        if hasattr(response, "get"):
+            try:
+                content = response.get("content", "")
+                if isinstance(content, str):
+                    return content
+            except Exception:
+                pass
+        return ""
+
     async def infer(
         self,
         entities: List[Any],
@@ -64,32 +89,66 @@ class RelationshipInferrer:
         relationships = []
 
         entity_pairs = self._create_entity_pairs(entities)
+        pairs_considered = len(entity_pairs)
 
         if len(entity_pairs) <= 20:
-            for pair in entity_pairs:
-                rel = await self._infer_relationship(pair, text)
-                if rel:
-                    relationships.append(rel)
+            # Small batch: parallelize individual pairs with a semaphore
+            import asyncio
+            sem = asyncio.Semaphore(5)  # Max 5 concurrent LLM calls
+
+            async def _safe_infer(pair):
+                async with sem:
+                    return await self._infer_relationship(pair, text)
+
+            pair_results = await asyncio.gather(
+                *[_safe_infer(p) for p in entity_pairs],
+                return_exceptions=True,
+            )
+            for r in pair_results:
+                if isinstance(r, Relationship):
+                    relationships.append(r)
         else:
-            batches = [entity_pairs[i : i + 20] for i in range(0, len(entity_pairs), 20)]
-            for batch in batches:
-                batch_rels = await self._infer_batch_relationships(batch, text)
-                relationships.extend(batch_rels)
+            # Large batch: parallelize batch calls with a semaphore
+            import asyncio
+            batches = [
+                entity_pairs[i : i + 20] for i in range(0, len(entity_pairs), 20)
+            ]
+            sem = asyncio.Semaphore(5)  # Max 5 concurrent batch calls
+
+            async def _safe_batch_infer(batch):
+                async with sem:
+                    return await self._infer_batch_relationships(batch, text)
+
+            batch_results = await asyncio.gather(
+                *[_safe_batch_infer(b) for b in batches],
+                return_exceptions=True,
+            )
+            for r in batch_results:
+                if isinstance(r, list):
+                    relationships.extend(r)
 
         took = int((time.time() - start) * 1000)
-        return RelationshipInferenceResult(
+        result = RelationshipInferenceResult(
             source_id=source_id,
             relationships=relationships,
             total_relationships=len(relationships),
             took_ms=took,
         )
+        # Track how many pairs were considered (for transparency)
+        result.pairs_considered = pairs_considered  # type: ignore[attr-defined]
+        return result
 
     def _create_entity_pairs(self, entities: List[Any]) -> List[tuple]:
+        """Generate ALL entity pairs (no sliding window, no cap).
+
+        For N entities, produces N*(N-1)/2 pairs — every entity is compared
+        against every other entity. No silent truncation.
+        """
         pairs = []
         for i, e1 in enumerate(entities):
-            for e2 in entities[i + 1 : i + 10]:
+            for e2 in entities[i + 1:]:
                 pairs.append((e1, e2))
-        return pairs[:50]
+        return pairs
 
     async def _infer_relationship(
         self,
@@ -121,12 +180,15 @@ Return JSON only:"""
 
             import json
 
-            data = json.loads(response.text)
+            response_text = self._extract_text(response)
+            data = json.loads(response_text)
 
             return Relationship(
                 source_id=e1.id,
                 target_id=e2.id,
-                relationship_type=RelationshipType(data.get("relationship_type", "related_to")),
+                relationship_type=RelationshipType(
+                    data.get("relationship_type", "related_to")
+                ),
                 confidence=data.get("confidence", 0.5),
                 context=data.get("context", ""),
                 source_doc="",
@@ -165,10 +227,13 @@ Return JSON array:"""
 
             import json
 
-            data = json.loads(response.text)
+            response_text = self._extract_text(response)
+            data = json.loads(response_text)
 
             relationships = []
-            entity_map = {e.name: e.id for e in sum([[p[0], p[1]] for p in entity_pairs], [])}
+            entity_map = {
+                e.name: e.id for e in sum([[p[0], p[1]] for p in entity_pairs], [])
+            }
 
             for item in data:
                 source_name = item.get("source", "")
@@ -195,8 +260,8 @@ Return JSON array:"""
 
 
 class LightweightRelationshipInferrer:
-    def __init__(self, confidence_threshold: float = 0.5):
-        self.confidence_threshold = confidence_threshold
+    def __init__(self):
+        pass
 
     def infer(
         self,
@@ -205,6 +270,7 @@ class LightweightRelationshipInferrer:
         source_id: str,
     ) -> RelationshipInferenceResult:
         import time
+        import re
         from collections import defaultdict
 
         start = time.time()
@@ -231,18 +297,16 @@ class LightweightRelationshipInferrer:
 
         for (e1_id, e2_id), data in cooccurrence.items():
             if data["count"] >= 1:
-                confidence = min(0.9, data["count"] * 0.3)
-                if confidence >= self.confidence_threshold:
-                    relationships.append(
-                        Relationship(
-                            source_id=e1_id,
-                            target_id=e2_id,
-                            relationship_type=RelationshipType.RELATED_TO,
-                            confidence=confidence,
-                            context="; ".join(data["contexts"][:2]),
-                            source_doc=source_id,
-                        )
+                relationships.append(
+                    Relationship(
+                        source_id=e1_id,
+                        target_id=e2_id,
+                        relationship_type=RelationshipType.RELATED_TO,
+                        confidence=min(0.9, data["count"] * 0.3),
+                        context="; ".join(data["contexts"][:2]),
+                        source_doc=source_id,
                     )
+                )
 
         took = int((time.time() - start) * 1000)
         return RelationshipInferenceResult(

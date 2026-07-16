@@ -1,18 +1,16 @@
-from typing import Any, Dict, List
-
-from core.adapters.base import AdapterInput, AdapterOutput, PlatformAdapter
+from typing import Any, Dict, List, Optional
+from core.adapters.base import AdapterInput, AdapterOutput, PlatformAdapter, AdapterRegistry, get_adapter_registry
 from core.adapters.mixins import RecommendationMixin
-from core.adapters.models import ServiceEdition, ServiceSpec, summarize_portfolios
-from core.constraints.engine import get_constraint_engine
 from core.patterns.schema import Pattern, get_pattern_library
-from models.ir import IRFeature
+from core.constraints.engine import get_constraint_engine
+from models.ir import IRFeature, PlatformContext
 
 
 class VMwareTanzuAdapter(RecommendationMixin, PlatformAdapter):
     @property
     def platform_id(self) -> str:
         return "tanzu"
-
+    
     @property
     def supported_services(self) -> List[str]:
         return [
@@ -31,30 +29,11 @@ class VMwareTanzuAdapter(RecommendationMixin, PlatformAdapter):
             "redis",
             "postgres",
         ]
-
-    @property
-    def service_catalog(self) -> List[ServiceSpec]:
-        return [
-            ServiceSpec(name="spring-boot", portfolio="runtime", edition=ServiceEdition.ENTERPRISE, sla="99.95%", tags=["java", "spring", "microservice"], description="Spring Boot application runtime"),
-            ServiceSpec(name="spring-cloud-function", portfolio="runtime", edition=ServiceEdition.ENTERPRISE, sla="99.95%", tags=["serverless", "function", "spring"], description="Spring Cloud Function serverless runtime"),
-            ServiceSpec(name="app-service", portfolio="runtime", edition=ServiceEdition.ENTERPRISE, sla="99.99%", tags=["app", "runtime", "container"], description="Tanzu Application Service"),
-            ServiceSpec(name="build-service", portfolio="ci-cd", edition=ServiceEdition.ENTERPRISE, sla="99.9%", tags=["build", "kpack", "image"], description="Cloud-native build service (kpack)"),
-            ServiceSpec(name="service-bindings", portfolio="runtime", edition=ServiceEdition.ENTERPRISE, sla="99.99%", tags=["binding", "credentials", "12-factor"], description="Tanzu Service Bindings"),
-            ServiceSpec(name="knative", portfolio="serverless", edition=ServiceEdition.ENTERPRISE, sla="99.99%", tags=["knative", "serverless", "scale-to-zero"], description="Knative Serving"),
-            ServiceSpec(name="eventing", portfolio="messaging", edition=ServiceEdition.ENTERPRISE, sla="99.95%", tags=["eventing", "knative", "event-driven"], description="Knative Eventing"),
-            ServiceSpec(name="ingress", portfolio="networking", edition=ServiceEdition.ENTERPRISE, sla="99.99%", tags=["ingress", "routing", "tls"], description="Tanzu Ingress Controller"),
-            ServiceSpec(name="cert-manager", portfolio="security", edition=ServiceEdition.ENTERPRISE, sla="99.9%", tags=["certificate", "tls", "acme"], description="Certificate lifecycle management"),
-            ServiceSpec(name="observability-service", portfolio="observability", edition=ServiceEdition.ENTERPRISE, sla="99.95%", tags=["monitoring", "logging", "metrics"], description="Tanzu Observability Suite"),
-            ServiceSpec(name="spring-cloud-dataflow", portfolio="data", edition=ServiceEdition.ENTERPRISE, sla="99.9%", tags=["dataflow", "stream", "batch", "spring"], description="Spring Cloud Data Flow"),
-            ServiceSpec(name="rabbitmq", portfolio="messaging", edition=ServiceEdition.ENTERPRISE, sla="99.99%", tags=["rabbitmq", "queue", "amqp", "messaging"], description="RabbitMQ message broker"),
-            ServiceSpec(name="redis", portfolio="data", edition=ServiceEdition.ENTERPRISE, sla="99.99%", tags=["redis", "cache", "key-value"], description="VMware Redis Enterprise"),
-            ServiceSpec(name="postgres", portfolio="data", edition=ServiceEdition.ENTERPRISE, sla="99.99%", certifications=["FSTEC L1"], tags=["postgresql", "database", "sql"], description="Tanzu SQL (PostgreSQL)"),
-        ]
-
+    
     @property
     def patterns(self) -> List[Pattern]:
         library = get_pattern_library()
-
+        
         tanzu_patterns = [
             Pattern(
                 id="tanzu_spring_boot",
@@ -201,38 +180,36 @@ class VMwareTanzuAdapter(RecommendationMixin, PlatformAdapter):
                 confidence=0.85,
             ),
         ]
-
+        
         for p in tanzu_patterns:
             library.register(p)
-
+        
         return tanzu_patterns
-
+    
     @property
     def constraints(self) -> Any:
         return get_constraint_engine()._constraint_sets.get("tanzu")
-
+    
     def transform_ir_to_platform(self, input: AdapterInput) -> AdapterOutput:
         features = input.ir_features
         pattern_results = input.pattern_matches
         violations = input.constraint_violations
-
+        
         config_templates = self.generate_config(features)
         code_snippets = self.generate_code(features)
-
-        recommendations = self._build_recommendations(pattern_results, features, violations)
-
-        can_deploy = not any(v.severity == "error" for v in violations)
-
+        
+        recommendations = self._build_recommendations(
+            pattern_results,
+            features,
+            violations
+        )
+        
+        can_deploy = not any(
+            v.severity == "error" for v in violations
+        )
+        
         confidence = sum(p.match_score for p in pattern_results) / max(1, len(pattern_results))
-
-        # Enhanced structured output
-        selected = [r.get("name", "") for r in recommendations if r.get("name")]
-        catalog_map = {s.name: s for s in self.service_catalog}
-        service_specs = [catalog_map[name] for name in selected if name in catalog_map]
-        compliance_matrix = self.compute_compliance(features, selected)
-        cost_estimate = self.estimate_cost(features, selected)
-        required_dependencies = self.resolve_dependencies(selected)
-
+        
         return AdapterOutput(
             recommendations=recommendations,
             config_templates=config_templates,
@@ -240,44 +217,38 @@ class VMwareTanzuAdapter(RecommendationMixin, PlatformAdapter):
             explanation=self._explain(recommendations, violations),
             confidence=confidence,
             can_deploy=can_deploy,
-            platform=self.platform_id,
-            service_specs=service_specs,
-            compliance_matrix=compliance_matrix,
-            cost_estimate=cost_estimate,
-            required_dependencies=required_dependencies,
-            portfolio_summary=summarize_portfolios(service_specs),
         )
-
+    
     def generate_config(self, features: IRFeature) -> Dict[str, str]:
         configs = {}
-
+        
         if features.has_serverless:
             configs["knative-service.yaml"] = self._generate_knative_service(features)
         else:
             configs["deployment.yaml"] = self._generate_deployment(features)
-
+        
         configs["config.yaml"] = self._generate_configmap(features)
-
+        
         if features.has_event_driven:
             configs["eventing-broker.yaml"] = self._generate_eventing_broker(features)
-
+        
         return configs
-
+    
     def generate_code(self, features: IRFeature) -> Dict[str, str]:
         code = {}
-
+        
         if features.has_serverless:
             code["function.java"] = self._generate_function_code()
         else:
             code["Application.java"] = self._generate_spring_app_code()
-
+            
         if features.has_database:
             code["pom.xml"] = self._generate_pom_xml()
-
+        
         return code
-
+    
     def _generate_knative_service(self, features: IRFeature) -> str:
-        return """apiVersion: serving.knative.dev/v1
+        return '''apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
   name: my-tanzu-app
@@ -296,10 +267,10 @@ spec:
               cpu: "500m"
           ports:
             - containerPort: 8080
-"""
-
+'''
+    
     def _generate_deployment(self, features: IRFeature) -> str:
-        return """apiVersion: apps/v1
+        return '''apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: my-tanzu-app
@@ -325,10 +296,10 @@ spec:
             limits:
               memory: "1Gi"
               cpu: "1000m"
-"""
-
+'''
+    
     def _generate_configmap(self, features: IRFeature) -> str:
-        return """apiVersion: v1
+        return '''apiVersion: v1
 kind: ConfigMap
 metadata:
   name: my-tanzu-app-config
@@ -336,10 +307,10 @@ data:
   application.properties: |
     server.port=8080
     spring.profiles.active=cloud
-"""
-
+'''
+    
     def _generate_eventing_broker(self, features: IRFeature) -> str:
-        return """apiVersion: eventing.knative.dev/v1
+        return '''apiVersion: eventing.knative.dev/v1
 kind: Broker
 metadata:
   name: my-app-broker
@@ -355,10 +326,10 @@ spec:
       apiVersion: serving.knative.dev/v1
       kind: Service
       name: my-tanzu-app
-"""
-
+'''
+    
     def _generate_function_code(self) -> str:
-        return """package com.example;
+        return '''package com.example;
 
 import java.util.function.Function;
 
@@ -368,10 +339,10 @@ public class MyFunction implements Function<String, String> {
         return "Processed: " + input;
     }
 }
-"""
-
+'''
+    
     def _generate_spring_app_code(self) -> str:
-        return """package com.example;
+        return '''package com.example;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -391,10 +362,10 @@ public class Application {
         return "Hello from Tanzu!";
     }
 }
-"""
-
+'''
+    
     def _generate_pom_xml(self) -> str:
-        return """<?xml version="1.0" encoding="UTF-8"?>
+        return '''<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
@@ -409,7 +380,7 @@ public class Application {
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.2.0</version>
+        <version>4.0.0</version>
     </parent>
     
     <dependencies>
@@ -432,8 +403,7 @@ public class Application {
         </plugins>
     </build>
 </project>
-"""
-
+'''
 
 def register_tanzu_adapter(registry=None):
     if registry:

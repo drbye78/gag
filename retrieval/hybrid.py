@@ -9,32 +9,31 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from retrieval.citations import CitationBuilder
 from retrieval.classifier import (
     QueryClassifier,
     RetrievalStrategy,
     get_query_classifier,
 )
-from retrieval.code import get_code_retriever
-from retrieval.code_graph import get_code_graph_retriever
-from retrieval.colbert import (
-    get_colbert_search_client,
+from retrieval.fusion import FusionMethod, ResultFusion, get_result_fusion
+from retrieval.reasoning import ReasoningMode, get_reasoning_engine
+from retrieval.docs import DocsRetriever, get_docs_retriever
+from retrieval.graph import GraphRetriever, get_graph_retriever
+from retrieval.code import CodeRetriever, get_code_retriever
+from retrieval.code_graph import CodeGraphRetriever, get_code_graph_retriever
+from retrieval.entity_centric import (
+    EntityCentricRetriever,
+    get_entity_centric_retriever,
 )
-from retrieval.docs import get_docs_retriever
+from retrieval.rerank import get_rerank_pipeline, RerankConfig
+from retrieval.citations import CitationBuilder, CitationStyle
 from retrieval.entity_cache import (
     EntityGraphCache,
     EntityGraphCacheEntry,
     get_entity_graph_cache,
 )
-from retrieval.entity_centric import (
-    get_entity_centric_retriever,
-)
-from retrieval.fusion import FusionMethod, ResultFusion, get_result_fusion
-from retrieval.graph import get_graph_retriever
-from retrieval.reasoning import ReasoningMode, get_reasoning_engine
 from retrieval.reasoning.entity_aware import get_entity_aware_reasoning_engine
 from retrieval.reasoning.iterative import get_iterative_reasoning_engine
-from retrieval.rerank import get_rerank_pipeline
+from retrieval.colbert import get_colbert_qdrant_retriever, get_colbert_search_client, ColBERTRetriever
 
 
 @dataclass
@@ -65,7 +64,9 @@ class HybridRetriever:
     ):
         self.classifier = classifier or get_query_classifier()
         self.fusion = fusion or get_result_fusion(FusionMethod.RRF)
-        self.reasoning = reasoning or get_reasoning_engine(ReasoningMode.CHAIN_OF_THOUGHTS)
+        self.reasoning = reasoning or get_reasoning_engine(
+            ReasoningMode.CHAIN_OF_THOUGHTS
+        )
         self.citation_builder = CitationBuilder()
 
         # Lazy-initialized retrievers — only created when first accessed
@@ -155,7 +156,6 @@ class HybridRetriever:
             return None
         if self._diagram_retriever is None:
             from retrieval.diagram import get_diagram_retriever
-
             self._diagram_retriever = get_diagram_retriever()
         return self._diagram_retriever
 
@@ -168,7 +168,6 @@ class HybridRetriever:
             return None
         if self._ui_retriever is None:
             from ui.retriever import get_ui_retriever
-
             self._ui_retriever = get_ui_retriever()
         return self._ui_retriever
 
@@ -181,7 +180,6 @@ class HybridRetriever:
             return None
         if self._colpali_retriever is None:
             from ui.colpali_integration import UISketchVisualIndexer
-
             self._colpali_retriever = UISketchVisualIndexer()
         return self._colpali_retriever
 
@@ -189,7 +187,6 @@ class HybridRetriever:
     def kubernetes_retriever(self) -> Optional[Any]:
         if self._kubernetes_retriever is None:
             from retrieval.tooling.kubernetes import get_kubernetes_retriever
-
             self._kubernetes_retriever = get_kubernetes_retriever()
         return self._kubernetes_retriever
 
@@ -197,7 +194,6 @@ class HybridRetriever:
     def helm_retriever(self) -> Optional[Any]:
         if self._helm_retriever is None:
             from retrieval.tooling.helm import get_helm_retriever
-
             self._helm_retriever = get_helm_retriever()
         return self._helm_retriever
 
@@ -205,7 +201,6 @@ class HybridRetriever:
     def dockerfile_retriever(self) -> Optional[Any]:
         if self._dockerfile_retriever is None:
             from retrieval.tooling.dockerfile import get_dockerfile_retriever
-
             self._dockerfile_retriever = get_dockerfile_retriever()
         return self._dockerfile_retriever
 
@@ -213,7 +208,6 @@ class HybridRetriever:
     def graphql_retriever(self) -> Optional[Any]:
         if self._graphql_retriever is None:
             from retrieval.tooling.graphql import get_graphql_retriever
-
             self._graphql_retriever = get_graphql_retriever()
         return self._graphql_retriever
 
@@ -221,7 +215,6 @@ class HybridRetriever:
     def istio_retriever(self) -> Optional[Any]:
         if self._istio_retriever is None:
             from retrieval.tooling.istio import get_istio_retriever
-
             self._istio_retriever = get_istio_retriever()
         return self._istio_retriever
 
@@ -270,7 +263,6 @@ class HybridRetriever:
         limit: int = 10,
         use_reasoning: bool = True,
         force_graphrag: bool = False,
-        weights: Optional[Dict[str, float]] = None,
     ) -> Dict[str, Any]:
         start = int(time.time() * 1000)
 
@@ -279,17 +271,11 @@ class HybridRetriever:
         primary_intent = classification.get("primary_intent", "")
         requires_graph = classification.get("requires_graph", False)
 
-        is_relationship_query = (
-            primary_intent in ("relationship", "code_relationship")
-            or requires_graph
-            or force_graphrag
-        )
+        is_relationship_query = primary_intent in ("relationship", "code_relationship") or requires_graph or force_graphrag
         is_tooling_query = primary_intent == "tooling"
 
         if is_relationship_query:
-            return await self._graph_aware_search(
-                query, limit, start, use_reasoning, classification, weights=weights
-            )
+            return await self._graph_aware_search(query, limit, start, use_reasoning, classification)
 
         if is_tooling_query:
             return await self._tooling_search(query, limit, start, classification)
@@ -314,7 +300,6 @@ class HybridRetriever:
         start: int,
         use_reasoning: bool,
         classification: Dict[str, Any],
-        weights: Optional[Dict[str, float]] = None,
     ) -> Dict[str, Any]:
         entity_context = await self.link_query_entities(query, limit)
 
@@ -327,20 +312,20 @@ class HybridRetriever:
             "code": code_result.get("results", []),
             "graph": graph_result.get("results", []),
         }
-        fused = self.fusion.fuse(source_results, weights=weights)
+        fused = self.fusion.fuse(source_results)
 
         reasoning_result = None
         if use_reasoning and entity_context.get("entities"):
             entity_graph = {e.get("name", ""): e for e in entity_context.get("entities", [])}
-            reasoning_result = await self.entity_reasoning.reason(query, fused, entity_graph)
+            reasoning_result = await self.entity_reasoning.reason(
+                query, fused, entity_graph
+            )
         else:
             reasoning_result = await self.reasoning.reason(query, fused)
 
         answer = reasoning_result.get("answer", "") if reasoning_result else ""
         confidence = reasoning_result.get("confidence", 0.0) if reasoning_result else 0.0
-        reasoning_mode = (
-            reasoning_result.get("reasoning_mode", "entity_aware") if reasoning_result else "direct"
-        )
+        reasoning_mode = reasoning_result.get("reasoning_mode", "entity_aware") if reasoning_result else "direct"
 
         took = int(time.time() * 1000) - start
 
@@ -415,7 +400,7 @@ class HybridRetriever:
 
         source_results = {
             "graph": graph_result.get("results", []),
-            "docs": docs_result.get("results", []),
+            "code": docs_result.get("results", []),
         }
         fused = self.fusion.fuse(source_results)
 
@@ -470,7 +455,9 @@ class HybridRetriever:
 
         if refine_context.get("entity_names"):
             graph_query = f"{refined_query} {' '.join(refine_context['entity_names'])}"
-            stage3_graph = await self.graph_retriever.search(graph_query, limit=limit // 2)
+            stage3_graph = await self.graph_retriever.search(
+                graph_query, limit=limit // 2
+            )
             stages.append(
                 CascadeStage(
                     stage="graph",
@@ -495,7 +482,8 @@ class HybridRetriever:
             "total": len(result),
             "strategy": "cascade",
             "stages": [
-                {"stage": s.stage, "query": s.query, "result_count": len(s.results)} for s in stages
+                {"stage": s.stage, "query": s.query, "result_count": len(s.results)}
+                for s in stages
             ],
             "refine_context": refine_context,
             "took_ms": took,
@@ -533,7 +521,6 @@ class HybridRetriever:
         source_results = {}
         if tasks:
             import asyncio
-
             gathered = await asyncio.gather(*tasks, return_exceptions=True)
             for name, result in zip(source_names, gathered):
                 if isinstance(result, Exception):
@@ -589,7 +576,7 @@ class HybridRetriever:
                 confidence = reasoning_result.get("confidence", 0.0)
 
                 if confidence < 0.7 and iteration < max_iterations - 1:
-                    refined_query = self._generate_refined_query(
+                    refined_query = await self._generate_refined_query(
                         query=query,
                         current_results=iteration_results,
                         reasoning=reasoning_thinking,
@@ -616,8 +603,12 @@ class HybridRetriever:
                         iteration=iteration + 1,
                         query=current_query,
                         results=iteration_results,
-                        reasoning=reasoning_result.get("answer", "") if reasoning_result else "",
-                        score=reasoning_result.get("confidence", 0.0) if reasoning_result else 0.0,
+                        reasoning=reasoning_result.get("answer", "")
+                        if reasoning_result
+                        else "",
+                        score=reasoning_result.get("confidence", 0.0)
+                        if reasoning_result
+                        else 0.0,
                     )
                 )
                 break
@@ -664,19 +655,17 @@ class HybridRetriever:
         colbert_results = []
         if settings.colbert_enabled and self.colbert_retriever:
             try:
-                colbert_result = await self.colbert_retriever.search(query, limit=limit)
-                colbert_results = (
-                    colbert_result.get("results", []) if isinstance(colbert_result, dict) else []
+                colbert_result = await self.colbert_retriever.search(
+                    query, limit=limit
                 )
+                colbert_results = colbert_result.get("results", []) if isinstance(colbert_result, dict) else []
             except Exception:
                 pass
 
         diagram_results = []
         if settings.diagram_index_enabled and self.diagram_retriever:
             try:
-                diagram_result = await self.diagram_retriever.search_diagrams(
-                    query, limit=limit, use_vector=True
-                )
+                diagram_result = await self.diagram_retriever.search_diagrams(query, limit=limit, use_vector=True)
                 diagram_results = diagram_result.get("results", [])
             except Exception:
                 pass
@@ -684,7 +673,9 @@ class HybridRetriever:
         ui_results = []
         if settings.ui_sketch_enabled and self.ui_retriever:
             try:
-                ui_result = await self.ui_retriever.search_combined(element_types=[], limit=limit)
+                ui_result = await self.ui_retriever.search_combined(
+                    element_types=[], limit=limit
+                )
                 ui_results = ui_result if isinstance(ui_result, list) else []
             except Exception:
                 pass
@@ -692,10 +683,10 @@ class HybridRetriever:
         colpali_results = []
         if settings.colpali_enabled and self.colpali_retriever:
             try:
-                colpali_result = await self.colpali_retriever.search(query, limit=limit)
-                colpali_results = (
-                    colpali_result.get("results", []) if isinstance(colpali_result, dict) else []
+                colpali_result = await self.colpali_retriever.search(
+                    query, limit=limit
                 )
+                colpali_results = colpali_result.get("results", []) if isinstance(colpali_result, dict) else []
             except Exception:
                 pass
 
@@ -764,11 +755,17 @@ class HybridRetriever:
         source_results = {}
         for src in sources:
             if src == "docs":
-                source_results[src] = await self.docs_retriever.search(query, limit=limit)
+                source_results[src] = await self.docs_retriever.search(
+                    query, limit=limit
+                )
             elif src == "code":
-                source_results[src] = await self.code_retriever.search(query, limit=limit)
+                source_results[src] = await self.code_retriever.search(
+                    query, limit=limit
+                )
             elif src == "graph":
-                source_results[src] = await self.graph_retriever.search(query, limit=limit)
+                source_results[src] = await self.graph_retriever.search(
+                    query, limit=limit
+                )
 
         fused = self.fusion.fuse(source_results)
 
@@ -809,8 +806,6 @@ class HybridRetriever:
         intent: str,
         limit: int = 10,
     ) -> Dict[str, Any]:
-        if not query or not query.strip():
-            return {"results": [], "query": query, "source": "hybrid", "error": "Empty query"}
         if intent == "relationship":
             return await self._multi_hop_search(query, limit, int(time.time() * 1000))
         elif intent == "causal":
@@ -865,22 +860,46 @@ class HybridRetriever:
 
         return " ".join(parts)
 
-    def _generate_refined_query(
+    async def _generate_refined_query(
         self,
         query: str,
         current_results: List[Dict[str, Any]],
         reasoning: str,
         iteration: int,
     ) -> str:
-        missing_terms = []
+        """Generate a refined query using LLM when available, fallback to keyword expansion."""
+        # Try LLM-based refinement first
+        try:
+            from llm.router import get_router
+            router = get_router()
 
-        if "not found" in reasoning.lower() or "insufficient" in reasoning.lower():
-            if current_results:
-                found_content = " ".join(r.get("content", "")[:200] for r in current_results[:3])
-                missing_terms.append(found_content)
+            results_summary = "\n".join(
+                f"- {r.get('content', '')[:150]}" for r in current_results[:3]
+            )
 
-        context_from_results = " ".join(r.get("content", "")[:100] for r in current_results[:2])
+            prompt = f"""Given the original query and the retrieved results, generate a refined query that would find more relevant or missing information.
 
+Original query: {query}
+
+Reasoning from previous iteration: {reasoning[:200]}
+
+Current results:
+{results_summary}
+
+Generate a single refined search query (max 50 words) that addresses gaps in the current results. Return ONLY the query, no explanation:"""
+
+            from core.llm_utils import extract_text
+            response = await router.chat(prompt=prompt, temperature=0.3, max_tokens=100)
+            refined = extract_text(response).strip()
+            if refined and refined != query:
+                return refined[:500]
+        except Exception:
+            pass
+
+        # Fallback: keyword expansion from results
+        context_from_results = " ".join(
+            r.get("content", "")[:100] for r in current_results[:2]
+        )
         return f"{query} {context_from_results}".strip()[:500]
 
     def _deduplicate_results(
@@ -946,8 +965,7 @@ class HybridRetriever:
             "answer": annotated.answer,
             "results": reranked[:limit],
             "citations": [
-                {"id": citation.id, "confidence": citation.confidence}
-                for citation in annotated.citations
+                {"id": citation.id, "confidence": citation.confidence} for citation in annotated.citations
             ],
             "sources": [
                 {
@@ -1056,7 +1074,9 @@ class EnhancedHybridRetriever(HybridRetriever):
 
         reasoning_result = None
         if use_entity_reasoning and entity_graph:
-            entity_result = await self.entity_reasoning.reason(query, fused, entity_graph)
+            entity_result = await self.entity_reasoning.reason(
+                query, fused, entity_graph
+            )
             reasoning_result = entity_result
         elif use_iterative:
             iterative_result = await self.iterative_reasoning.retrieve(
@@ -1068,7 +1088,9 @@ class EnhancedHybridRetriever(HybridRetriever):
             reasoning_result = await self.reasoning.reason(query, fused)
 
         answer = reasoning_result.get("answer", "") if reasoning_result else ""
-        confidence = reasoning_result.get("confidence", 0.0) if reasoning_result else 0.0
+        confidence = (
+            reasoning_result.get("confidence", 0.0) if reasoning_result else 0.0
+        )
 
         took = int(time.time() * 1000) - start
 
@@ -1080,8 +1102,12 @@ class EnhancedHybridRetriever(HybridRetriever):
             "reasoning_mode": reasoning_result.get("reasoning_mode", "direct")
             if reasoning_result
             else "direct",
-            "entities": reasoning_result.get("entities", []) if reasoning_result else [],
-            "graph_paths": reasoning_result.get("graph_paths", {}) if reasoning_result else {},
+            "entities": reasoning_result.get("entities", [])
+            if reasoning_result
+            else [],
+            "graph_paths": reasoning_result.get("graph_paths", {})
+            if reasoning_result
+            else {},
             "cache_stats": self.entity_cache.get_stats(),
             "took_ms": took,
         }
@@ -1164,14 +1190,15 @@ class EnhancedHybridRetriever(HybridRetriever):
         Runs the async search in a sync context via asyncio.run.
         """
         import asyncio
-
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
                 # Already in an async context — return empty and let the
                 # caller use the async search_with_enhanced_reasoning directly.
                 return []
-            result = loop.run_until_complete(self.search(query, limit=limit, use_reasoning=True))
+            result = loop.run_until_complete(
+                self.search(query, limit=limit, use_reasoning=True)
+            )
             return result.get("results", [])
         except Exception:
             return []

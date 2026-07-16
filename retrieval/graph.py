@@ -1,15 +1,14 @@
 """
 Graph Retriever - Knowledge graph retrieval from FalkorDB.
-
+ 
 Queries graph relationships via Cypher with depth control
 and multi-hop traversal support.
 """
 
 import re
 import time
-from collections import OrderedDict
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set
 
 from core.pool import get_http_pool
 
@@ -23,6 +22,17 @@ def _safe_identifier(name: str) -> str:
     return name
 
 
+def _validate_int(value: Any, name: str, min_val: int = 1, max_val: int = 100) -> int:
+    """Validate an integer parameter for Cypher bounds."""
+    try:
+        int_val = int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"Invalid {name}: must be an integer")
+    if int_val < min_val or int_val > max_val:
+        raise ValueError(f"Invalid {name}: must be between {min_val} and {max_val}")
+    return int_val
+
+
 class QueryType(str, Enum):
     DIRECT = "direct"
     ONE_HOP = "one_hop"
@@ -32,76 +42,16 @@ class QueryType(str, Enum):
 
 
 # Whitelists for Cypher injection prevention
-ALLOWED_NODE_TYPES = {
-    "Person",
-    "Organization",
-    "Document",
-    "Entity",
-    "Service",
-    "Component",
-    "Repository",
-}
+ALLOWED_NODE_TYPES = {"Person", "Organization", "Document", "Entity", "Service", "Component", "Repository"}
 ALLOWED_EDGE_TYPES = {"IMPORTS", "CALLS", "DEPENDS_ON", "CONTAINS", "PROVIDES", "USES"}
 
 
 class GraphRetriever:
-    # LRU cache for Cypher query results
-    _CACHE_MAXSIZE = 128
-    _CACHE_TTL = 60  # seconds
-
-    def __init__(self, host: str = "localhost", port: int = 7379, query_timeout: float = 30.0):
+    def __init__(self, host: str = "localhost", port: int = 7379):
         self.host = host
         self.port = port
-        self.query_timeout = query_timeout
         self.base_url = f"http://{host}:{port}"
         self._pool = get_http_pool()
-        self._query_cache: OrderedDict[str, Tuple[Any, float]] = OrderedDict()
-
-    def _cache_key(self, cypher: str, params: Dict[str, Any]) -> str:
-        """Build a stable cache key from a Cypher query and its params."""
-        import hashlib
-        import json
-
-        blob = json.dumps({"q": cypher, "p": params}, sort_keys=True)
-        return hashlib.sha256(blob.encode()).hexdigest()
-
-    def _cache_get(self, key: str) -> Optional[Dict[str, Any]]:
-        entry = self._query_cache.get(key)
-        if entry is None:
-            return None
-        data, ts = entry
-        if time.time() - ts > self._CACHE_TTL:
-            del self._query_cache[key]
-            return None
-        self._query_cache.move_to_end(key)
-        return data
-
-    def _cache_put(self, key: str, data: Dict[str, Any]) -> None:
-        if len(self._query_cache) >= self._CACHE_MAXSIZE:
-            self._query_cache.popitem(last=False)
-        self._query_cache[key] = (data, time.time())
-
-    async def _execute_cypher(self, cypher: str, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute a Cypher query with LRU caching and TTL."""
-        cache_key = self._cache_key(cypher, params)
-        cached = self._cache_get(cache_key)
-        if cached is not None:
-            return cached
-
-        try:
-            pool = self._pool
-            response = await pool.post(
-                f"{self.base_url}/query",
-                json={"query": cypher, "params": params},
-                timeout=self.query_timeout,
-            )
-            response.raise_for_status()
-            data = response.json()
-        except Exception as e:
-            data = {"results": [], "error": str(e)}
-
-        self._cache_put(cache_key, data)
-        return data
 
     async def search(
         self,
@@ -122,14 +72,16 @@ class GraphRetriever:
             """
             params = {"query": query, "limit": limit}
         else:
-            cypher = """
-            MATCH path = (a)-[r*1..$depth]->(b)
+            # Validate depth and interpolate as literal (Cypher doesn't support parameterized bounds)
+            _validate_int(depth, "depth", 1, 10)
+            cypher = f"""
+            MATCH path = (a)-[r*1..{depth}]->(b)
             WHERE a.name CONTAINS $query
             RETURN path, length(path) as path_length
             ORDER BY path_length
             LIMIT $limit
             """
-            params = {"query": query, "depth": depth, "limit": limit}
+            params = {"query": query, "limit": limit}
 
         if edge_types:
             for et in edge_types:
@@ -145,7 +97,14 @@ class GraphRetriever:
             cypher = cypher.replace("WHERE", f"WHERE ({edge_filter}) AND")
 
         try:
-            data = await self._execute_cypher(cypher, params)
+            pool = self._pool
+            response = await pool.post(
+                f"{self.base_url}/query",
+                json={"query": cypher, "params": params},
+                timeout=30.0,
+            )
+            response.raise_for_status()
+            data = response.json()
         except Exception as e:
             data = {"results": [], "error": str(e)}
 
@@ -219,14 +178,15 @@ class GraphRetriever:
     ) -> Dict[str, Any]:
         start = int(time.time() * 1000)
 
-        cypher = """
-        MATCH path = (a)-[r*1..$max_depth]->(b)
+        _validate_int(max_depth, "max_depth", 1, 10)
+        cypher = f"""
+        MATCH path = (a)-[r*1..{max_depth}]->(b)
         WHERE a.name = $source AND b.name = $target
         RETURN path, length(path) as hops
         ORDER BY hops
         LIMIT 10
         """
-        params = {"source": source, "target": target, "max_depth": max_depth}
+        params = {"source": source, "target": target}
 
         try:
             pool = self._pool
@@ -236,7 +196,7 @@ class GraphRetriever:
                     "query": cypher,
                     "params": params,
                 },
-                timeout=self.query_timeout,
+                timeout=30.0,
             )
             response.raise_for_status()
             data = response.json()
@@ -297,7 +257,7 @@ class GraphRetriever:
             response = await pool.post(
                 f"{self.base_url}/query",
                 json={"query": cypher, "params": params},
-                timeout=self.query_timeout,
+                timeout=30.0,
             )
             response.raise_for_status()
             data = response.json()
@@ -330,11 +290,17 @@ class GraphRetriever:
             raise ValueError(f"Invalid depth: {depth}. Must be between 1 and 10")
 
         if direction == "outgoing":
-            rel_pattern = f"[r:`{edge_type}`*1..{depth}]->" if edge_type else f"[r*1..{depth}]->"
+            rel_pattern = (
+                f"[r:`{edge_type}`*1..{depth}]->" if edge_type else f"[r*1..{depth}]->"
+            )
         elif direction == "incoming":
-            rel_pattern = f"<-[r:`{edge_type}`*1..{depth}]" if edge_type else f"<-[r*1..{depth}]"
+            rel_pattern = (
+                f"<-[r:`{edge_type}`*1..{depth}]" if edge_type else f"<-[r*1..{depth}]"
+            )
         else:
-            rel_pattern = f"[r:`{edge_type}`*1..{depth}]" if edge_type else f"[r*1..{depth}]"
+            rel_pattern = (
+                f"[r:`{edge_type}`*1..{depth}]" if edge_type else f"[r*1..{depth}]"
+            )
 
         cypher = f"""
         MATCH (a {{name: $name }}){rel_pattern}(b)
@@ -347,7 +313,7 @@ class GraphRetriever:
             response = await pool.post(
                 f"{self.base_url}/query",
                 json={"query": cypher, "params": {"name": node_name}},
-                timeout=self.query_timeout,
+                timeout=30.0,
             )
             response.raise_for_status()
             data = response.json()

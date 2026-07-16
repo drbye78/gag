@@ -1,9 +1,5 @@
-from typing import TYPE_CHECKING, Any, Optional
-
-from pydantic import BaseModel
-
-if TYPE_CHECKING:
-    from models.ir import IRFeature
+from pydantic import BaseModel, Field
+from typing import Any, Optional
 
 
 class PatternCondition(BaseModel):
@@ -25,17 +21,17 @@ class Pattern(BaseModel):
     id: str
     name: str
     domain: str
-
+    
     triggers: list[str] = []
     conditions: list[PatternCondition] = []
-
+    
     components: list[str] = []
     relationships: list[PatternRelationship] = []
-
+    
     benefits: list[str] = []
     tradeoffs: list[str] = []
     anti_patterns: list[str] = []
-
+    
     priority: int = 5
     confidence: float = 0.0
     source_reference: Optional[str] = None
@@ -54,37 +50,37 @@ class PatternLibrary:
         self._patterns: dict[str, Pattern] = {}
         self._index_by_trigger: dict[str, list[str]] = {}
         self._domain_index: dict[str, list[str]] = {}
-
+    
     def register(self, pattern: Pattern) -> None:
         self._patterns[pattern.id] = pattern
-
+        
         for trigger in pattern.triggers:
             if trigger not in self._index_by_trigger:
                 self._index_by_trigger[trigger] = []
             self._index_by_trigger[trigger].append(pattern.id)
-
+        
         domain = pattern.domain
         if domain not in self._domain_index:
             self._domain_index[domain] = []
         self._domain_index[domain].append(pattern.id)
-
+    
     def query(self, features: "IRFeature") -> list[Pattern]:
         candidates = set()
-
+        
         feature_dict = features.model_dump()
         for trigger, pattern_ids in self._index_by_trigger.items():
             if trigger.lower() in str(feature_dict).lower():
                 candidates.update(pattern_ids)
-
+        
         return [self._patterns[pid] for pid in candidates if pid in self._patterns]
-
+    
     def get(self, pattern_id: str) -> Optional[Pattern]:
         return self._patterns.get(pattern_id)
-
+    
     def list_by_domain(self, domain: str) -> list[Pattern]:
         pattern_ids = self._domain_index.get(domain, [])
         return [self._patterns[pid] for pid in pattern_ids if pid in self._patterns]
-
+    
     def all(self) -> list[Pattern]:
         return list(self._patterns.values())
 
@@ -101,7 +97,8 @@ def get_pattern_library() -> PatternLibrary:
 
 
 def _load_default_patterns(library: PatternLibrary) -> None:
-
+    from typing import List
+    
     patterns = [
         Pattern(
             id="event_driven",
@@ -171,7 +168,7 @@ def _load_default_patterns(library: PatternLibrary) -> None:
             components=["tenant_isolation", "billing", "usage_tracking"],
             benefits=["Shared infrastructure", "Cost efficiency"],
             tradeoffs=["Security isolation", "Resource contention"],
-            priority=8,
+        priority=8,
             confidence=0.8,
         ),
         Pattern(
@@ -184,11 +181,7 @@ def _load_default_patterns(library: PatternLibrary) -> None:
             ],
             components=["tenant_isolation", "usage_tracking", "billing"],
             benefits=["Shared infrastructure", "Cost efficiency", "Centralized updates"],
-            tradeoffs=[
-                "Security isolation",
-                "Resource contention",
-                "Tenant specific customization limits",
-            ],
+            tradeoffs=["Security isolation", "Resource contention", "Tenant specific customization limits"],
             priority=9,
             confidence=0.85,
         ),
@@ -272,6 +265,6 @@ def _load_default_patterns(library: PatternLibrary) -> None:
             confidence=0.7,
         ),
     ]
-
+    
     for pattern in patterns:
         library.register(pattern)

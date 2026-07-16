@@ -1,7 +1,7 @@
 """Tests for UI API endpoints."""
 
-from unittest.mock import AsyncMock, patch
-
+import pytest
+from unittest.mock import patch, AsyncMock
 from fastapi.testclient import TestClient
 
 from api.main import app
@@ -22,7 +22,10 @@ class TestUIAnalyzeEndpoint:
             mock_cls.return_value = mock_extractor
 
             client = TestClient(app)
-            response = client.post("/ui/analyze", json={"image_url": "https://example.com/ui.png"})
+            response = client.post(
+                "/ui/analyze",
+                json={"image_url": "https://example.com/ui.png"}
+            )
             assert response.status_code == 400
 
 
@@ -38,12 +41,14 @@ class TestUISuggestEndpoint:
         with patch("ui.suggestion_tool.UISuggestionTool") as mock_cls:
             mock_tool = AsyncMock()
             mock_tool.execute.return_value = AsyncMock(
-                result={"suggestions": [], "detail_level": 1}, error=None
+                result={"suggestions": [], "detail_level": 1},
+                error=None
             )
             mock_cls.return_value = mock_tool
 
             client = TestClient(app)
             response = client.post(
-                "/ui/suggest", json={"ui_sketch_id": "sk_test", "detail_level": 1}
+                "/ui/suggest",
+                json={"ui_sketch_id": "sk_test", "detail_level": 1}
             )
             assert response.status_code == 200

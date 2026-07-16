@@ -2,8 +2,9 @@
 
 import asyncio
 import time
-from dataclasses import dataclass, field
 from typing import Any, Awaitable, Dict, List, Optional
+
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -32,11 +33,7 @@ class BackgroundTaskRunner:
         return self._semaphore
 
     def _prune_completed_tasks(self):
-        self._tasks = {
-            tid: t
-            for tid, t in self._tasks.items()
-            if t._asyncio_task is None or not t._asyncio_task.done()
-        }
+        self._tasks = {tid: t for tid, t in self._tasks.items() if not t.done()}
 
     async def submit(
         self,
@@ -137,7 +134,9 @@ class WebSocketManager:
         for client_id in list(self._connections.keys()):
             await self.send(client_id, message)
 
-    async def send_progress(self, client_id: str, progress: float, message: str) -> None:
+    async def send_progress(
+        self, client_id: str, progress: float, message: str
+    ) -> None:
         await self.send(
             client_id,
             {

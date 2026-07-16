@@ -5,15 +5,15 @@ Supports HTTPS (token, basic auth) and SSH key-based
 authentication with per-repo credential storage.
 """
 
-import base64
 import logging
 import os
 import uuid
-from dataclasses import dataclass
-from enum import Enum
-from typing import Any, Dict, Optional
+import base64
+from typing import Any, Dict, List, Optional
 
 from core.config import get_settings
+from dataclasses import dataclass, field
+from enum import Enum
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +114,9 @@ class GitCredentialManager:
         return {
             "credential_type": stored.credential_type.value,
             "username": stored.username,
-            "token": self._decrypt(stored.encrypted_token) if stored.encrypted_token else None,
+            "token": self._decrypt(stored.encrypted_token)
+            if stored.encrypted_token
+            else None,
             "password": self._decrypt(stored.encrypted_password)
             if stored.encrypted_password
             else None,
@@ -168,10 +170,8 @@ class GitCredentialManager:
     def _encrypt(self, value: str) -> str:
         if not value:
             return ""
-        import hashlib
-
         from cryptography.fernet import Fernet
-
+        import hashlib
         key = self._get_encrypt_key()
         key_bytes = hashlib.sha256(key.encode()).digest()
         fernet_key = base64.urlsafe_b64encode(key_bytes)
@@ -182,10 +182,8 @@ class GitCredentialManager:
         if not value:
             return None
         try:
-            import hashlib
-
             from cryptography.fernet import Fernet
-
+            import hashlib
             key = self._get_encrypt_key()
             key_bytes = hashlib.sha256(key.encode()).digest()
             fernet_key = base64.urlsafe_b64encode(key_bytes)

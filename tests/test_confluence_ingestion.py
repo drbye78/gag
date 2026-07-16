@@ -3,13 +3,14 @@ Tests for Confluence ingestion REST endpoints.
 """
 
 import pytest
+from unittest.mock import AsyncMock, patch
 
 
 class TestConfluenceSpaceSync:
     @pytest.mark.asyncio
     async def test_sync_space_endpoint(self):
         from api.main import CodeGraphIndexConfluenceSpaceRequest
-
+        
         request = CodeGraphIndexConfluenceSpaceRequest(
             base_url="https://test.atlassian.net",
             space_key="TEST",
@@ -25,7 +26,7 @@ class TestConfluenceSpaceSync:
     @pytest.mark.asyncio
     async def test_sync_space_response_model(self):
         from api.main import CodeGraphIndexConfluenceSpaceResponse
-
+        
         response = CodeGraphIndexConfluenceSpaceResponse(
             source="confluence",
             space_key="TEST",
@@ -41,7 +42,7 @@ class TestConfluenceTree:
     @pytest.mark.asyncio
     async def test_tree_endpoint_request(self):
         from api.main import CodeGraphIndexConfluenceTreeRequest
-
+        
         request = CodeGraphIndexConfluenceTreeRequest(
             base_url="https://test.atlassian.net",
             page_id="123456",
@@ -56,7 +57,7 @@ class TestConfluenceTree:
     @pytest.mark.asyncio
     async def test_tree_endpoint_response(self):
         from api.main import CodeGraphIndexConfluenceTreeResponse
-
+        
         response = CodeGraphIndexConfluenceTreeResponse(
             source="confluence",
             root_page_id="123456",
@@ -72,7 +73,7 @@ class TestConfluencePage:
     @pytest.mark.asyncio
     async def test_page_endpoint_request(self):
         from api.main import CodeGraphIndexConfluencePageRequest
-
+        
         request = CodeGraphIndexConfluencePageRequest(
             base_url="https://test.atlassian.net",
             page_id="123456",
@@ -88,7 +89,7 @@ class TestConfluencePage:
     @pytest.mark.asyncio
     async def test_page_endpoint_response(self):
         from api.main import CodeGraphIndexConfluencePageResponse
-
+        
         response = CodeGraphIndexConfluencePageResponse(
             source="confluence",
             page_id="123456",
@@ -104,8 +105,8 @@ class TestConfluencePage:
 class TestConfluenceClientIntegration:
     @pytest.mark.asyncio
     async def test_confluence_client_sync_space(self):
-        from documents.confluence import ConfluenceClient
-
+        from documents.confluence import ConfluenceClient, ConfluencePage
+        
         client = ConfluenceClient(
             url="https://test.atlassian.net",
             email="test@example.com",
@@ -117,7 +118,7 @@ class TestConfluenceClientIntegration:
     @pytest.mark.asyncio
     async def test_confluence_page_model(self):
         from documents.confluence import ConfluencePage
-
+        
         page = ConfluencePage(
             page_id="123",
             title="Test Page",
@@ -133,7 +134,7 @@ class TestDiagramExtraction:
     @pytest.mark.asyncio
     async def test_extract_plantuml_blocks_fence(self):
         from retrieval.code_graph import _extract_plantuml_blocks
-
+        
         md = """
 Some text here
 ```plantuml
@@ -149,7 +150,7 @@ More text
     @pytest.mark.asyncio
     async def test_extract_plantuml_blocks_uml(self):
         from retrieval.code_graph import _extract_plantuml_blocks
-
+        
         md = """
 @startuml
 Alice -> Bob
@@ -163,20 +164,20 @@ Bob --> Alice
     @pytest.mark.asyncio
     async def test_extract_drawio_blocks(self):
         from retrieval.code_graph import _extract_drawio_blocks
-
-        html = """
+        
+        html = '''
 <ac:structured-macro ac:name="diagram">
 <ac:parameter ac:name="xml"><diagram name="Test">mxfile</diagram></ac:parameter>
 </ac:structured-macro>
-"""
+'''
         blocks = _extract_drawio_blocks(html)
 
     @pytest.mark.asyncio
     async def test_no_diagrams(self):
-        from retrieval.code_graph import _extract_drawio_blocks, _extract_plantuml_blocks
-
+        from retrieval.code_graph import _extract_plantuml_blocks, _extract_drawio_blocks
+        
         md = "Just plain text content"
         assert _extract_plantuml_blocks(md) == []
-
+        
         html = "<p>No diagrams here</p>"
         assert _extract_drawio_blocks(html) == []

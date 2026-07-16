@@ -10,24 +10,62 @@ import time
 import uuid
 from typing import Any, Dict, List, Optional
 
+from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 
-from agents.orchestration import OrchestrationEngine
 from models.mcp import (
     MCPRequest,
     MCPResponse,
+    MCPToolDefinition,
+    MCPToolCall,
+    MCPToolResult,
+    MCP_TOOLS,
 )
-from tools.base import MCPErrorCode, ToolRegistry
+from agents.orchestration import OrchestrationEngine
+from tools.base import ToolRegistry, MCPErrorCode
 
 
 class MCPHandler:
+    MAX_SESSIONS = 1000
+    SESSION_TTL = 3600  # 1 hour
+    MAX_SUBSCRIPTIONS = 500
+    SUBSCRIPTION_TTL = 1800  # 30 minutes
+
     def __init__(self):
-        self.engine = OrchestrationEngine()
+        from agents.orchestration import get_orchestration_engine
+        self.engine = get_orchestration_engine()
         self.tool_registry = ToolRegistry()
         self._request_id: Optional[str] = None
         self._sessions: Dict[str, Dict[str, Any]] = {}
         self._subscriptions: Dict[str, Dict[str, Any]] = {}
         self._rate_limits: Dict[str, List[float]] = {}
+
+    def _evict_expired_sessions(self):
+        """Evict expired sessions and subscriptions."""
+        import time as _time
+        now = _time.time()
+        # Evict expired sessions
+        expired = [
+            sid for sid, s in self._sessions.items()
+            if now - s.get("created_at", 0) > self.SESSION_TTL
+        ]
+        for sid in expired:
+            del self._sessions[sid]
+        # Evict expired subscriptions
+        expired_sub = [
+            sid for sid, s in self._subscriptions.items()
+            if now - s.get("created_at", 0) > self.SUBSCRIPTION_TTL
+        ]
+        for sid in expired_sub:
+            del self._subscriptions[sid]
+        # Enforce max sessions
+        while len(self._sessions) > self.MAX_SESSIONS:
+            oldest = min(self._sessions, key=lambda k: self._sessions[k].get("created_at", 0))
+            del self._sessions[oldest]
+        # Enforce max subscriptions
+        while len(self._subscriptions) > self.MAX_SUBSCRIPTIONS:
+            oldest = min(self._subscriptions, key=lambda k: self._subscriptions[k].get("created_at", 0))
+            del self._subscriptions[oldest]
 
     def _response_id(self) -> Optional[str]:
         return self._request_id or str(uuid.uuid4())
@@ -40,32 +78,18 @@ class MCPHandler:
             self._sessions[session_id] = {"created_at": time.time(), "state": {}}
         return session_id
 
-    def _check_rate_limit(
-        self, client_id: str, max_calls: int = 100, window_seconds: int = 60
-    ) -> bool:
+    def _check_rate_limit(self, client_id: str, max_calls: int = 100, window_seconds: int = 60) -> bool:
         now = time.time()
         if client_id not in self._rate_limits:
             self._rate_limits[client_id] = []
-        self._rate_limits[client_id] = [
-            t for t in self._rate_limits[client_id] if now - t < window_seconds
-        ]
+        self._rate_limits[client_id] = [t for t in self._rate_limits[client_id] if now - t < window_seconds]
         if len(self._rate_limits[client_id]) >= max_calls:
             return False
         self._rate_limits[client_id].append(now)
         return True
 
     async def handle_request(self, request: MCPRequest) -> MCPResponse:
-        # Validate request ID per JSON-RPC 2.0 spec: if present, must be non-empty string
-        if request.id is not None and (not isinstance(request.id, str) or not request.id.strip()):
-            return MCPResponse(
-                jsonrpc="2.0",
-                id=None,
-                error={
-                    "code": -32600,
-                    "message": "Invalid request: id must be a non-empty string if provided",
-                },
-            )
-
+        self._evict_expired_sessions()
         self._request_id = request.id
         method = request.method
         params = request.params or {}
@@ -134,7 +158,7 @@ class MCPHandler:
                 },
                 "server_info": {
                     "name": "Engineering Intelligence System",
-                    "version": "3.2.0",
+                    "version": "4.0.0",
                 },
                 "tool_count": len(tools),
                 "resource_count": len(resources),
@@ -157,18 +181,6 @@ class MCPHandler:
                 error={
                     "code": MCPErrorCode.INVALID_PARAMS,
                     "message": "Missing required parameter: name",
-                },
-            )
-
-        # Validate tool name exists in registry
-        if self.tool_registry.get(name) is None:
-            available = [t["name"] for t in self.tool_registry.list_tools()]
-            return MCPResponse(
-                jsonrpc="2.0",
-                id=self._response_id(),
-                error={
-                    "code": MCPErrorCode.TOOL_NOT_FOUND,
-                    "message": f"Tool '{name}' not found. Available tools: {available}",
                 },
             )
 
@@ -209,21 +221,17 @@ class MCPHandler:
         output = []
         for i, result in enumerate(results):
             if result.error:
-                output.append(
-                    {
-                        "index": i,
-                        "error": result.error,
-                        "isError": True,
-                    }
-                )
+                output.append({
+                    "index": i,
+                    "error": result.error,
+                    "isError": True,
+                })
             else:
-                output.append(
-                    {
-                        "index": i,
-                        "result": result.result,
-                        "isError": False,
-                    }
-                )
+                output.append({
+                    "index": i,
+                    "result": result.result,
+                    "isError": False,
+                })
 
         return MCPResponse(jsonrpc="2.0", id=self._response_id(), result={"results": output})
 
@@ -304,14 +312,8 @@ class MCPHandler:
         if session_id and session_id in self._sessions:
             session = self._sessions[session_id]
             if key:
-                return MCPResponse(
-                    jsonrpc="2.0",
-                    id=self._response_id(),
-                    result={"value": session["state"].get(key)},
-                )
-            return MCPResponse(
-                jsonrpc="2.0", id=self._response_id(), result={"state": session["state"]}
-            )
+                return MCPResponse(jsonrpc="2.0", id=self._response_id(), result={"value": session["state"].get(key)})
+            return MCPResponse(jsonrpc="2.0", id=self._response_id(), result={"state": session["state"]})
         return MCPResponse(
             jsonrpc="2.0",
             id=self._response_id(),
@@ -324,9 +326,7 @@ class MCPHandler:
         value = params.get("value")
         if key:
             self._sessions[session_id]["state"][key] = value
-            return MCPResponse(
-                jsonrpc="2.0", id=self._response_id(), result={"session_id": session_id}
-            )
+            return MCPResponse(jsonrpc="2.0", id=self._response_id(), result={"session_id": session_id})
         return MCPResponse(
             jsonrpc="2.0",
             id=self._response_id(),
@@ -347,7 +347,9 @@ def create_mcp_response(
     return JSONResponse(content=response)
 
 
-def create_error_response(code: int, message: str, id: Optional[str] = None) -> JSONResponse:
+def create_error_response(
+    code: int, message: str, id: Optional[str] = None
+) -> JSONResponse:
     return create_mcp_response(error={"code": code, "message": message}, id=id)
 
 

@@ -5,33 +5,32 @@ Provides document parsing, versioning, Confluence sync,
 WebDAV sync, and multimodal processing.
 """
 
-from documents.layout import (
-    DOCXStructureAnalyzer,
-    LayoutAnalysisResult,
-    LayoutBlock,
-    LayoutType,
-    PDFLayoutAnalyzer,
-    PPTXStructureAnalyzer,
-    StructureAnalysisResult,
-    UnifiedLayoutParser,
-    XLSXStructureAnalyzer,
-    get_layout_parser,
-)
-from documents.models import Document, DocumentSource, DocumentVersion
+from documents.models import Document, DocumentVersion, DocumentSource
 from documents.parse import (
-    DoclingParser,
-    FallbackParser,
-    HybridDocumentParser,
     LlamaIndexParser,
+    DoclingParser,
+    HybridDocumentParser,
     ParsedDocumentResult,
+)
+from documents.layout import (
+    LayoutType,
+    LayoutBlock,
+    LayoutAnalysisResult,
+    StructureAnalysisResult,
+    PDFLayoutAnalyzer,
+    DOCXStructureAnalyzer,
+    XLSXStructureAnalyzer,
+    PPTXStructureAnalyzer,
+    UnifiedLayoutParser,
+    get_layout_parser,
 )
 
 # ColPali requires torch — lazy import to avoid hard dependency
 try:
     from documents.colpali import (
         ColPaliClient,
-        ColPaliEmbedding,
         ColPaliModel,
+        ColPaliEmbedding,
         ColPaliResult,
         get_colpali_client,
     )
@@ -40,72 +39,76 @@ except ImportError:
 # Diagram parsing requires Pillow — lazy import to avoid hard dependency
 try:
     from documents.diagram_parser import (
-        C4Container,
-        C4ContainerExtractor,
-        DiagramExtractionResult,
         DiagramType,
-        DiagramTypeDetector,
-        ERDExtractor,
-        MermaidGenerator,
-        PlantUMLGenerator,
-        SequenceMessage,
-        UMLActivityExtractor,
         UMLClass,
-        UMLClassExtractor,
-        UMLObjectExtractor,
-        UMLPackageExtractor,
         UMLRelationship,
+        SequenceMessage,
+        C4Container,
+        DiagramExtractionResult,
+        DiagramTypeDetector,
+        UMLClassExtractor,
         UMLSequenceExtractor,
+        C4ContainerExtractor,
+        UMLActivityExtractor,
         UMLStateMachineExtractor,
+        UMLPackageExtractor,
+        UMLObjectExtractor,
         UMLUseCaseExtractor,
+        ERDExtractor,
+        PlantUMLGenerator,
+        MermaidGenerator,
         UnifiedDiagramParser,
         get_diagram_parser,
     )
 except ImportError:
     pass
+from documents.confluence import ConfluenceClient, ConfluencePage
+from documents.webdav import WebDAVClient, WebDAVFile
+from documents.multimodal import (
+    LlamaIndexMultimodalParser,
+    VisionAPIParser,
+    HybridMultimodalParser,
+    MultimodalResult,
+)
+from documents.pipeline import DocumentPipeline, DocumentJob
 from documents.api import app as documents_app
-from documents.confluence import ConfluenceAttachment, ConfluenceClient, ConfluencePage
+from documents.semantic_chunker import (
+    SemanticTextChunker,
+    LlamaIndexSentenceChunker,
+    LlamaIndexJSONChunker,
+    LlamaIndexHTMLChunker,
+    MarkdownImageExtractor,
+    HTMLImageExtractor,
+    get_semantic_chunker,
+    get_markdown_image_parser,
+    get_html_image_parser,
+    get_sentence_chunker,
+    get_json_chunker,
+    get_html_chunker,
+    get_semantic_chunker_from_settings,
+    get_sentence_chunker_from_settings,
+    get_chunker_from_settings,
+)
+
 from documents.diagram_formats import (
-    BPMNElement,
-    BPMNParser,
-    BPMNParseResult,
     DrawIOParser,
     DrawIOParseResult,
-    OpenAPIParser,
-    OpenAPIParseResult,
     PlantUMLParser,
     PlantUMLParseResult,
-    detect_format,
-    parse_bpmn,
+    BPMNParser,
+    BPMNParseResult,
+    BPMNElement,
+    OpenAPIParser,
+    OpenAPIParseResult,
     parse_drawio,
-    parse_openapi,
     parse_plantuml,
+    parse_bpmn,
+    parse_openapi,
+    detect_format,
 )
-from documents.multimodal import (
-    HybridMultimodalParser,
-    LlamaIndexMultimodalParser,
-    MultimodalResult,
-    VisionAPIParser,
-)
-from documents.pipeline import DocumentJob, DocumentPipeline
-from documents.semantic_chunker import (
-    HTMLImageExtractor,
-    LlamaIndexHTMLChunker,
-    LlamaIndexJSONChunker,
-    LlamaIndexSentenceChunker,
-    MarkdownImageExtractor,
-    SemanticTextChunker,
-    get_chunker_from_settings,
-    get_html_chunker,
-    get_html_image_parser,
-    get_json_chunker,
-    get_markdown_image_parser,
-    get_semantic_chunker,
-    get_semantic_chunker_from_settings,
-    get_sentence_chunker,
-    get_sentence_chunker_from_settings,
-)
-from documents.webdav import WebDAVClient, WebDAVFile
+
+from documents.confluence import ConfluenceAttachment
+
 
 __all__ = [
     "Document",
@@ -113,7 +116,6 @@ __all__ = [
     "DocumentSource",
     "LlamaIndexParser",
     "DoclingParser",
-    "FallbackParser",
     "HybridDocumentParser",
     "ParsedDocumentResult",
     "ConfluenceClient",

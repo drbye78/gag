@@ -3,6 +3,7 @@ Tests for ingestion modules: pipeline, chunker, embedder, indexer.
 """
 
 import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 class TestIngestionPipeline:
@@ -55,7 +56,7 @@ class TestDocumentChunker:
 
         # DocumentChunker splits on sentence boundaries, not token count
         # Use text with multiple sentences to get multiple chunks
-        chunker = DocumentChunker(chunk_size=50, chunk_overlap=10)
+        chunker = DocumentChunker(chunk_size=50)
         text = "Sentence one here. Sentence two here. Sentence three here. Sentence four here."
         result = chunker.chunk(text, "test-doc")
         assert result is not None
@@ -143,7 +144,7 @@ class TestEmbeddingPipeline:
 
     @pytest.mark.asyncio
     async def test_embed_with_provider(self):
-        from ingestion.embedder import EmbedderProvider, EmbeddingPipeline
+        from ingestion.embedder import EmbeddingPipeline, EmbedderProvider
 
         pipe = EmbeddingPipeline(provider=EmbedderProvider.OPENAI)
         assert pipe.provider == EmbedderProvider.OPENAI

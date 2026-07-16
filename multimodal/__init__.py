@@ -9,7 +9,7 @@ from multimodal.diagram_ir import (
     get_diagram_ir_builder,
 )
 from multimodal.diagram_registry import DiagramRegistry, DiagramSearchResult
-from multimodal.ir_builder import UIIR, ArchitectureIR, IRBuilder
+from multimodal.ir_builder import ArchitectureIR, IRBuilder, UIIR
 from multimodal.vlm import (
     OpenAIVisionProvider,
     OpenRouterVLMProvider,

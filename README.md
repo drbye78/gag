@@ -2,9 +2,9 @@
 
 A production-grade **Cognitive Architecture** for domain-specific reasoning within enterprise AI PDLC pipelines. Goes beyond traditional RAG by combining multimodal understanding, hybrid retrieval (vector + graph + runtime), structured reasoning, tool-augmented decision making, and stateful orchestration.
 
-![Version](https://img.shields.io/badge/version-4.2.0-blue)
+![Version](https://img.shields.io/badge/version-5.0.0-blue)
 ![Python](https://img.shields.io/badge/python-3.12+-green)
-![Tests](https://img.shields.io/badge/tests-794%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-684%20passing-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ---
@@ -66,7 +66,7 @@ This system answers complex engineering questions by reasoning over your codebas
 ## Key Features
 
 ### 🧩 Platform Adapter Architecture
-- **Platform-specific template generators** — Generate configuration templates for supported platforms
+- **Universal Intelligence Platform** — Supports any technology stack through pluggable adapters
 - **Platform Adapters**: SAP BTP, VMware Tanzu, Power Platform, AWS, Azure, GCP (extensible)
 - **Pattern Library**: 12+ architectural patterns (microservices, serverless, event-driven, CQRS, etc.)
 - **Constraint Engine**: Hard/soft constraints per platform with automatic fix suggestions
@@ -79,18 +79,18 @@ This system answers complex engineering questions by reasoning over your codebas
 - **11 sources**: Docs, Code, Graph, Code Graph, Tickets, Telemetry, Diagram, UI Sketch, ColBERT, Knowledge Graph, Multimodal
 - **5 strategies**: Vector-only, Graph-only, Multi-hop, Cascade, Iterative
 - **Platform-aware retrieval**: Auto-detects AWS/Azure/GCP/SAP/Tanzu/PowerPlatform from queries
-- **In-memory entity cache**: Stores entities with LRU eviction (500 entries, 1h TTL)
+- **Knowledge graph integration**: Queries use cases, ADRs, reference architectures, and platform services
 - **Entity graph cache**: LRU eviction (500 entries, 1h TTL) with REST API for monitoring
 - **4 fusion methods**: RRF, Score-normalized, Weighted, Combined
 - **5 rerank providers**: Cohere, BGE, SentenceTransformers, Jina, LlamaIndex
-- **5 citation styles**: Parenthetical, Verbatim, Footnote, Highlight, Structured, Diagram
+- **6 citation styles**: Parenthetical, Verbatim, Footnote, Highlight, Structured, Diagram
 - **ColBERT support**: Late interaction embeddings for enhanced semantic search
 - **CodeGraphContext integration**: Live indexing, multi-repo switching, bundle loading, graph visualization, Cypher queries
 
 ### 🧠 Cognitive Agents
 - **Planner** — Detects intent (design/explain/troubleshoot/optimize), decomposes tasks, assigns tools
 - **Retriever** — Parallel, sequential, cascade, and adaptive retrieval with in-memory caching
-- **Reasoner** — Direct, chain-of-thought, tree-of-thoughts, reflection, and critique modes (deterministic fact display — not LLM-based)
+- **Reasoner** — Direct, chain-of-thought, tree-of-thoughts, reflection, and critique modes
 - **Validator** — Checks accuracy, coherence, completeness, and safety of responses
 
 ### ⚙️ Orchestration Engine
@@ -121,9 +121,11 @@ This system answers complex engineering questions by reasoning over your codebas
 - Code chunking with entity extraction (Python, JavaScript, TypeScript, Go, Rust, Java, Kotlin)
 - Structural and hierarchical chunking for markdown
 - **Tooling chunkers**: Kubernetes manifests, Helm charts, Dockerfiles, GraphQL schemas
+- **Unified Ingestion**: 33 artifact types, 24 handlers, platform extension architecture
+- **Platform Adapters**: SAP BTP (MTA, CDS, CAP, XSUAA), Power Platform, AWS, Azure
 
 ### 🔧 Tool System (MCP)
-- **69 tool classes** exposed via Model Context Protocol
+- **30+ tools** exposed via Model Context Protocol
 - **Tool Categories**: Search, Reasoning, Graph, Code Analysis, Infrastructure, Multi-modal
 - **Tooling Search**: Kubernetes, Helm, Docker, GraphQL, Istio
 - **CodeGraph**: Find callers, callees, dead code, complexity, class hierarchy
@@ -227,7 +229,7 @@ Full API reference: [docs/api.md](docs/api.md)
 
 ## Configuration
 
-All settings are loaded from environment variables. See [docs/configuration.md](docs/configuration.md) for the complete reference (70+ variables).
+All settings are loaded from environment variables. See [docs/configuration.md](docs/configuration.md) for the complete reference (119 variables).
 
 **Required for production:**
 
@@ -260,7 +262,7 @@ export LLM_API_KEY=your-api-key
 ├── ui/                 # UI sketch retrieval, ColPali, SAP knowledge
 ├── tools/              # Tool registry (13 tools via MCP)
 ├── docs/               # Architecture, API, deployment, configuration docs
-└── tests/              # 794+ tests (104 platformv adapter tests)
+└── tests/              # 506 unit, integration and E2E tests
 ```
 
 ---
@@ -288,18 +290,17 @@ export LLM_API_KEY=your-api-key
 python -m pytest tests/ -v
 
 # Using the CLI
-./eis test
-
-# Run specific test categories
-./eis test --file test_core.py          # Core infrastructure
-./eis test --file test_agents.py        # Agent system
-./eis test --file test_ingestion.py    # Ingestion pipeline
-./eis test --file test_retrieval.py     # Retrieval layer
-./eis test --unit                       # Unit tests only
-./eis test --keyword Health             # Tests matching keyword
+./eis.py api                    # Start API
+./eis.py test                   # Run tests
+./eis.py test --file test_core.py          # Core infrastructure
+./eis.py test --file test_agents.py        # Agent system
+./eis.py test --file test_ingestion.py    # Ingestion pipeline
+./eis.py test --file test_retrieval.py     # Retrieval layer
+./eis.py test --unit                       # Unit tests only
+./eis.py test --keyword Health             # Tests matching keyword
 ```
 
-**382+ tests, all passing (794 test functions across 50+ files, ~52 conditionally skipped).**
+**684 tests, all passing (662 unit/integration + 22 claim-verification).**
 
 ---
 
@@ -317,9 +318,10 @@ python -m pytest tests/ -v
 ## Version History
 
 | Version | Highlights |
-|---|---|---|
-| **v4.2** | Full PlatformVAdapter refactoring (template-aligned, IR→product bridge, 57 services), consolidated platform detection (single keyword source), integration audit fixes, 104 adapter tests |
-| **v4.1** | Full PDLC coverage (9 phases, 69 MCP tool classes), PDLC-aware prompts, platform-agnostic architecture, new tool modules (ideation, requirements, testing, deployment, observability, feedback, day2), MarketAnalysis, MutationTester |
+|---|---|
+| **v5.0** | Production-quality refactor: all 22 README claims verified by tests, 17 critical bugs fixed, real LLM reasoning (5 modes), Louvain GraphRAG, ValidatorAgent wired, wave-based orchestration, APOC-free Cypher, /metrics endpoint, TraceMiddleware, 684 tests |
+| **v4.0** | Comprehensive architecture audit (15 modules documented), 560 tests, 119 config fields, ~70 MCP tools, GraphRAG pipeline, ColPali, Confluence/WebDAV integration |
+| **v3.2** | Full PDLC coverage (9 phases, 71 MCP tools), PDLC-aware prompts, platform-agnostic architecture, new tool modules (ideation, requirements, testing, deployment, observability, feedback, day2), MutationTester |
 | **v3.1** | Multi-platform adapters (AWS, Azure, GCP), platform-aware retrieval, knowledge graph integration (use cases, ADRs, reference architectures), 382 tests |
 | **v3.0** | Python 3.12+, pyproject.toml, Diagram Qdrant/FalkorDB indexing, UI sketch retrieval, Mermaid parser, ColPali integration, ColBERT support, Diagram citations |
 | **v2.4** | Entity graph cache, lazy retriever init, config consolidation, input validation, Cypher injection prevention, logging, CORS config, embedding cache |

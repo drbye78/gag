@@ -1,8 +1,8 @@
 from core.constraints.engine import (
     Constraint,
-    ConstraintEngine,
-    ConstraintSet,
     ConstraintViolation,
+    ConstraintSet,
+    ConstraintEngine,
     get_constraint_engine,
 )
 

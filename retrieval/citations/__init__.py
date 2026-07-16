@@ -1,8 +1,8 @@
 from retrieval.citations.base import (
-    AnnotatedAnswer,
-    Citation,
-    CitationSource,
     CitationStyle,
+    CitationSource,
+    Citation,
+    AnnotatedAnswer,
 )
 from retrieval.citations.builder import CitationBuilder
 from retrieval.citations.formatter import CitationFormatter

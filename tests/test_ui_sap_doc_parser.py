@@ -1,7 +1,6 @@
 """Tests for SAPDocParser."""
 
 import pytest
-
 from ui.sap_doc_parser import SAPDocParser
 
 

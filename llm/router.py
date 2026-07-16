@@ -1,14 +1,11 @@
 import asyncio
 import json
-import logging
 from enum import Enum
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 import httpx
 
 from core.config import get_settings
-
-logger = logging.getLogger(__name__)
 
 
 class LLMProvider(str, Enum):
@@ -32,7 +29,9 @@ LLM_PROVIDER_URLS = {
 
 
 class ChatCompletionResponse:
-    def __init__(self, id: str, model: str, choices: List[Dict[str, Any]], usage: Dict[str, int]):
+    def __init__(
+        self, id: str, model: str, choices: List[Dict[str, Any]], usage: Dict[str, int]
+    ):
         self.id = id
         self.model = model
         self.choices = choices
@@ -116,7 +115,7 @@ class LLMRouter:
                 raise ValueError("temperature must be a number")
             if temperature < 0 or temperature > 2.0:
                 raise ValueError("temperature must be between 0 and 2.0")
-
+        
         if max_tokens is not None:
             if not isinstance(max_tokens, int):
                 raise ValueError("max_tokens must be an integer")
@@ -130,11 +129,6 @@ class LLMRouter:
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
 
-        prompt_len = len(prompt) + (len(system_prompt) if system_prompt else 0)
-        logger.info(
-            "LLMRouter.chat: prompt_length=%d chars, model=%s", prompt_len, self.model.value
-        )
-
         for attempt in range(self.max_retries):
             try:
                 client = self.get_client()
@@ -144,30 +138,11 @@ class LLMRouter:
                     json=payload,
                 )
                 response.raise_for_status()
-                result = ChatCompletionResponse.from_dict(response.json())
-                response_len = len(result.text) if result.text else 0
-                logger.info(
-                    "LLMRouter.chat: response_length=%d chars, model=%s",
-                    response_len,
-                    self.model.value,
-                )
-                return result
-            except httpx.HTTPStatusError as e:
-                # Only retry on server errors (5xx) and rate limits (429)
-                if (
-                    e.response.status_code in (429, 502, 503, 504)
-                    and attempt < self.max_retries - 1
-                ):
-                    await asyncio.sleep(2**attempt)
-                    continue
-                raise
-            except (httpx.ConnectError, httpx.TimeoutException):
+                return ChatCompletionResponse.from_dict(response.json())
+            except Exception as e:
                 if attempt == self.max_retries - 1:
                     raise
                 await asyncio.sleep(2**attempt)
-            except (ValueError, httpx.RequestError):
-                # Validation errors and non-retriable request errors: don't retry
-                raise
 
         raise RuntimeError("Max retries exceeded")
 
@@ -175,7 +150,6 @@ class LLMRouter:
         """Generate embedding for a single text using configured embedding provider."""
         if LLMRouter._embed_pipeline is None:
             from ingestion.embedder import EmbeddingPipeline
-
             LLMRouter._embed_pipeline = EmbeddingPipeline()
         return await LLMRouter._embed_pipeline.embed(text)
 
@@ -183,7 +157,6 @@ class LLMRouter:
         """Generate embeddings for multiple texts using configured embedding provider."""
         if LLMRouter._embed_pipeline is None:
             from ingestion.embedder import EmbeddingPipeline
-
             LLMRouter._embed_pipeline = EmbeddingPipeline()
         return await LLMRouter._embed_pipeline.embed_batch(texts)
 

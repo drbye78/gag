@@ -10,13 +10,14 @@ Models:
 - vidore/colSmol-500M (500M, lightweight)
 """
 
-import base64
 import io
+import base64
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from PIL import Image
+
 
 COLPALI_AVAILABLE = False
 ColPaliForRetrieval = None
@@ -30,7 +31,7 @@ try:
     from transformers import ColPaliForRetrieval, ColPaliProcessor
 
     COLPALI_AVAILABLE = True
-except ImportError:
+except (ImportError, OSError, RuntimeError):
     try:
         import torch
         from colpali_engine.models import ColQwen2, ColQwen2Processor
@@ -38,7 +39,7 @@ except ImportError:
         ColPaliForRetrieval = ColQwen2
         ColPaliProcessor = ColQwen2Processor
         COLPALI_AVAILABLE = True
-    except ImportError:
+    except (ImportError, OSError, RuntimeError):
         torch = None
         ColPaliForRetrieval = None
         ColPaliProcessor = None
@@ -98,7 +99,9 @@ class ColPaliClient:
 
     def _get_model(self):
         if not self.available:
-            raise RuntimeError("ColPali not available. Install: pip install colpali-engine")
+            raise RuntimeError(
+                "ColPali not available. Install: pip install colpali-engine"
+            )
 
         if self._model is None:
             if "qwen" in self.model_name.lower():
@@ -118,7 +121,9 @@ class ColPaliClient:
 
     def _get_processor(self):
         if not self.available:
-            raise RuntimeError("ColPali not available. Install: pip install colpali-engine")
+            raise RuntimeError(
+                "ColPali not available. Install: pip install colpali-engine"
+            )
 
         if self._processor is None:
             if "qwen" in self.model_name.lower():

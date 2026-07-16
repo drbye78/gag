@@ -4,7 +4,7 @@ import logging
 import uuid
 from typing import Optional
 
-from ui.knowledge import ComponentType, UIComponent, UIService
+from ui.knowledge import ComponentType, UIComponent, UIService, get_ui_knowledge_registry
 
 logger = logging.getLogger(__name__)
 

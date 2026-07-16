@@ -7,17 +7,19 @@ Supports Qdrant-based vector indexing and FalkorDB graph storage.
 
 import logging
 import os
-import re
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 import httpx
 
 from documents.diagram_parser import (
-    DiagramType,
     get_diagram_parser,
+    DiagramType,
+    DiagramExtractionResult,
 )
+
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +77,6 @@ class DiagramQdrantIndexer:
         if self._embedder is None:
             try:
                 from ingestion.embedder import get_text_embedder
-
                 self._embedder = get_text_embedder()
             except Exception as e:
                 logger.warning("Failed to load embedder: %s", e)
@@ -187,7 +188,9 @@ class DiagramQdrantIndexer:
         filter_dict = None
         if diagram_type_filter:
             filter_dict = {
-                "must": [{"key": "diagram_type", "match": {"value": diagram_type_filter}}]
+                "must": [
+                    {"key": "diagram_type", "match": {"value": diagram_type_filter}}
+                ]
             }
 
         search_payload = {
@@ -213,17 +216,15 @@ class DiagramQdrantIndexer:
             results = []
             for point in data.get("result", []):
                 payload = point.get("payload", {})
-                results.append(
-                    {
-                        "doc_id": point.get("id"),
-                        "score": point.get("score", 0.0),
-                        "content": payload.get("content", ""),
-                        "diagram_type": payload.get("diagram_type", ""),
-                        "entities": payload.get("entities", []),
-                        "relationships": payload.get("relationships", []),
-                        "metadata": payload.get("metadata", {}),
-                    }
-                )
+                results.append({
+                    "doc_id": point.get("id"),
+                    "score": point.get("score", 0.0),
+                    "content": payload.get("content", ""),
+                    "diagram_type": payload.get("diagram_type", ""),
+                    "entities": payload.get("entities", []),
+                    "relationships": payload.get("relationships", []),
+                    "metadata": payload.get("metadata", {}),
+                })
             return results
         except Exception as e:
             logger.error("Diagram search failed: %s", e)
@@ -384,36 +385,6 @@ class DiagramRetriever:
         self._use_qdrant = use_qdrant
         self._use_graph = use_graph
 
-    @staticmethod
-    def _sanitize_svg(svg_content: str) -> str:
-        """Strip dangerous elements and attributes from SVG content.
-
-        Removes <script> tags and event-handler attributes (onclick, onload, etc.)
-        to prevent XSS when SVG is rendered in a browser.
-        """
-        # Remove <script> tags and their content
-        svg_content = re.sub(
-            r"<script[^>]*>.*?</script>",
-            "",
-            svg_content,
-            flags=re.DOTALL | re.IGNORECASE,
-        )
-        # Remove event-handler attributes (on*)
-        svg_content = re.sub(
-            r'\s+on\w+\s*=\s*["\'][^"\']*["\']',
-            "",
-            svg_content,
-            flags=re.IGNORECASE,
-        )
-        # Remove javascript: URLs in href/xlink:href attributes
-        svg_content = re.sub(
-            r'(?:href|xlink:href)\s*=\s*["\']javascript:[^"\']*["\']',
-            "",
-            svg_content,
-            flags=re.IGNORECASE,
-        )
-        return svg_content
-
     def _get_qdrant_indexer(self) -> Optional[DiagramQdrantIndexer]:
         if self._qdrant_indexer is None and self._use_qdrant:
             self._qdrant_indexer = DiagramQdrantIndexer()
@@ -435,9 +406,7 @@ class DiagramRetriever:
         combined_content = result.generated_code
         if not combined_content and result.entities:
             entity_texts = [e.get("name", "") for e in result.entities[:20]]
-            combined_content = (
-                f"Type: {result.diagram_type.value}. Entities: {', '.join(entity_texts)}"
-            )
+            combined_content = f"Type: {result.diagram_type.value}. Entities: {', '.join(entity_texts)}"
 
         indexed = {
             "doc_id": doc_id,
@@ -489,9 +458,7 @@ class DiagramRetriever:
         combined_content = result.generated_code
         if not combined_content and result.entities:
             entity_texts = [e.get("name", "") for e in result.entities[:20]]
-            combined_content = (
-                f"Type: {result.diagram_type.value}. Entities: {', '.join(entity_texts)}"
-            )
+            combined_content = f"Type: {result.diagram_type.value}. Entities: {', '.join(entity_texts)}"
 
         indexed = {
             "doc_id": doc_id,
@@ -525,13 +492,9 @@ class DiagramRetriever:
         use_vector: bool = True,
     ) -> Dict[str, Any]:
         result = await self.search(query, limit, use_vector=use_vector)
-        sanitized_results = []
-        for r in result.results:
-            content = r.content
-            # Sanitize SVG content if present
-            if content and ("<svg" in content.lower()):
-                content = self._sanitize_svg(content)
-            sanitized_results.append(
+        return {
+            "source": "diagram",
+            "results": [
                 {
                     "doc_id": r.doc_id,
                     "score": r.score,
@@ -539,12 +502,10 @@ class DiagramRetriever:
                     "entities": r.entities,
                     "relationships": r.relationships,
                     "generated_code": r.generated_code,
-                    "content": content,
+                    "content": r.content,
                 }
-            )
-        return {
-            "source": "diagram",
-            "results": sanitized_results,
+                for r in result.results
+            ],
             "total": len(result.results),
             "detected_type": result.detected_type,
             "took_ms": result.took_ms,
@@ -588,7 +549,9 @@ class DiagramRetriever:
                     logger.warning(f"Vector search failed, falling back: {e}")
 
         if not self._indexed:
-            return DiagramRetrievalResult(query=query, results=[], error="No diagrams indexed")
+            return DiagramRetrievalResult(
+                query=query, results=[], error="No diagrams indexed"
+            )
 
         scores = []
         query_lower = query.lower()
@@ -604,7 +567,9 @@ class DiagramRetriever:
             for rel in doc.get("relationships", []):
                 for_val = rel.get("from", "").lower()
                 to_val = rel.get("to", "").lower()
-                if (for_val and for_val in query_lower) or (to_val and to_val in query_lower):
+                if (for_val and for_val in query_lower) or (
+                    to_val and to_val in query_lower
+                ):
                     score += 0.5
 
             scores.append((doc, score))

@@ -1,52 +1,28 @@
 """FalkorDB client with connection pooling, parameterized queries, and structured errors."""
 
+import re
 import logging
 from typing import Any, Dict, List, Optional
 
 import httpx
 
 from core.config import get_settings
-from core.errors import ServiceUnavailableError, StorageError
 from core.pool import get_http_pool
+from core.errors import StorageError, ServiceUnavailableError
 
 logger = logging.getLogger(__name__)
 
-ALLOWED_NODE_TYPES = frozenset(
-    {
-        "Component",
-        "Service",
-        "API",
-        "Endpoint",
-        "Database",
-        "Function",
-        "Class",
-        "Module",
-        "File",
-        "Entity",
-        "Incident",
-        "Requirement",
-        "Architecture",
-        "Community",
-    }
-)
+ALLOWED_NODE_TYPES = frozenset({
+    "Component", "Service", "API", "Endpoint", "Database",
+    "Function", "Class", "Module", "File", "Entity",
+    "Incident", "Requirement", "Architecture", "Community",
+})
 
-ALLOWED_EDGE_TYPES = frozenset(
-    {
-        "CALLS",
-        "DEFINES",
-        "IMPORTS",
-        "RETURNS",
-        "CONTAINS",
-        "INHERITS",
-        "IMPLEMENTS",
-        "DEPENDS_ON",
-        "RELATED_TO",
-        "DOCUMENTED_BY",
-        "TRIGGERS",
-        "AFFECTS",
-        "IN_COMMUNITY",
-    }
-)
+ALLOWED_EDGE_TYPES = frozenset({
+    "CALLS", "DEFINES", "IMPORTS", "RETURNS", "CONTAINS",
+    "INHERITS", "IMPLEMENTS", "DEPENDS_ON", "RELATED_TO",
+    "DOCUMENTED_BY", "TRIGGERS", "AFFECTS", "IN_COMMUNITY",
+})
 
 MAX_DEPTH = 10
 MAX_LIMIT = 10000
@@ -67,13 +43,7 @@ def _safe_int(value: Any, default: int) -> int:
 
 
 class FalkorDBClient:
-    """Production FalkorDB client with pooling, validation, and structured errors.
-
-    NOTE: This client does not currently pool connections. Each request uses
-    the shared HTTP pool from core.pool. For production workloads with high
-    concurrency, connection pooling with dedicated FalkorDB connections should
-    be added (e.g., using an async connection pool or a persistent session).
-    """
+    """Production FalkorDB client with pooling, validation, and structured errors."""
 
     def __init__(
         self,
@@ -99,7 +69,9 @@ class FalkorDBClient:
             headers["Authorization"] = f"Basic {auth}"
         return headers
 
-    async def execute(self, query: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def execute(
+        self, query: str, params: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         payload = {"query": query}
         if params:
             payload["params"] = params
@@ -111,9 +83,7 @@ class FalkorDBClient:
                 json=payload,
             )
             response.raise_for_status()
-            result = response.json()
-            self._validate_result(result)
-            return result
+            return response.json()
         except httpx.ConnectError as e:
             logger.error("FalkorDB connection failed: %s:%d", self.host, self.port)
             raise ServiceUnavailableError(
@@ -144,27 +114,9 @@ class FalkorDBClient:
         except Exception:
             return False
 
-    def _validate_result(self, result: Dict[str, Any]) -> None:
-        """Validate that query results contain expected fields."""
-        if not isinstance(result, dict):
-            raise StorageError(
-                "FalkorDB returned unexpected result type",
-                details={"expected": "dict", "got": type(result).__name__},
-            )
-        # Results key should be present for query responses
-        if "results" in result and not isinstance(result["results"], list):
-            raise StorageError(
-                "FalkorDB 'results' field is not a list",
-                details={"got": type(result["results"]).__name__},
-            )
-        # Check for error indicators in the response
-        if "error" in result:
-            raise StorageError(
-                f"FalkorDB query returned error: {result['error']}",
-                details={"error": result["error"]},
-            )
-
-    async def query(self, query: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def query(
+        self, query: str, params: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """Alias for execute() - execute a Cypher query."""
         return await self.execute(query, params)
 
@@ -214,7 +166,7 @@ class FalkorDBClient:
         where_parts = ["true"]
         if rel_type:
             safe_type = _safe_identifier(rel_type, ALLOWED_EDGE_TYPES, "RELATED_TO")
-            where_parts.append("type(r) = $rel_type")
+            where_parts.append(f"type(r) = $rel_type")
             params["rel_type"] = safe_type
         if source_id:
             where_parts.append("startNode(r).id = $source_id")

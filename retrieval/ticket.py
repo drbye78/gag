@@ -2,12 +2,11 @@
 Ticket Retriever - Support ticket retrieval.
 
 Supports Jira and GitHub Issues backends with in-memory fallback.
-# TODO: Add GitLab Issues backend support (planned).
 """
 
-import logging
 import os
 import time
+import logging
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
@@ -281,26 +280,18 @@ class TicketRetriever:
         status: Optional[str] = None,
         priority: Optional[str] = None,
         limit: int = 10,
-        offset: int = 0,
     ) -> Dict[str, Any]:
         start = int(time.time() * 1000)
 
-        # Fetch more results to support offset-based pagination
-        fetch_limit = limit + offset
-        all_results = await self.backend.search(query, status, priority, fetch_limit)
-
-        # Apply offset and limit
-        paginated_results = all_results[offset : offset + limit]
+        results = await self.backend.search(query, status, priority, limit)
 
         took = int(time.time() * 1000) - start
 
         return {
             "source": "tickets",
             "query": query,
-            "results": paginated_results,
-            "total": len(all_results),
-            "offset": offset,
-            "limit": limit,
+            "results": results,
+            "total": len(results),
             "took_ms": took,
         }
 

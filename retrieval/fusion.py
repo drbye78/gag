@@ -8,8 +8,9 @@ Uses a template method pattern to eliminate duplicated
 metadata collection, sorting, and result assembly code.
 """
 
-from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple
+
+from enum import Enum
 
 
 class FusionMethod(str, Enum):
@@ -27,8 +28,6 @@ class ResultFusion:
         weights: Optional[Dict[str, float]] = None,
     ):
         self.method = method
-        if rrf_k <= 0:
-            raise ValueError(f"rrf_k must be positive, got {rrf_k}")
         self.rrf_k = rrf_k
         self.weights = weights or {
             "graph": 0.4,
@@ -89,7 +88,9 @@ class ResultFusion:
                         "rank": rank,
                     }
 
-        sorted_keys = sorted(fused_scores.keys(), key=lambda k: fused_scores[k], reverse=True)
+        sorted_keys = sorted(
+            fused_scores.keys(), key=lambda k: fused_scores[k], reverse=True
+        )
 
         fused = []
         for key in sorted_keys:
@@ -157,43 +158,34 @@ class ResultFusion:
         self,
         source_results: Dict[str, List[Dict[str, Any]]],
     ) -> List[Dict[str, Any]]:
-        # Run RRF and score-normalized with uniform weights to avoid
-        # double-weighting; weights are applied once in the combination step.
-        uniform_weights = {src: 1.0 for src in source_results}
-        rrf_fuser = ResultFusion(method=FusionMethod.RRF, rrf_k=self.rrf_k, weights=uniform_weights)
-        score_fuser = ResultFusion(
-            method=FusionMethod.SCORE_NORMALIZED, rrf_k=self.rrf_k, weights=uniform_weights
-        )
-
-        rrf_results = rrf_fuser._rrf_fusion(source_results)
-        score_results = score_fuser._score_normalized_fusion(source_results)
+        # Run RRF and score-normalized independently, then merge
+        rrf_results = self._rrf_fusion(source_results)
+        score_results = self._score_normalized_fusion(source_results)
 
         combined_scores: Dict[str, float] = {}
         result_metadata: Dict[str, Dict[str, Any]] = {}
 
         for result in rrf_results:
             key = self._get_result_key(result, result.get("source", ""))
-            source = result.get("source", "")
-            weight = self.weights.get(source, 1.0)
-            combined_scores[key] = combined_scores.get(key, 0.0) + result.get("score", 0) * weight
+            combined_scores[key] = combined_scores.get(key, 0.0) + result.get("score", 0)
             if key not in result_metadata:
                 result_metadata[key] = {
                     "content": result.get("content", ""),
-                    "source": source,
+                    "source": result.get("source", ""),
                 }
 
         for result in score_results:
             key = self._get_result_key(result, result.get("source", ""))
-            source = result.get("source", "")
-            weight = self.weights.get(source, 1.0)
-            combined_scores[key] = combined_scores.get(key, 0.0) + result.get("score", 0) * weight
+            combined_scores[key] = combined_scores.get(key, 0.0) + result.get("score", 0)
             if key not in result_metadata:
                 result_metadata[key] = {
                     "content": result.get("content", ""),
-                    "source": source,
+                    "source": result.get("source", ""),
                 }
 
-        sorted_keys = sorted(combined_scores.keys(), key=lambda k: combined_scores[k], reverse=True)
+        sorted_keys = sorted(
+            combined_scores.keys(), key=lambda k: combined_scores[k], reverse=True
+        )
 
         fused = []
         for key in sorted_keys:
@@ -210,9 +202,11 @@ class ResultFusion:
         return fused
 
     def _get_result_key(self, result: Dict[str, Any], source: str) -> str:
+        """Deterministic key for deduplication — uses SHA-256, not Python's randomized hash()."""
+        import hashlib
         content = result.get("content", "")
         doc_id = result.get("id", result.get("source_id", ""))
-        return f"{source}:{doc_id}:{hash(content[:100])}"
+        return f"{source}:{doc_id}:{hashlib.sha256(content[:100].encode()).hexdigest()[:16]}"
 
 
 _fusion: Optional[ResultFusion] = None
