@@ -283,7 +283,7 @@ async def ingest_git(request: GitIngestRequest):
         with tempfile.TemporaryDirectory() as tmpdir:
             import subprocess
 
-            result = subprocess.run(
+            result = await asyncio.to_thread(subprocess.run,
                 ["git", "clone", "--depth", str(request.depth), "--branch", request.branch, "--single-branch", request.repo_url, tmpdir],
                 capture_output=True,
                 text=True,

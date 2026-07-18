@@ -395,7 +395,9 @@ class OrchestrationEngine:
                         self.max_retries,
                         e,
                     )
-                    await asyncio.sleep(0.5 * (attempt + 1))  # Backoff
+                    import random as _random
+                    delay = min(2 ** attempt + _random.uniform(0, 1), 30.0)
+                    await asyncio.sleep(delay)  # Exponential backoff with jitter
                 else:
                     state.status = StepStatus.FAILED
                     state.error = f"{type(e).__name__}: {str(e)}"
@@ -773,7 +775,7 @@ class OrchestrationEngine:
             "branch_results": [],
         }
 
-        branch_queries = self._decompose_query_branches(query, branches)
+        branch_queries = await self._decompose_query_branches(query, branches)
         branch_tasks = []
 
         for branch_query in branch_queries:
@@ -822,7 +824,31 @@ class OrchestrationEngine:
             "result": self._aggregate_results(states),
         }
 
-    def _decompose_query_branches(
+    async def _decompose_query_branches(
+        self,
+        query: str,
+        branches: int,
+    ) -> List[str]:
+        """Decompose query into branches using LLM, with keyword fallback."""
+        # Try LLM-based decomposition
+        try:
+            from llm.router import get_router
+            from core.llm_utils import extract_json_from_response
+            router = get_router()
+            prompt = f"""Decompose this query into {branches} independent sub-queries for parallel analysis.
+Query: {query}
+Return a JSON array of {branches} sub-query strings, each exploring a different aspect."""
+            response = await router.chat(prompt=prompt, temperature=0.5, max_tokens=500)
+            result = extract_json_from_response(response)
+            if isinstance(result, list) and len(result) >= 2:
+                return [str(q) for q in result[:branches]]
+        except Exception:
+            pass
+
+        # Fallback: simple keyword-based decomposition
+        return self._decompose_query_branches_fallback(query, branches)
+
+    def _decompose_query_branches_fallback(
         self,
         query: str,
         branches: int,
@@ -920,7 +946,7 @@ class OrchestrationEngine:
         aggregated = self._aggregate_results(states)
 
         if aggregated:
-            sub_queries = self._extract_sub_queries(aggregated)
+            sub_queries = await self._extract_sub_queries(aggregated, query)
 
             if sub_queries and remaining_depth > 1:
                 sub_results = []
@@ -940,18 +966,50 @@ class OrchestrationEngine:
             "depth": context["recursive_depth"],
         }
 
-    def _extract_sub_queries(
+    async def _extract_sub_queries(
         self,
         aggregated: Dict[str, Any],
+        original_query: str = "",
     ) -> List[str]:
-        queries = []
-
+        """Extract sub-queries using LLM, with truncation fallback."""
+        # Build context from aggregated results
+        context_parts = []
         for key, value in aggregated.items():
             if isinstance(value, str) and len(value) > 20:
-                words = value.split()
-                if len(words) > 10:
-                    queries.append(" ".join(words[:10]))
+                context_parts.append(f"{key}: {value[:200]}")
+            elif isinstance(value, dict):
+                content = value.get("content", value.get("answer", ""))
+                if content:
+                    context_parts.append(str(content)[:200])
 
+        if not context_parts:
+            return []
+
+        # Try LLM-based decomposition
+        try:
+            from llm.router import get_router
+            from core.llm_utils import extract_json_from_response
+            router = get_router()
+            context = "\n".join(context_parts[:3])
+            prompt = f"""Break this query into 2-3 simpler sub-queries based on the retrieved context.
+Original query: {original_query or "N/A"}
+Context:
+{context}
+
+Return a JSON array of 2-3 sub-query strings."""
+            response = await router.chat(prompt=prompt, temperature=0.3, max_tokens=300)
+            result = extract_json_from_response(response)
+            if isinstance(result, list) and len(result) >= 1:
+                return [str(q) for q in result[:3]]
+        except Exception:
+            pass
+
+        # Fallback: truncation-based
+        queries = []
+        for part in context_parts:
+            words = part.split()
+            if len(words) > 10:
+                queries.append(" ".join(words[:10]))
         return queries[:3]
 
 

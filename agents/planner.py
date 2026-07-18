@@ -77,6 +77,7 @@ class ExecutionPlan:
 class PlannerAgent:
     def __init__(self):
         self._default_sources = ["docs", "code", "graph", "tickets", "telemetry", "diagram", "ui_sketch"]
+        self._llm_router = None
         # High-level intent mapping from QueryClassifier fine-grained intents
         self._classifier_intent_map = {
             "causal": Intent.TROUBLESHOOT,
@@ -131,6 +132,50 @@ class PlannerAgent:
                 return intent
         return Intent.EXPLAIN
 
+    async def _llm_plan(self, query: str) -> Optional[ExecutionPlan]:
+        """Use LLM to plan retrieval steps. Returns None if LLM unavailable."""
+        try:
+            if self._llm_router is None:
+                from llm.router import get_router
+                self._llm_router = get_router()
+            from core.llm_utils import extract_json_from_response
+
+            prompt = f"""Analyze this engineering query and create a retrieval plan.
+Query: {query}
+
+Return JSON with:
+- intent: one of "design", "explain", "troubleshoot", "optimize"
+- sources: array of sources from ["docs", "code", "graph", "tickets", "telemetry"]
+- tools: array of tool names (empty if none needed)
+
+Return ONLY valid JSON."""
+
+            response = await self._llm_router.chat(prompt=prompt, temperature=0.2, max_tokens=500)
+            result = extract_json_from_response(response)
+            if not result or not isinstance(result, dict):
+                return None
+
+            intent = result.get("intent", "explain")
+            sources = result.get("sources", self._default_sources)
+            tools = result.get("tools", [])
+
+            plan = ExecutionPlan(query=query, intent=intent)
+            for source in sources:
+                plan.add_step(ExecutionStep(
+                    step_type="retrieve", action="search",
+                    source=source, params={"limit": 10}
+                ))
+            if tools:
+                plan.add_step(ExecutionStep(
+                    step_type="tool", action="execute_tools",
+                    params={"tools": tools}
+                ))
+            plan.add_step(ExecutionStep(step_type="reason", action="generate_answer"))
+            plan.add_step(ExecutionStep(step_type="validate", action="validate_response"))
+            return plan
+        except Exception:
+            return None
+
     def _identify_sources(self, query: str) -> List[str]:
         query_lower = query.lower()
         sources = []
@@ -179,6 +224,12 @@ class PlannerAgent:
     async def plan(
         self, query: str, ir_context: Optional[Dict[str, Any]] = None
     ) -> ExecutionPlan:
+        # Try LLM-based planning first
+        llm_plan = await self._llm_plan(query)
+        if llm_plan is not None:
+            return llm_plan
+
+        # Fallback: keyword-based planning
         intent = self._detect_intent(query)
         sources = self._identify_sources(query)
         tools = self._identify_tools(query)

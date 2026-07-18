@@ -66,9 +66,12 @@ class ValidatorAgent:
         passed_checks = 0
 
         accuracy_issues = await self._check_accuracy(query, response, retrieved_context)
-        issues.extend(accuracy_issues)
+        # Also run LLM-based faithfulness check
+        llm_issues = await self._llm_faithfulness_check(query, response, retrieved_context)
+        all_accuracy_issues = accuracy_issues + llm_issues
+        issues.extend(all_accuracy_issues)
         total_checks += 1
-        if not accuracy_issues:
+        if not all_accuracy_issues:
             passed_checks += 1
 
         coherence_issues = await self._check_coherence(response, reasoning_trace or [])
@@ -177,6 +180,50 @@ class ValidatorAgent:
                     suggestion="Verify response against retrieved documents",
                 )
             )
+
+        return issues
+
+    async def _llm_faithfulness_check(
+        self,
+        query: str,
+        response: str,
+        context: List[Dict[str, Any]],
+    ) -> List[ValidationIssue]:
+        """Use LLM to check if every claim in the response is supported by context."""
+        issues = []
+        try:
+            from llm.router import get_router
+            from core.llm_utils import extract_json_from_response
+
+            router = get_router()
+            context_text = "\n".join(
+                f"- {c.get('content', '')[:300]}" for c in context[:5]
+            )
+
+            prompt = f"""Is every claim in this answer supported by the retrieved context?
+Answer: {response[:1000]}
+Context:
+{context_text}
+
+Return JSON: {{"supported": true/false, "unsupported_claims": ["claim1", "claim2"]}}
+Return ONLY valid JSON."""
+
+            result = await router.chat(prompt=prompt, temperature=0.1, max_tokens=500)
+            data = extract_json_from_response(result)
+
+            if data and isinstance(data, dict):
+                if not data.get("supported", True):
+                    unsupported = data.get("unsupported_claims", [])
+                    if unsupported:
+                        issues.append(ValidationIssue(
+                            category=ValidationCategory.ACCURACY.value,
+                            severity=ValidationSeverity.ERROR.value,
+                            message=f"Response contains unsupported claims: {', '.join(unsupported[:3])}",
+                            evidence=unsupported,
+                            suggestion="Verify claims against retrieved context",
+                        ))
+        except Exception:
+            pass  # LLM check is optional - don't fail validation if LLM unavailable
 
         return issues
 

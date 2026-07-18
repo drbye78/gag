@@ -238,7 +238,7 @@ class TraceMiddleware:
 
 
 def setup_middleware(app) -> None:
-    """Attach trace ID, rate limiting, and error handling middleware to a FastAPI app."""
+    """Attach trace ID, body size limit, rate limiting, and error handling to FastAPI."""
     from fastapi import FastAPI
 
     if not isinstance(app, FastAPI):
@@ -246,6 +246,21 @@ def setup_middleware(app) -> None:
 
     # Trace ID middleware — adds X-Trace-Id header to every request/response
     app.add_middleware(TraceMiddleware)
+
+    # Request body size limit — reject oversized requests
+    MAX_BODY_SIZE = 10 * 1024 * 1024  # 10MB default
+
+    @app.middleware("http")
+    async def body_size_limit_middleware(request, call_next):
+        content_length = request.headers.get("content-length")
+        if content_length and int(content_length) > MAX_BODY_SIZE:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                status_code=413,
+                content={"error": f"Request body too large. Max: {MAX_BODY_SIZE // (1024*1024)}MB"}
+            )
+        response = await call_next(request)
+        return response
 
     rate_limiter = get_rate_limiter()
 

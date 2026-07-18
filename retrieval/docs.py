@@ -36,6 +36,13 @@ class QdrantEmbeddingProvider(EmbeddingProvider):
             self._client = httpx.AsyncClient(timeout=60.0)
         return self._client
 
+    async def close(self) -> None:
+        """Close cached HTTP client."""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
+
+
     async def embed(self, text: str) -> List[float]:
         results = await self.embed_batch([text])
         if results:
@@ -161,7 +168,12 @@ class QdrantDocsBackend(DocsBackend):
         self.port = port
         self.collection = collection
         self.base_url = f"http://{self.host}:{self.port}"
-        self.embedding_provider = embedding_provider or QdrantEmbeddingProvider()
+        self._embedder = None
+        # Use shared EmbeddingPipeline from ingestion module
+        if embedding_provider:
+            self.embedding_provider = embedding_provider
+        else:
+            self.embedding_provider = None  # Will use EmbeddingPipeline lazily
         self._client: Optional[httpx.AsyncClient] = None
 
     async def _get_client(self) -> httpx.AsyncClient:
@@ -172,6 +184,12 @@ class QdrantDocsBackend(DocsBackend):
                 limits=httpx.Limits(max_connections=20, max_keepalive_connections=5),
             )
         return self._client
+
+    async def close(self) -> None:
+        """Close cached HTTP client."""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
 
     @staticmethod
     def _create_embedding_provider() -> EmbeddingProvider:
@@ -190,7 +208,14 @@ class QdrantDocsBackend(DocsBackend):
         score_threshold: Optional[float] = None,
         filters: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
-        vector = await self.embedding_provider.embed(query)
+        if self.embedding_provider:
+            vector = await self.embedding_provider.embed(query)
+        else:
+            # Use shared EmbeddingPipeline
+            if self._embedder is None:
+                from ingestion.embedder import get_embedding_pipeline
+                self._embedder = get_embedding_pipeline()
+            vector = await self._embedder.embed(query)
 
         payload = {
             "vector": vector,

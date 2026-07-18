@@ -77,6 +77,11 @@ class LLMRouter:
         self.timeout = httpx.Timeout(timeout)
         self.max_retries = max_retries
         self._client: Optional[httpx.AsyncClient] = None
+        # Circuit breaker
+        self._consecutive_failures = 0
+        self._circuit_open_until = 0.0  # Unix timestamp when circuit resets
+        self._circuit_threshold = 5  # Trip after 5 consecutive failures
+        self._circuit_reset_seconds = 30.0  # Half-open after 30s
 
     def get_client(self) -> httpx.AsyncClient:
         if self._client is None:
@@ -103,6 +108,27 @@ class LLMRouter:
         messages.append({"role": "user", "content": prompt})
         return messages
 
+    def _circuit_is_open(self) -> bool:
+        """Check if circuit breaker is tripped."""
+        import time as _time
+        if self._consecutive_failures >= self._circuit_threshold:
+            if _time.time() < self._circuit_open_until:
+                return True
+            # Half-open: reset and try again
+            self._consecutive_failures = 0
+        return False
+
+    def _record_success(self):
+        """Record a successful call — resets circuit breaker."""
+        self._consecutive_failures = 0
+
+    def _record_failure(self):
+        """Record a failed call — may trip circuit breaker."""
+        import time as _time
+        self._consecutive_failures += 1
+        if self._consecutive_failures >= self._circuit_threshold:
+            self._circuit_open_until = _time.time() + self._circuit_reset_seconds
+
     async def chat(
         self,
         prompt: str,
@@ -110,6 +136,8 @@ class LLMRouter:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
     ) -> ChatCompletionResponse:
+        if self._circuit_is_open():
+            raise RuntimeError("LLM circuit breaker is open — fast-failing after consecutive failures")
         if temperature is not None:
             if not isinstance(temperature, (int, float)):
                 raise ValueError("temperature must be a number")
@@ -138,8 +166,10 @@ class LLMRouter:
                     json=payload,
                 )
                 response.raise_for_status()
+                self._record_success()
                 return ChatCompletionResponse.from_dict(response.json())
             except Exception as e:
+                self._record_failure()
                 if attempt == self.max_retries - 1:
                     raise
                 await asyncio.sleep(2**attempt)

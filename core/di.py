@@ -135,3 +135,68 @@ async def close_container() -> None:
     if _container is not None:
         await _container.close()
         _container = None
+
+
+def register_services() -> None:
+    """Register all application services in the DI container.
+
+    Called from lifespan startup. Services are lazily created on first resolve.
+    """
+    container = get_container()
+
+    # Register factories for key services
+    container.register_factory(
+        type(container.settings),
+        lambda: container.settings,
+    )
+
+    # Register OrchestrationEngine
+    def _create_engine():
+        from agents.orchestration import OrchestrationEngine
+        return OrchestrationEngine()
+    container.register_factory(
+        __import__("agents.orchestration", fromlist=["OrchestrationEngine"]).OrchestrationEngine,
+        _create_engine,
+    )
+
+    # Register ToolRegistry
+    def _create_tool_registry():
+        from tools.base import ToolRegistry
+        return ToolRegistry()
+    container.register_factory(
+        __import__("tools.base", fromlist=["ToolRegistry"]).ToolRegistry,
+        _create_tool_registry,
+    )
+
+    # Register RetrievalOrchestrator
+    def _create_orchestrator():
+        from retrieval.orchestrator import RetrievalOrchestrator
+        return RetrievalOrchestrator()
+    container.register_factory(
+        __import__("retrieval.orchestrator", fromlist=["RetrievalOrchestrator"]).RetrievalOrchestrator,
+        _create_orchestrator,
+    )
+
+    # Register MCPHandler
+    def _create_mcp_handler():
+        from api.mcp import MCPHandler
+        return MCPHandler()
+    container.register_factory(
+        __import__("api.mcp", fromlist=["MCPHandler"]).MCPHandler,
+        _create_mcp_handler,
+    )
+
+    logger.info("Services registered in DI container")
+
+
+def resolve(cls_type):
+    """Resolve a service from the DI container.
+
+    This is the replacement for module-level get_*() functions.
+    Usage: engine = resolve(OrchestrationEngine)
+    """
+    container = get_container()
+    try:
+        return container.get_or_create(cls_type)
+    except KeyError:
+        return None

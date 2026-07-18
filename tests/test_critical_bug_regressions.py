@@ -88,9 +88,9 @@ def test_retriever_errors_are_logged():
 
 # Bug 8: /codegraph/visualize accepts arbitrary Cypher (already fixed in v4.0)
 def test_codegraph_visualize_has_allowlist():
-    """api/main.py /codegraph/visualize must use a query_type allowlist."""
-    import api.main as api_module
-    source = inspect.getsource(api_module)
+    """api/tooling_routes.py /codegraph/visualize must use a query_type allowlist."""
+    import api.tooling_routes as tr
+    source = inspect.getsource(tr)
     assert "allowed_query_types" in source, \
         "/codegraph/visualize does not have a query_type allowlist"
 

@@ -226,7 +226,12 @@ Be concise but precise. Avoid vague best practices without context."""
 
 from enum import Enum
 
-from tools.base import PDLCPhase  # noqa: F401 — re-exported for backward compatibility
+# PDLCPhase imported lazily to avoid cascading dependency
+
+try:
+    from tools.base import PDLCPhase
+except ImportError:
+    PDLCPhase = None  # type: ignore[assignment,misc]
 
 
 class Intent(str, Enum):

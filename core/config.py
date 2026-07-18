@@ -53,6 +53,20 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     vlm_provider: str = ""
 
+    # External API URLs (configurable, not hardcoded)
+    openai_api_url: str = "https://api.openai.com/v1"
+    dashscope_api_url: str = "https://dashscope.aliyuncs.com/api/v1"
+    openrouter_api_url: str = "https://openrouter.ai/api/v1"
+
+    # Centralized timeouts (seconds)
+    timeout_health_check: float = 5.0
+    timeout_search: float = 30.0
+    timeout_llm: float = 120.0
+    timeout_ingestion: float = 300.0
+
+    # Request body size limit (bytes)
+    max_request_body_size: int = 10 * 1024 * 1024  # 10MB
+
     rerank_provider: str = "cohere"
     rerank_strategy: str = "single"
     rerank_top_k: int = 10
@@ -71,6 +85,8 @@ class Settings(BaseSettings):
     @classmethod
     def validate_jwt_secret(cls, v: str) -> str:
         if not v:
+            # Don't silently return the default — let the model_validator
+            # decide whether to warn (debug) or raise (production)
             return "change-me-in-production"
         return v
 

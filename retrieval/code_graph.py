@@ -20,7 +20,7 @@ import tempfile
 import time
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import aiohttp
 
@@ -76,7 +76,7 @@ async def _mcp_execute(method: str, params: dict | None = None) -> dict[str, Any
 async def _cli_execute(args: list[str]) -> dict[str, Any]:
     """Execute CLI command as fallback with concurrency control."""
     loop = asyncio.get_event_loop()
-    async with _cli_semaphore:
+    async with _get_cli_semaphore():
         try:
             result = await loop.run_in_executor(
                 None,
@@ -108,7 +108,15 @@ async def _cli_execute(args: list[str]) -> dict[str, Any]:
             return {"success": False, "error": str(e)}
 
 
-_cli_semaphore: asyncio.Semaphore = asyncio.Semaphore(CGC_POOL_SIZE)
+_cli_semaphore: Optional[asyncio.Semaphore] = None
+
+
+def _get_cli_semaphore() -> asyncio.Semaphore:
+    """Get or create the CLI semaphore (lazy — binds to current event loop)."""
+    global _cli_semaphore
+    if _cli_semaphore is None:
+        _cli_semaphore = asyncio.Semaphore(CGC_POOL_SIZE)
+    return _cli_semaphore
 
 
 # MCP method to CLI args mapping
