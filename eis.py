@@ -117,25 +117,20 @@ def cmd_check(args):
     if result.returncode == 0:
         print("✓ Ruff: OK")
 
-    print("Running mypy...")
+    print("Running pyright...")
     result = subprocess.run(
-        [get_python(), "-m", "mypy", "core/", "--ignore-missing-imports"],
+        [get_python(), "-m", "pyright", "."],
         cwd=PROJECT_ROOT,
         capture_output=True,
     )
     if result.returncode == 0:
-        print("✓ Mypy: OK")
+        print("✓ Pyright: OK")
 
     return 0
 
 
 def cmd_eval(args):
     """Run evaluation against known test cases."""
-    import asyncio
-    import json
-    import time
-    from datetime import datetime
-    
     from evaluation.test_cases import TEST_CASES, get_evaluation_framework
 
     results_dir = PROJECT_ROOT / "evaluation" / "results"

@@ -1,0 +1,73 @@
+{
+  "description": "Sample evaluation run — 5 test cases scored against ground truth",
+  "timestamp": "20260727_120000",
+  "summary": {
+    "overall": 0.72,
+    "count": 5,
+    "correctness_avg": 0.68,
+    "relevance_avg": 0.76,
+    "architecture_quality_avg": 0.72
+  },
+  "results": [
+    {
+      "case_id": "tc001",
+      "correctness": 0.50,
+      "relevance": 0.67,
+      "architecture_quality": 0.50,
+      "overall": 0.56,
+      "details": {
+        "query": "How does the authentication flow work?",
+        "answer": "Authentication uses OAuth2 with JWT tokens...",
+        "expected_aspects": ["auth", "flow", "login"]
+      }
+    },
+    {
+      "case_id": "tc002",
+      "correctness": 0.75,
+      "relevance": 0.67,
+      "architecture_quality": 0.75,
+      "overall": 0.72,
+      "details": {
+        "query": "What components are in the architecture?",
+        "answer": "The architecture consists of API, Auth, and Database services...",
+        "expected_aspects": ["components", "services", "API"]
+      }
+    },
+    {
+      "case_id": "tc003",
+      "correctness": 0.67,
+      "relevance": 0.67,
+      "architecture_quality": 0.50,
+      "overall": 0.61,
+      "details": {
+        "query": "Show me the login implementation",
+        "answer": "The login function is in auth.py...",
+        "expected_aspects": ["login", "function", "code"]
+      }
+    },
+    {
+      "case_id": "tc004",
+      "correctness": 0.50,
+      "relevance": 1.00,
+      "architecture_quality": 0.50,
+      "overall": 0.67,
+      "details": {
+        "query": "What are the open tickets?",
+        "answer": "Open tickets include T001 and T002...",
+        "expected_aspects": ["tickets", "open", "status"]
+      }
+    },
+    {
+      "case_id": "tc005",
+      "correctness": 1.00,
+      "relevance": 0.80,
+      "architecture_quality": 0.50,
+      "overall": 0.77,
+      "details": {
+        "query": "Check system performance",
+        "answer": "CPU usage 45%, memory 60%, disk 30%...",
+        "expected_aspects": ["metrics", "performance", "CPU"]
+      }
+    }
+  ]
+}
