@@ -4,7 +4,7 @@ A production-grade **Cognitive Architecture** for domain-specific reasoning with
 
 ![Version](https://img.shields.io/badge/version-5.0.0-blue)
 ![Python](https://img.shields.io/badge/python-3.12+-green)
-![Tests](https://img.shields.io/badge/tests-684%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-713+-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ---
@@ -25,10 +25,12 @@ This system answers complex engineering questions by reasoning over your codebas
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                      ORCHESTRATION LAYER                            │
-│    OrchestrationEngine (Plan → Retrieve → Reason → Execute)         │
-│    - ExecutionState with trace_id                                   │
-│    - Retry with exponential backoff                               │
+│                      ORCHESTRATION LAYER (Self-Correcting)            │
+│    OrchestrationEngine (Plan → [Retrieve‖Tool] → Analyze →             │
+│    Reason → Validate → Re-Plan if score < threshold)                   │
+│    - ExecutionState with trace_id + Redis persistence                  │
+│    - Validation feedback loop with topological-sort wave execution     │
+│    - Token budget controls per request                                 │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
@@ -77,10 +79,10 @@ This system answers complex engineering questions by reasoning over your codebas
 
 ### 🔍 Hybrid Retrieval
 - **11 sources**: Docs, Code, Graph, Code Graph, Tickets, Telemetry, Diagram, UI Sketch, ColBERT, Knowledge Graph, Multimodal
-- **5 strategies**: Vector-only, Graph-only, Multi-hop, Cascade, Iterative
+- **6 strategies**: Vector-only, Graph-only, Hybrid, Multi-hop, Cascade, Iterative
 - **Platform-aware retrieval**: Auto-detects AWS/Azure/GCP/SAP/Tanzu/PowerPlatform from queries
 - **Knowledge graph integration**: Queries use cases, ADRs, reference architectures, and platform services
-- **Entity graph cache**: LRU eviction (500 entries, 1h TTL) with REST API for monitoring
+- **Entity graph cache**: LRU eviction (500 entries, 1h TTL) with distributed Redis pub/sub invalidation and REST API for monitoring
 - **4 fusion methods**: RRF, Score-normalized, Weighted, Combined
 - **5 rerank providers**: Cohere, BGE, SentenceTransformers, Jina, LlamaIndex
 - **6 citation styles**: Parenthetical, Verbatim, Footnote, Highlight, Structured, Diagram
@@ -90,14 +92,18 @@ This system answers complex engineering questions by reasoning over your codebas
 ### 🧠 Cognitive Agents
 - **Planner** — Detects intent (design/explain/troubleshoot/optimize), decomposes tasks, assigns tools
 - **Retriever** — Parallel, sequential, cascade, and adaptive retrieval with in-memory caching
-- **Reasoner** — Direct, chain-of-thought, tree-of-thoughts, reflection, and critique modes
+- **Reasoner** — **Real multi-call modes**: Direct, Chain-of-Thought, Tree-of-Thoughts (3 parallel LLM calls + synthesis), Reflection (2-pass self-critique), Critique (post-answer evaluation). Streaming token output.
 - **Validator** — Checks accuracy, coherence, completeness, and safety of responses
 
-### ⚙️ Orchestration Engine
-- State-driven loop: `Plan → Retrieve → Reason → Execute`
+### ⚙️ Orchestration Engine (Self-Correcting)
+- **Closed-loop execution**: `Plan → [Retrieve‖Tool] → Analyze → Reason → Validate → (Re-Plan if score < threshold)`
 - **5 execution modes**: Iterative, Parallel, Sequential, Branching, Recursive
+- **Topological sort** wave execution (steps declare dependencies, tiers auto-computed via Kahn's algorithm)
+- **Validation feedback loop**: Answers below quality threshold trigger automatic re-planning
+- **LLM call deduplication**: Citation-aware reasoning skips redundant faithfulness checks
+- **Redis-backed state persistence**: Execution snapshots for crash recovery and resumption
 - Retry logic with exponential backoff
-- Streaming execution with step-by-step progress yields
+- Streaming execution with token-level progress yields
 
 ### 🖼️ Multimodal & Diagrams
 - Vision Language Model (VLM) processor for architecture diagrams
@@ -118,14 +124,14 @@ This system answers complex engineering questions by reasoning over your codebas
 ### 📥 Ingestion Pipeline
 - **7 source types**: Git repositories, Documents, Tickets, Telemetry, Knowledge Base, Architecture, Requirements
 - Full pipeline: Collect → Normalize → Parse → Chunk → Enrich → Embed → Index
-- Code chunking with entity extraction (Python, JavaScript, TypeScript, Go, Rust, Java, Kotlin)
+- Code chunking with AST-aware entity extraction (Python, JavaScript, TypeScript, Go, Rust, Java, Kotlin — tree-sitter for JS/TS/Go/Java)
 - Structural and hierarchical chunking for markdown
-- **Tooling chunkers**: Kubernetes manifests, Helm charts, Dockerfiles, GraphQL schemas
-- **Unified Ingestion**: 33 artifact types, 24 handlers, platform extension architecture
+- **Tooling chunkers**: Kubernetes manifests, Helm charts, Dockerfiles, GraphQL schemas, Istio configurations
+- **Unified Ingestion**: 40 artifact types, 27 handlers (incl. Confluence, SAP MTA/CDS/CAP/XSUAA), platform extension architecture
 - **Platform Adapters**: SAP BTP (MTA, CDS, CAP, XSUAA), Power Platform, AWS, Azure
 
 ### 🔧 Tool System (MCP)
-- **30+ tools** exposed via Model Context Protocol
+- **69 tools** exposed via Model Context Protocol
 - **Tool Categories**: Search, Reasoning, Graph, Code Analysis, Infrastructure, Multi-modal
 - **Tooling Search**: Kubernetes, Helm, Docker, GraphQL, Istio
 - **CodeGraph**: Find callers, callees, dead code, complexity, class hierarchy
@@ -229,7 +235,7 @@ Full API reference: [docs/api.md](docs/api.md)
 
 ## Configuration
 
-All settings are loaded from environment variables. See [docs/configuration.md](docs/configuration.md) for the complete reference (119 variables).
+All settings are loaded from environment variables. See [docs/configuration.md](docs/configuration.md) for the complete reference (126 variables).
 
 **Required for production:**
 
@@ -260,9 +266,9 @@ export LLM_API_KEY=your-api-key
 ├── multimodal/         # VLM processor and IR builder
 ├── retrieval/          # Hybrid retrieval, reranking, citations, fusion
 ├── ui/                 # UI sketch retrieval, ColPali, SAP knowledge
-├── tools/              # Tool registry (13 tools via MCP)
+├── tools/              # Tool registry (69 tools via MCP)
 ├── docs/               # Architecture, API, deployment, configuration docs
-└── tests/              # 506 unit, integration and E2E tests
+└── tests/              # 713 unit, integration and E2E tests
 ```
 
 ---
@@ -298,15 +304,18 @@ python -m pytest tests/ -v
 ./eis.py test --file test_retrieval.py     # Retrieval layer
 ./eis.py test --unit                       # Unit tests only
 ./eis.py test --keyword Health             # Tests matching keyword
+./eis.py eval                       # Run evaluation pipeline
+./eis.py eval --limit 3             # Run first 3 test cases
+./eis.py eval --case tc001           # Run specific test case
 ```
 
-**684 tests, all passing (662 unit/integration + 22 claim-verification).**
+**713+ tests (113/114 claim tests passing).**
 
 ---
 
 ## Documentation
 
-- [API Reference](docs/api.md) — All 40+ endpoints with examples
+- [API Reference](docs/api.md) — All 103+ endpoints with examples
 - [Architecture](docs/architecture.md) — System design and layers
 - [Deployment](docs/deployment.md) — Docker, Kubernetes, production setup
 - [Configuration](docs/configuration.md) — Complete env var reference
@@ -319,9 +328,10 @@ python -m pytest tests/ -v
 
 | Version | Highlights |
 |---|---|
-| **v5.0** | Production-quality refactor: all 22 README claims verified by tests, 17 critical bugs fixed, real LLM reasoning (5 modes), Louvain GraphRAG, ValidatorAgent wired, wave-based orchestration, APOC-free Cypher, /metrics endpoint, TraceMiddleware, 684 tests |
-| **v4.0** | Comprehensive architecture audit (15 modules documented), 560 tests, 119 config fields, ~70 MCP tools, GraphRAG pipeline, ColPali, Confluence/WebDAV integration |
-| **v3.2** | Full PDLC coverage (9 phases, 71 MCP tools), PDLC-aware prompts, platform-agnostic architecture, new tool modules (ideation, requirements, testing, deployment, observability, feedback, day2), MutationTester |
+| **v6.0** | Self-correcting orchestration: validation feedback loop with topological-sort wave execution, real multi-call reasoning (ToT with 3 parallel calls, Reflect 2-pass, Critique separate eval), streaming token output, distributed entity cache invalidation (Redis pub/sub), execution state persistence, token budget controls, AST-aware chunking for JS/TS/Go/Java, dynamic knowledge graph CRUD, 7 new artifact types (40 total), automated evaluation pipeline (`./eis.py eval`) |
+| **v5.0** | Production-quality refactor: all 22 README claims verified by tests, 17 architecture fixes, real LLM reasoning (5 modes), Louvain GraphRAG, ValidatorAgent wired, wave-based orchestration, APOC-free Cypher, /metrics endpoint, TraceMiddleware, 713 tests |
+| **v4.0** | Comprehensive architecture audit (15 modules documented), 560 tests, 126 config fields, 69 MCP tools, GraphRAG pipeline, ColPali, Confluence/WebDAV integration |
+| **v3.2** | Full PDLC coverage (9 phases, 69 MCP tools), PDLC-aware prompts, platform-agnostic architecture, new tool modules (ideation, requirements, testing, deployment, observability, feedback, day2), MutationTester |
 | **v3.1** | Multi-platform adapters (AWS, Azure, GCP), platform-aware retrieval, knowledge graph integration (use cases, ADRs, reference architectures), 382 tests |
 | **v3.0** | Python 3.12+, pyproject.toml, Diagram Qdrant/FalkorDB indexing, UI sketch retrieval, Mermaid parser, ColPali integration, ColBERT support, Diagram citations |
 | **v2.4** | Entity graph cache, lazy retriever init, config consolidation, input validation, Cypher injection prevention, logging, CORS config, embedding cache |

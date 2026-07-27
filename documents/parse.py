@@ -303,4 +303,4 @@ def is_llama_index_available() -> bool:
 
 
 def is_docling_available() -> bool:
-    return True
+    return DOCLING_AVAILABLE

@@ -118,8 +118,8 @@ class DiagramQdrantIndexer:
 
         try:
             await self.create_collection()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("create_collection failed (non-critical): %s", e)
 
         try:
             embedding = await embedder.aget_embedding(content)
@@ -339,8 +339,8 @@ class DiagramGraphIndexer:
                     json={"query": cypher, "params": props},
                     timeout=30.0,
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to index relationship %s->%s: %s", from_name, to_name, e)
 
         return {"indexed": indexed, "doc_id": doc_id}
 
@@ -367,8 +367,8 @@ class DiagramGraphIndexer:
             if resp.status_code == 200:
                 data = resp.json()
                 return data.get("results", [])
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Graph search by entity failed for %s: %s", entity_name, e)
         return []
 
 

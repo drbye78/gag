@@ -278,3 +278,201 @@ async def codegraph_index_markdown(request: CodeGraphIndexMarkdownRequest):
     from retrieval.code_graph import index_markdown_content
     result = await index_markdown_content(content=request.content, source_name=request.source_name or "document.md")
     return CodeGraphIndexResponse(source="markdown", success=result.get("success", False), error=result.get("error"))
+
+
+@router.post("/codegraph/index/confluence", response_model=CodeGraphIndexResponse, dependencies=[Depends(require_authenticated)])
+async def codegraph_index_confluence(request: CodeGraphIndexConfluenceRequest):
+    from retrieval.code_graph import index_confluence_page
+    try:
+        result = await index_confluence_page(
+            base_url=request.base_url,
+            page_id=request.page_id,
+            email=request.email,
+            api_token=request.api_token,
+        )
+        return CodeGraphIndexResponse(
+            source="confluence",
+            success=result.get("success", False),
+            error=result.get("error"),
+        )
+    except Exception as e:
+        return CodeGraphIndexResponse(source="confluence", success=False, error=str(e))
+
+
+@router.post("/codegraph/index/confluence/space", response_model=CodeGraphIndexConfluenceSpaceResponse, dependencies=[Depends(require_authenticated)])
+async def codegraph_index_confluence_space(request: CodeGraphIndexConfluenceSpaceRequest):
+    from retrieval.code_graph import index_confluence_page
+    try:
+        import aiohttp
+        auth = aiohttp.BasicAuth(request.email, request.api_token)
+        space_url = f"{request.base_url.rstrip('/')}/rest/api/content?spaceKey={request.space_key}&expand=ancestors&limit=100"
+        pages_indexed = 0
+        errors: list[str] = []
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(space_url, auth=auth) as resp:
+                if resp.status != 200:
+                    return CodeGraphIndexConfluenceSpaceResponse(
+                        source="confluence",
+                        space_key=request.space_key,
+                        success=False,
+                        errors=[f"Confluence API: {resp.status}"],
+                    )
+                data = await resp.json()
+                results = data.get("results", [])
+
+            for page in results:
+                pid = page.get("id", "")
+                if not pid:
+                    continue
+                try:
+                    result = await index_confluence_page(
+                        base_url=request.base_url,
+                        page_id=pid,
+                        email=request.email,
+                        api_token=request.api_token,
+                    )
+                    if result.get("success"):
+                        pages_indexed += 1
+                    else:
+                        errors.append(f"Page {pid}: {result.get('error', 'unknown')}")
+                except Exception as exc:
+                    errors.append(f"Page {pid}: {exc}")
+
+        return CodeGraphIndexConfluenceSpaceResponse(
+            source="confluence",
+            space_key=request.space_key,
+            success=pages_indexed > 0,
+            pages_indexed=pages_indexed,
+            errors=errors,
+        )
+    except Exception as e:
+        return CodeGraphIndexConfluenceSpaceResponse(
+            source="confluence",
+            space_key=request.space_key,
+            success=False,
+            errors=[str(e)],
+        )
+
+
+@router.post("/codegraph/index/confluence/tree", response_model=CodeGraphIndexConfluenceTreeResponse, dependencies=[Depends(require_authenticated)])
+async def codegraph_index_confluence_tree(request: CodeGraphIndexConfluenceTreeRequest):
+    from retrieval.code_graph import index_confluence_page
+    try:
+        import aiohttp
+        auth = aiohttp.BasicAuth(request.email, request.api_token)
+        pages_indexed = 0
+        attachments_indexed = 0
+
+        async with aiohttp.ClientSession() as session:
+            queue: list[str] = [request.page_id]
+            visited: set[str] = set()
+
+            while queue and len(visited) < (2 ** request.depth):
+                current_id = queue.pop(0)
+                if current_id in visited:
+                    continue
+                visited.add(current_id)
+
+                result = await index_confluence_page(
+                    base_url=request.base_url,
+                    page_id=current_id,
+                    email=request.email,
+                    api_token=request.api_token,
+                )
+                if result.get("success"):
+                    pages_indexed += 1
+                    attachments_indexed += result.get("plantuml_blocks_found", 0) + result.get("drawio_blocks_found", 0)
+
+                if request.include_attachments:
+                    attach_url = f"{request.base_url.rstrip('/')}/rest/api/content/{current_id}/child/attachment?limit=100"
+                    try:
+                        async with session.get(attach_url, auth=auth) as aresp:
+                            if aresp.status == 200:
+                                adata = await aresp.json()
+                                attachments_indexed += len(adata.get("results", []))
+                    except Exception:
+                        pass
+
+                child_url = f"{request.base_url.rstrip('/')}/rest/api/content/{current_id}/child/page?limit=100"
+                try:
+                    async with session.get(child_url, auth=auth) as cresp:
+                        if cresp.status == 200:
+                            cdata = await cresp.json()
+                            for child in cdata.get("results", []):
+                                cid = child.get("id", "")
+                                if cid and cid not in visited:
+                                    queue.append(cid)
+                except Exception:
+                    pass
+
+        return CodeGraphIndexConfluenceTreeResponse(
+            source="confluence",
+            root_page_id=request.page_id,
+            success=pages_indexed > 0,
+            pages_indexed=pages_indexed,
+            attachments_indexed=attachments_indexed,
+        )
+    except Exception:
+        return CodeGraphIndexConfluenceTreeResponse(
+            source="confluence",
+            root_page_id=request.page_id,
+            success=False,
+            pages_indexed=0,
+            attachments_indexed=0,
+        )
+
+
+@router.post("/codegraph/index/confluence/page", response_model=CodeGraphIndexConfluencePageResponse, dependencies=[Depends(require_authenticated)])
+async def codegraph_index_confluence_page(request: CodeGraphIndexConfluencePageRequest):
+    from retrieval.code_graph import index_confluence_page
+    try:
+        import aiohttp
+        result = await index_confluence_page(
+            base_url=request.base_url,
+            page_id=request.page_id,
+            email=request.email,
+            api_token=request.api_token,
+        )
+
+        attachments_count = 0
+        children_count = 0
+
+        auth = aiohttp.BasicAuth(request.email, request.api_token)
+        async with aiohttp.ClientSession() as session:
+            if request.include_attachments:
+                attach_url = f"{request.base_url.rstrip('/')}/rest/api/content/{request.page_id}/child/attachment?limit=100"
+                try:
+                    async with session.get(attach_url, auth=auth) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            attachments_count = len(data.get("results", []))
+                except Exception:
+                    pass
+
+            if request.include_children:
+                for _depth in range(request.children_depth):
+                    child_url = f"{request.base_url.rstrip('/')}/rest/api/content/{request.page_id}/child/page?limit=100"
+                    try:
+                        async with session.get(child_url, auth=auth) as resp:
+                            if resp.status == 200:
+                                data = await resp.json()
+                                children_count += len(data.get("results", []))
+                    except Exception:
+                        break
+
+        return CodeGraphIndexConfluencePageResponse(
+            source="confluence",
+            page_id=request.page_id,
+            success=result.get("success", False),
+            indexed=result.get("success", False),
+            attachments_count=attachments_count,
+            children_count=children_count,
+        )
+    except Exception:
+        return CodeGraphIndexConfluencePageResponse(
+            source="confluence",
+            page_id=request.page_id,
+            success=False,
+            indexed=False,
+        )

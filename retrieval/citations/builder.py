@@ -113,4 +113,29 @@ class CitationBuilder:
                 if diagram_sources:
                     diag_parts = [f"[{s.source_name}:{s.content[:100]}...]" for s in diagram_sources[:3]]
                     return f"{answer}\n\nDiagrams: {' '.join(diag_parts)}"
+        elif self.style == CitationStyle.STRUCTURED:
+            if sources:
+
+                def _format_location(src: CitationSource) -> str:
+                    if src.page is not None:
+                        return f"p.{src.page}"
+                    if src.line_start is not None:
+                        end = src.line_end if src.line_end is not None else src.line_start
+                        return f"L{src.line_start}-{end}"
+                    if src.url:
+                        return src.url
+                    return "N/A"
+
+                lines = [
+                    answer,
+                    "\n## Sources\n",
+                    "| # | Source | Type | Location | Score |",
+                    "|---|--------|------|----------|-------|",
+                ]
+                for i, src in enumerate(sources, 1):
+                    location = _format_location(src)
+                    lines.append(
+                        f"| {i} | {src.source_name} | {src.source_type} | {location} | {src.score:.2f} |"
+                    )
+                return "\n".join(lines)
         return answer

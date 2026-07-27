@@ -5,9 +5,12 @@ Implements parallel, cascade, iterative retrieval strategies
 with reasoning-guided query refinement.
 """
 
+import logging
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 from retrieval.classifier import (
     QueryClassifier,
@@ -87,136 +90,102 @@ class HybridRetriever:
         self._graphql_retriever: Optional[Any] = None
         self._istio_retriever: Optional[Any] = None
 
+    def _lazy_get(self, name: str, factory, setting_flag=None):
+        """Generic lazy initializer for retriever properties.
+
+        Args:
+            name: Instance attribute name for caching
+            factory: Callable that creates the retriever instance
+            setting_flag: Optional settings attribute name to gate initialization
+        Returns:
+            The cached or newly created retriever instance, or None if gated
+        """
+        if setting_flag is not None:
+            from core.config import get_settings
+            if not getattr(get_settings(), setting_flag, False):
+                return None
+        val = getattr(self, name, None)
+        if val is None:
+            val = factory()
+            setattr(self, name, val)
+        return val
+
     # Lazy retriever properties
     @property
     def docs_retriever(self):
-        if self._docs_retriever is None:
-            self._docs_retriever = get_docs_retriever()
-        return self._docs_retriever
+        return self._lazy_get('_docs_retriever', get_docs_retriever)
 
     @property
     def code_retriever(self):
-        if self._code_retriever is None:
-            self._code_retriever = get_code_retriever()
-        return self._code_retriever
+        return self._lazy_get('_code_retriever', get_code_retriever)
 
     @property
     def graph_retriever(self):
-        if self._graph_retriever is None:
-            self._graph_retriever = get_graph_retriever()
-        return self._graph_retriever
+        return self._lazy_get('_graph_retriever', get_graph_retriever)
 
     @property
     def code_graph_retriever(self):
-        if self._code_graph_retriever is None:
-            self._code_graph_retriever = get_code_graph_retriever()
-        return self._code_graph_retriever
+        return self._lazy_get('_code_graph_retriever', get_code_graph_retriever)
 
     @property
     def entity_centric_retriever(self):
-        if self._entity_centric_retriever is None:
-            self._entity_centric_retriever = get_entity_centric_retriever()
-        return self._entity_centric_retriever
+        return self._lazy_get('_entity_centric_retriever', get_entity_centric_retriever)
 
     @property
     def reranker(self):
-        if self._reranker is None:
-            self._reranker = get_rerank_pipeline()
-        return self._reranker
+        return self._lazy_get('_reranker', get_rerank_pipeline)
 
     @property
     def entity_reasoning(self):
-        if self._entity_reasoning is None:
-            self._entity_reasoning = get_entity_aware_reasoning_engine()
-        return self._entity_reasoning
+        return self._lazy_get('_entity_reasoning', get_entity_aware_reasoning_engine)
 
     @property
     def iterative_reasoning(self):
-        if self._iterative_reasoning is None:
-            self._iterative_reasoning = get_iterative_reasoning_engine()
-        return self._iterative_reasoning
+        return self._lazy_get('_iterative_reasoning', get_iterative_reasoning_engine)
 
     @property
     def colbert_retriever(self) -> Optional[Any]:
-        from core.config import get_settings
-
-        settings = get_settings()
-        if not settings.colbert_enabled:
-            return None
-        if self._colbert_retriever is None:
-            self._colbert_retriever = get_colbert_search_client()
-        return self._colbert_retriever
+        return self._lazy_get('_colbert_retriever', get_colbert_search_client, 'colbert_enabled')
 
     @property
     def diagram_retriever(self) -> Optional[Any]:
-        from core.config import get_settings
-
-        settings = get_settings()
-        if not settings.diagram_index_enabled:
-            return None
-        if self._diagram_retriever is None:
-            from retrieval.diagram import get_diagram_retriever
-            self._diagram_retriever = get_diagram_retriever()
-        return self._diagram_retriever
+        from retrieval.diagram import get_diagram_retriever
+        return self._lazy_get('_diagram_retriever', get_diagram_retriever, 'diagram_index_enabled')
 
     @property
     def ui_retriever(self) -> Optional[Any]:
-        from core.config import get_settings
-
-        settings = get_settings()
-        if not settings.ui_sketch_enabled:
-            return None
-        if self._ui_retriever is None:
-            from ui.retriever import get_ui_retriever
-            self._ui_retriever = get_ui_retriever()
-        return self._ui_retriever
+        from ui.retriever import get_ui_retriever
+        return self._lazy_get('_ui_retriever', get_ui_retriever, 'ui_sketch_enabled')
 
     @property
     def colpali_retriever(self) -> Optional[Any]:
-        from core.config import get_settings
-
-        settings = get_settings()
-        if not settings.colpali_enabled:
-            return None
-        if self._colpali_retriever is None:
-            from ui.colpali_integration import UISketchVisualIndexer
-            self._colpali_retriever = UISketchVisualIndexer()
-        return self._colpali_retriever
+        from ui.colpali_integration import UISketchVisualIndexer
+        return self._lazy_get('_colpali_retriever', UISketchVisualIndexer, 'colpali_enabled')
 
     @property
     def kubernetes_retriever(self) -> Optional[Any]:
-        if self._kubernetes_retriever is None:
-            from retrieval.tooling.kubernetes import get_kubernetes_retriever
-            self._kubernetes_retriever = get_kubernetes_retriever()
-        return self._kubernetes_retriever
+        from retrieval.tooling.kubernetes import get_kubernetes_retriever
+        return self._lazy_get('_kubernetes_retriever', get_kubernetes_retriever)
 
     @property
     def helm_retriever(self) -> Optional[Any]:
-        if self._helm_retriever is None:
-            from retrieval.tooling.helm import get_helm_retriever
-            self._helm_retriever = get_helm_retriever()
-        return self._helm_retriever
+        from retrieval.tooling.helm import get_helm_retriever
+        return self._lazy_get('_helm_retriever', get_helm_retriever)
 
     @property
     def dockerfile_retriever(self) -> Optional[Any]:
-        if self._dockerfile_retriever is None:
-            from retrieval.tooling.dockerfile import get_dockerfile_retriever
-            self._dockerfile_retriever = get_dockerfile_retriever()
-        return self._dockerfile_retriever
+        from retrieval.tooling.dockerfile import get_dockerfile_retriever
+        return self._lazy_get('_dockerfile_retriever', get_dockerfile_retriever)
 
     @property
     def graphql_retriever(self) -> Optional[Any]:
-        if self._graphql_retriever is None:
-            from retrieval.tooling.graphql import get_graphql_retriever
-            self._graphql_retriever = get_graphql_retriever()
-        return self._graphql_retriever
+        from retrieval.tooling.graphql import get_graphql_retriever
+        return self._lazy_get('_graphql_retriever', get_graphql_retriever)
 
     @property
     def istio_retriever(self) -> Optional[Any]:
-        if self._istio_retriever is None:
-            from retrieval.tooling.istio import get_istio_retriever
-            self._istio_retriever = get_istio_retriever()
-        return self._istio_retriever
+        from retrieval.tooling.istio import get_istio_retriever
+        return self._lazy_get('_istio_retriever', get_istio_retriever)
 
     async def link_query_entities(
         self,
@@ -659,16 +628,16 @@ class HybridRetriever:
                     query, limit=limit
                 )
                 colbert_results = colbert_result.get("results", []) if isinstance(colbert_result, dict) else []
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("colbert search failed: %s", e)
 
         diagram_results = []
         if settings.diagram_index_enabled and self.diagram_retriever:
             try:
                 diagram_result = await self.diagram_retriever.search_diagrams(query, limit=limit, use_vector=True)
                 diagram_results = diagram_result.get("results", [])
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("diagram search failed: %s", e)
 
         ui_results = []
         if settings.ui_sketch_enabled and self.ui_retriever:
@@ -677,8 +646,8 @@ class HybridRetriever:
                     element_types=[], limit=limit
                 )
                 ui_results = ui_result if isinstance(ui_result, list) else []
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("ui_sketch search failed: %s", e)
 
         colpali_results = []
         if settings.colpali_enabled and self.colpali_retriever:
@@ -687,8 +656,8 @@ class HybridRetriever:
                     query, limit=limit
                 )
                 colpali_results = colpali_result.get("results", []) if isinstance(colpali_result, dict) else []
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("colpali search failed: %s", e)
 
         source_results = {
             "graph": graph_result.get("results", []),
@@ -893,8 +862,8 @@ Generate a single refined search query (max 50 words) that addresses gaps in the
             refined = extract_text(response).strip()
             if refined and refined != query:
                 return refined[:500]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("LLM query refinement failed: %s", e)
 
         # Fallback: keyword expansion from results
         context_from_results = " ".join(
@@ -1079,9 +1048,13 @@ class EnhancedHybridRetriever(HybridRetriever):
             )
             reasoning_result = entity_result
         elif use_iterative:
+
+            async def _iterative_search(q: str) -> list:
+                result = await self.search(q, limit=limit, use_reasoning=True)
+                return result.get("results", [])
+
             iterative_result = await self.iterative_reasoning.retrieve(
-                query,
-                lambda q: self._sync_search(q, limit),
+                query, _iterative_search
             )
             reasoning_result = iterative_result
         else:
@@ -1108,7 +1081,7 @@ class EnhancedHybridRetriever(HybridRetriever):
             "graph_paths": reasoning_result.get("graph_paths", {})
             if reasoning_result
             else {},
-            "cache_stats": self.entity_cache.get_stats(),
+            "cache_stats": await self.entity_cache.get_stats(),
             "took_ms": took,
         }
 
@@ -1124,7 +1097,7 @@ class EnhancedHybridRetriever(HybridRetriever):
         graph: Dict[str, List[Any]] = {}
 
         for name in entity_names:
-            cached = self.entity_cache.get(name)
+            cached = await self.entity_cache.get(name)
             if cached:
                 graph[name] = cached.relations
                 continue
@@ -1139,9 +1112,10 @@ class EnhancedHybridRetriever(HybridRetriever):
                     related_entities=[r.get("target", "") for r in relations],
                     ttl=self.entity_cache.default_ttl,
                 )
-                self.entity_cache.put(name, entry)
+                await self.entity_cache.put(name, entry)
                 graph[name] = relations
-            except Exception:
+            except Exception as e:
+                logger.debug("entity relation fetch failed for %s: %s", name, e)
                 # DB unavailable — leave empty list
                 graph[name] = []
 
@@ -1169,40 +1143,16 @@ class EnhancedHybridRetriever(HybridRetriever):
                 names.append(clean)
         return names
 
-    def invalidate_entity_cache(self, entity_name: Optional[str] = None) -> bool:
+    async def invalidate_entity_cache(self, entity_name: Optional[str] = None) -> bool:
         """Invalidate entity cache entries."""
         if entity_name:
-            return self.entity_cache.invalidate(entity_name)
-        self.entity_cache.clear()
+            return await self.entity_cache.invalidate(entity_name)
+        await self.entity_cache.clear()
         return True
 
-    def get_entity_cache_stats(self) -> Dict[str, Any]:
+    async def get_entity_cache_stats(self) -> Dict[str, Any]:
         """Return cache statistics for monitoring."""
-        return self.entity_cache.get_stats()
-
-    def _sync_search(
-        self,
-        query: str,
-        limit: int,
-    ) -> List[Dict[str, Any]]:
-        """Synchronous search wrapper for iterative reasoning engine.
-
-        Runs the async search in a sync context via asyncio.run.
-        """
-        import asyncio
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # Already in an async context — return empty and let the
-                # caller use the async search_with_enhanced_reasoning directly.
-                return []
-            result = loop.run_until_complete(
-                self.search(query, limit=limit, use_reasoning=True)
-            )
-            return result.get("results", [])
-        except Exception:
-            return []
-
+        return await self.entity_cache.get_stats()
 
 _enhanced_hybrid_retriever: Optional[EnhancedHybridRetriever] = None
 

@@ -284,7 +284,11 @@ class LongTermMemory:
                 await self._persist_entry(entry.entry_id)
                 synced["uploaded"] += 1
 
-        synced["downloaded"] = await self._load_recent(scope="global")
+        recent_entries = await self._load_recent(scope="global")
+        for entry in recent_entries:
+            if entry.entry_id not in self._entries:
+                self._entries[entry.entry_id] = entry
+                synced["downloaded"] += 1
         self._last_sync = time.time()
 
         return synced
@@ -294,6 +298,10 @@ class LongTermMemory:
         if not entry:
             return
 
+        # NOTE: Semantic search requires embeddings to be configured.
+        # Without a configured embedding provider, we omit the vector field
+        # and rely on keyword matching via payload fields. Qdrant supports
+        # non-vector collections for this use case.
         try:
             pool = get_http_pool()
             await pool.put(
@@ -302,7 +310,6 @@ class LongTermMemory:
                     "points": [
                         {
                             "id": entry_id,
-                            "vector": [],
                             "payload": {
                                 "tier": entry.tier,
                                 "scope": entry.scope,
@@ -310,6 +317,7 @@ class LongTermMemory:
                                 "value": json.dumps(entry.value),
                                 "metadata": entry.metadata,
                                 "created_at": entry.created_at,
+                                "search_mode": "keyword",
                             },
                         }
                     ]
@@ -346,7 +354,7 @@ class LongTermMemory:
             logger.warning("Error fetching from memory backend: %s", e)
         return None
 
-    async def _load_recent(self, scope: str) -> int:
+    async def _load_recent(self, scope: str) -> List[MemoryEntry]:
         try:
             pool = get_http_pool()
             response = await pool.post(
@@ -358,10 +366,25 @@ class LongTermMemory:
                 timeout=10.0,
             )
             if response.status_code == 200:
-                return len(response.json().get("result", []))
+                results = response.json().get("result", [])
+                entries = []
+                for point in results:
+                    payload = point.get("payload", {})
+                    entries.append(
+                        MemoryEntry(
+                            entry_id=point.get("id", ""),
+                            tier=payload.get("tier", "long_term"),
+                            scope=payload.get("scope", scope),
+                            key=payload.get("key", ""),
+                            value=json.loads(payload.get("value", "{}")),
+                            metadata=payload.get("metadata", {}),
+                            created_at=payload.get("created_at", 0),
+                        )
+                    )
+                return entries
         except Exception as e:
             logger.warning("Error loading recent from memory backend: %s", e)
-        return 0
+        return []
 
 
 class MemorySystem:
@@ -392,7 +415,7 @@ class MemorySystem:
             return await self.long_term.store(
                 f"project:{self.project}", key, value, metadata
             )
-        return ""
+        raise ValueError(f"Unknown memory tier: {tier}")
 
     async def recall(
         self,

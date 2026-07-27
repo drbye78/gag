@@ -389,7 +389,6 @@ class PowerPlatformAdapter(RecommendationMixin, PlatformAdapter):
   "location": "eastus",
   "state": "Enabled"
 }'''
-        return
 
 def register_powerplatform_adapter(registry=None):
     if registry:

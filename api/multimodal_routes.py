@@ -35,7 +35,7 @@ class EntityCacheInvalidateResponse(BaseModel):
 async def entity_cache_stats():
     from retrieval.hybrid import get_enhanced_hybrid_retriever
     retriever = get_enhanced_hybrid_retriever()
-    stats = retriever.get_entity_cache_stats()
+    stats = await retriever.get_entity_cache_stats()
     return EntityCacheStatsResponse(
         size=stats["size"], capacity=stats["capacity"], hit_rate=stats["hit_rate"],
         hits=stats["hits"], misses=stats["misses"], utilization_pct=stats["utilization_pct"],
@@ -47,7 +47,7 @@ async def entity_cache_stats():
 async def entity_cache_invalidate(request: EntityCacheInvalidateRequest):
     from retrieval.hybrid import get_enhanced_hybrid_retriever
     retriever = get_enhanced_hybrid_retriever()
-    success = retriever.invalidate_entity_cache(request.entity_name)
+    success = await retriever.invalidate_entity_cache(request.entity_name)
     return EntityCacheInvalidateResponse(
         invalidated=success, entity_name=request.entity_name,
         message="Cache cleared" if not request.entity_name else f"Invalidated '{request.entity_name}'",

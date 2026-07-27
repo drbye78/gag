@@ -1,6 +1,9 @@
+import logging
 from typing import List, Optional, Callable
 from dataclasses import dataclass
 from enum import Enum
+
+logger = logging.getLogger(__name__)
 
 from retrieval.rerank.base import BaseReranker, RerankResult, RerankProvider
 from retrieval.rerank.providers import (
@@ -75,7 +78,8 @@ class RerankPipeline:
         for provider, reranker in self._rerankers.items():
             try:
                 return await reranker.rerank(query, results, self.config.top_k)
-            except Exception:
+            except Exception as e:
+                logger.debug("Reranker %s failed: %s", provider, e)
                 continue
         return self._fallback_results(results)
 
@@ -99,7 +103,8 @@ class RerankPipeline:
                         }
                         for r in reranked
                     ]
-            except Exception:
+            except Exception as e:
+                logger.debug("Reranker %s failed: %s", provider, e)
                 continue
 
         return [
@@ -129,7 +134,8 @@ class RerankPipeline:
                     if r.node_id not in all_scores:
                         all_scores[r.node_id] = []
                     all_scores[r.node_id].append((r.score, r.content))
-            except Exception:
+            except Exception as e:
+                logger.debug("Reranker %s failed: %s", provider, e)
                 continue
 
         if not all_scores:

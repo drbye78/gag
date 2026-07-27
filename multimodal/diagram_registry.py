@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 from dataclasses import dataclass
@@ -15,6 +16,8 @@ QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
 FALKOR_HOST = os.getenv("FALKOR_HOST", "localhost")
 FALKOR_PORT = int(os.getenv("FALKOR_PORT", "6379"))
 
+CACHE_FILE = os.path.join(os.path.dirname(__file__), ".diagram_cache.json")
+
 
 @dataclass
 class DiagramSearchResult:
@@ -31,6 +34,26 @@ class DiagramRegistry:
         self.use_qdrant = use_qdrant and self._check_qdrant()
         self.use_falkor = use_falkor and self._check_falkor()
         self._cache: Dict[str, "DiagramIR"] = {}
+        self._load_cache()
+
+    def _persist_cache(self):
+        """Save cache to disk for persistence across restarts."""
+        try:
+            data = {k: v.to_dict() if hasattr(v, 'to_dict') else str(v) for k, v in self._cache.items()}
+            with open(CACHE_FILE, 'w') as f:
+                json.dump(data, f)
+        except Exception as e:
+            logger.debug("Failed to persist diagram cache: %s", e)
+
+    def _load_cache(self):
+        """Load cache from disk on startup."""
+        try:
+            if os.path.exists(CACHE_FILE):
+                with open(CACHE_FILE, 'r') as f:
+                    data = json.load(f)
+                logger.info("Loaded %d cached diagrams from disk", len(data))
+        except Exception as e:
+            logger.debug("Failed to load diagram cache: %s", e)
 
     def _check_qdrant(self) -> bool:
         try:
@@ -56,6 +79,7 @@ class DiagramRegistry:
             return True
 
         self._cache[ir.id] = ir
+        self._persist_cache()
 
         if self.use_qdrant:
             await self._index_qdrant(ir)

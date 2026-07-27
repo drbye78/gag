@@ -25,7 +25,7 @@ You have access to structured knowledge:
 - Architecture Decision Records (5+ ADRs)
 - Reference architectures (8 patterns)
 - Platform-specific constraints and best practices
-- 71 MCP tools for specialized tasks
+- 69 MCP tools for specialized tasks
 
 CRITICAL RULES:
 - Use knowledge graphs (use cases, ADRs, patterns) as primary reference
@@ -90,7 +90,7 @@ Think step-by-step internally before answering.
 Do not expose chain-of-thought unless explicitly requested."""
 
 
-TOOL_USAGE = """You have 71 MCP tools. Use them strategically:
+TOOL_USAGE = """You have 69 MCP tools. Use them strategically:
 
 SEARCH & RETRIEVAL:
 - search, hybrid_search: General knowledge

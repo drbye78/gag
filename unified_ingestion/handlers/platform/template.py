@@ -108,21 +108,6 @@ class MyArtifact2Handler(Handler):
         except Exception as e:
             logger.warning(f"Artifact2 parsing failed for {path}: {e}")
             return HandlerResult(success=False, chunks=[], error=str(e))
-        
-        filename = path.lower()
-        
-        if "artifact1" in filename:
-            handler: Handler = MyArtifact1Handler()
-        elif "artifact2" in filename:
-            handler = MyArtifact2Handler()
-        else:
-            return HandlerResult(
-                success=False,
-                chunks=[],
-                error=f"Unknown MyPlatform artifact: {path}",
-            )
-        
-        return await handler.handle(content, path, metadata)
 
 
 # Individual artifact handlers follow this pattern:

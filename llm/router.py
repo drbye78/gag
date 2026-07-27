@@ -1,6 +1,8 @@
 import asyncio
 import json
+import logging
 from enum import Enum
+from threading import local
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 import httpx
@@ -55,6 +57,9 @@ class ChatCompletionResponse:
             choices=data.get("choices", []),
             usage=data.get("usage", {}),
         )
+
+
+logger = logging.getLogger(__name__)
 
 
 class LLMRouter:
@@ -138,6 +143,14 @@ class LLMRouter:
     ) -> ChatCompletionResponse:
         if self._circuit_is_open():
             raise RuntimeError("LLM circuit breaker is open — fast-failing after consecutive failures")
+
+        # ── Token budget check ──
+        budget = get_token_budget()
+        if budget and budget.exceeded:
+            raise RuntimeError(
+                f"Token budget exceeded ({budget.used_tokens}/{budget.max_tokens} tokens used)"
+            )
+
         if temperature is not None:
             if not isinstance(temperature, (int, float)):
                 raise ValueError("temperature must be a number")
@@ -167,7 +180,15 @@ class LLMRouter:
                 )
                 response.raise_for_status()
                 self._record_success()
-                return ChatCompletionResponse.from_dict(response.json())
+                result = ChatCompletionResponse.from_dict(response.json())
+
+                # ── Token budget tracking ──
+                if budget:
+                    # Estimate token usage from prompt + response
+                    est_tokens = len(prompt.split()) + len(str(result.text).split())
+                    budget.consume(est_tokens)
+
+                return result
             except Exception as e:
                 self._record_failure()
                 if attempt == self.max_retries - 1:
@@ -213,11 +234,64 @@ class LLMRouter:
                     data = line[6:]
                     if data == "[DONE]":
                         break
-                    chunk = json.loads(data)
+                    try:
+                        chunk = json.loads(data)
+                    except json.JSONDecodeError:
+                        logger.debug("Malformed SSE chunk: %s", data[:100])
+                        continue
                     if "choices" in chunk and chunk["choices"]:
                         delta = chunk["choices"][0].get("delta", {})
                         if "content" in delta:
                             yield delta["content"]
+
+
+# ── Token Budget ──
+
+_token_budget_local = local()
+
+
+def get_token_budget() -> Optional['TokenBudget']:
+    """Get the current request's token budget, if set."""
+    return getattr(_token_budget_local, 'budget', None)
+
+
+class TokenBudget:
+    """Per-request token budget. Tracks token consumption across LLM calls."""
+
+    def __init__(self, max_tokens: int = 10000):
+        self.max_tokens = max_tokens
+        self.used_tokens = 0
+        self.call_count = 0
+
+    @property
+    def remaining(self) -> int:
+        return max(0, self.max_tokens - self.used_tokens)
+
+    @property
+    def exceeded(self) -> bool:
+        return self.used_tokens >= self.max_tokens
+
+    def consume(self, tokens: int) -> bool:
+        """Record token consumption. Returns True if within budget."""
+        self.used_tokens += tokens
+        self.call_count += 1
+        return not self.exceeded
+
+    def __enter__(self):
+        _token_budget_local.budget = self
+        return self
+
+    def __exit__(self, *args):
+        _token_budget_local.budget = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "max_tokens": self.max_tokens,
+            "used_tokens": self.used_tokens,
+            "remaining": self.remaining,
+            "exceeded": self.exceeded,
+            "call_count": self.call_count,
+        }
 
 
 from functools import lru_cache

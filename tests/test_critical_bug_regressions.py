@@ -44,12 +44,15 @@ def test_orchestrator_constructs():
 
 
 # Bug 4: Parallel execution drops intermediate context
+# v6.0: Replaced _execute_plan_waves with topological sort + tier execution
 @pytest.mark.asyncio
-async def test_wave_based_execution_exists():
-    """OrchestrationEngine must have _execute_plan_waves for context propagation."""
+async def test_tier_based_execution_exists():
+    """OrchestrationEngine must have _compute_tiers and _execute_tier for context propagation."""
     from agents.orchestration import OrchestrationEngine
-    assert hasattr(OrchestrationEngine, "_execute_plan_waves"), \
-        "_execute_plan_waves method missing — parallel context propagation not fixed"
+    assert hasattr(OrchestrationEngine, "_compute_tiers"), \
+        "_compute_tiers method missing — topological sort not available"
+    assert hasattr(OrchestrationEngine, "_execute_tier"), \
+        "_execute_tier method missing — tier execution not available"
 
 
 # Bug 5: APOC Cypher in GraphIndexer

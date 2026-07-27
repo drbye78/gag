@@ -78,12 +78,14 @@ Generate 5-10 realistic metrics for monitoring dashboards."""
         query: str,
         time_range: str
     ) -> List[Dict[str, Any]]:
+        logger.warning("LLM unavailable, using fallback for %s", self.name)
         return [
             {
                 "name": None,
                 "value": None,
                 "error": "LLM metrics unavailable",
                 "available": False,
+                "reliable": False,
             }
         ]
     
@@ -164,12 +166,14 @@ Generate 10 realistic log entries."""
         time_range: str,
         level: str
     ) -> List[Dict[str, Any]]:
+        logger.warning("LLM unavailable, using fallback for %s", self.name)
         return [
             {
                 "timestamp": "2024-01-01T00:00:00Z",
                 "level": level,
                 "message": f"Sample log from {sources[0]}",
                 "source": sources[0],
+                "reliable": False,
             }
         ]
     
@@ -244,9 +248,11 @@ Generate production-quality alert rules."""
         alert: Dict[str, Any],
         action: str
     ) -> Dict[str, Any]:
+        logger.warning("LLM unavailable, using fallback for %s", self.name)
         return {
             "action": action,
             "success": True,
+            "reliable": False,
         }
     
     def validate_input(self, input: Dict[str, Any]) -> bool:
@@ -319,7 +325,8 @@ For JSON: simple panel layout with metric expressions."""
         format: str,
         title: str
     ) -> Dict[str, Any]:
-        dashboard = {"title": title, "panels": []}
+        logger.warning("LLM unavailable, using fallback for %s", self.name)
+        dashboard = {"title": title, "panels": [], "reliable": False}
         
         for i, m in enumerate(metrics):
             dashboard["panels"].append({
@@ -408,6 +415,7 @@ Generate 5-10 realistic spans."""
         service: str,
         time_range: str
     ) -> List[Dict[str, Any]]:
+        logger.warning("LLM unavailable, using fallback for %s", self.name)
         return [
             {
                 "traceId": trace_id or "abc123",
@@ -416,6 +424,7 @@ Generate 5-10 realistic spans."""
                 "serviceName": service or "api",
                 "duration": 150,
                 "timestamp": time.time(),
+                "reliable": False,
             }
         ]
     
@@ -480,6 +489,7 @@ Calculate realistic values."""
             raise
     
     async def _track_slo_fallback(self, slo: Dict[str, Any]) -> Dict[str, Any]:
+        logger.warning("LLM unavailable, using fallback for %s", self.name)
         return {
             "name": slo.get("name", "availability"),
             "target": slo.get("target", 99.9),
@@ -489,6 +499,7 @@ Calculate realistic values."""
             "status": None,
             "error": "LLM SLO tracking unavailable",
             "available": False,
+            "reliable": False,
         }
     
     def validate_input(self, input: Dict[str, Any]) -> bool:
@@ -561,6 +572,7 @@ Use statistical methods: z-score, IQR, seasonal decomposition."""
         metrics: List[Dict[str, Any]],
         sensitivity: str
     ) -> List[Dict[str, Any]]:
+        logger.warning("LLM unavailable, using fallback for %s", self.name)
         anomalies = []
         
         threshold = {"low": 3.0, "medium": 2.5, "high": 2.0}.get(sensitivity, 2.5)
@@ -572,6 +584,7 @@ Use statistical methods: z-score, IQR, seasonal decomposition."""
                     "value": m.get("value"),
                     "expected": m.get("baseline"),
                     "severity": "medium",
+                    "reliable": False,
                 })
         
         return anomalies

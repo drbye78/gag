@@ -1,10 +1,10 @@
 """Unified ingestion handlers — lazy imports to avoid cascading dependencies."""
-from unified_ingestion.handlers.base import Handler, HandlerResult, Chunk
 from unified_ingestion.core.types import ArtifactType
+from unified_ingestion.handlers.base import Chunk, Handler, HandlerResult
 from unified_ingestion.handlers.registry import get_handler_registry
 
 try:
-    from unified_ingestion.optimize import with_retry, get_metrics_collector
+    from unified_ingestion.optimize import get_metrics_collector, with_retry
     OPTIMIZE_AVAILABLE = True
 except ImportError:
     OPTIMIZE_AVAILABLE = False
@@ -28,16 +28,35 @@ def register_handlers() -> None:
     registry = get_handler_registry()
 
     # Lazy imports — only loaded when handlers are actually registered
-    from unified_ingestion.handlers.document import DocumentHandler
-    from unified_ingestion.handlers.markdown import MarkdownHandler
-    from unified_ingestion.handlers.source_code import SourceCodeHandler
-    from unified_ingestion.handlers.config import ConfigHandler
-    from unified_ingestion.handlers.text import TextHandler
-    from unified_ingestion.handlers.k8s import K8sHandler
-    from unified_ingestion.handlers.diagram import DiagramHandler
-    from unified_ingestion.handlers.bpmn import BPMNHandler
     from unified_ingestion.handlers.api_spec import APISpecHandler
+    from unified_ingestion.handlers.bpmn import BPMNHandler
+    from unified_ingestion.handlers.config import ConfigHandler
+    from unified_ingestion.handlers.diagram import DiagramHandler
+    from unified_ingestion.handlers.document import DocumentHandler
     from unified_ingestion.handlers.graphql import GraphQLHandler
+    from unified_ingestion.handlers.html import HTMLHandler
+    from unified_ingestion.handlers.image import ImageHandler
+    from unified_ingestion.handlers.k8s import K8sHandler
+    from unified_ingestion.handlers.markdown import MarkdownHandler
+    from unified_ingestion.handlers.proto import GRPCProtoHandler
+    from unified_ingestion.handlers.source_code import SourceCodeHandler
+    from unified_ingestion.handlers.text import (
+        AsciiDocHandler,
+        INIHandler,
+        PlainTextHandler,
+        PropertiesHandler,
+        RSTHandler,
+        TextHandler,
+    )
+    from unified_ingestion.handlers.xml import XMLHandler
+    from unified_ingestion.handlers.confluence import ConfluenceAttachmentHandler
+    from unified_ingestion.handlers.platform.sap import (
+        CDSHandler as SAPCDSHandler,
+        CAPPackageHandler as SAPCAPHandler,
+        MTAHandler as SAPMTAHandler,
+        SecurityConfigHandler as SAPXSUAAHandler,
+    )
+    from unified_ingestion.handlers.platform.template import MyPlatformArtifactHandler
 
     registry.register(ArtifactType.DOCUMENT.value, _get_or_create(DocumentHandler))
     registry.register(ArtifactType.MARKDOWN.value, _get_or_create(MarkdownHandler))
@@ -63,6 +82,22 @@ def register_handlers() -> None:
     registry.register(ArtifactType.OPENAPI.value, _get_or_create(APISpecHandler))
     registry.register(ArtifactType.SWAGGER.value, _get_or_create(APISpecHandler))
     registry.register(ArtifactType.GRAPHQL.value, _get_or_create(GraphQLHandler))
+    registry.register(ArtifactType.IMAGE.value, _get_or_create(ImageHandler))
+    registry.register(ArtifactType.HTML.value, _get_or_create(HTMLHandler))
+    registry.register(ArtifactType.XML.value, _get_or_create(XMLHandler))
+    registry.register(ArtifactType.PLAINTEXT.value, _get_or_create(PlainTextHandler))
+    registry.register(ArtifactType.REStructuredText.value, _get_or_create(RSTHandler))
+    registry.register(ArtifactType.ASCIIDOC.value, _get_or_create(AsciiDocHandler))
+    registry.register(ArtifactType.PROPERTIES.value, _get_or_create(PropertiesHandler))
+    registry.register(ArtifactType.INI.value, _get_or_create(INIHandler))
+    registry.register(ArtifactType.GRPC_PROTO.value, _get_or_create(GRPCProtoHandler))
+    registry.register(ArtifactType.CONFLUENCE.value, _get_or_create(ConfluenceAttachmentHandler))
+    registry.register(ArtifactType.DRAWIO.value, _get_or_create(DiagramHandler))
+    registry.register(ArtifactType.SAP_MTA.value, _get_or_create(SAPMTAHandler))
+    registry.register(ArtifactType.SAP_CDS.value, _get_or_create(SAPCDSHandler))
+    registry.register(ArtifactType.SAP_CAP.value, _get_or_create(SAPCAPHandler))
+    registry.register(ArtifactType.SAP_XSUAA.value, _get_or_create(SAPXSUAAHandler))
+    registry.register(ArtifactType.TEMPLATE.value, _get_or_create(MyPlatformArtifactHandler))
 
 
 def get_handler(artifact_type: str) -> Handler:
@@ -78,19 +113,19 @@ def get_handler(artifact_type: str) -> Handler:
 
 
 __all__ = [
+    "APISpecHandler",
+    "BPMNHandler",
+    "Chunk",
+    "ConfigHandler",
+    "DiagramHandler",
+    "DocumentHandler",
+    "GraphQLHandler",
     "Handler",
     "HandlerResult",
-    "Chunk",
-    "DocumentHandler",
+    "K8sHandler",
     "MarkdownHandler",
     "SourceCodeHandler",
-    "ConfigHandler",
     "TextHandler",
-    "K8sHandler",
-    "DiagramHandler",
-    "BPMNHandler",
-    "APISpecHandler",
-    "GraphQLHandler",
-    "register_handlers",
     "get_handler",
+    "register_handlers",
 ]

@@ -39,6 +39,16 @@ All settings are loaded from environment variables. The `Settings` class in `cor
 | `LLM_MODEL` | `qwen-max` | Model name |
 | `LLM_API_KEY` | | API key for the LLM provider |
 
+## Orchestration
+
+| Variable | Default | Description |
+|---|---|---|
+| `VALIDATION_THRESHOLD` | `0.7` | Minimum validation score for convergence (0.0-1.0) |
+| `REQUIRE_CITATIONS` | `true` | Whether reasoning should include inline source citations |
+| `MAX_ITERATIONS` | `3` | Maximum re-planning iterations per query |
+| `REDIS_URL` | `redis://localhost:6379` | Redis URL for cache invalidation and state persistence |
+| `TOKEN_BUDGET` | `10000` | Per-request token budget limit (LLM calls blocked when exceeded) |
+
 ## Embeddings
 
 | Variable | Default | Description |

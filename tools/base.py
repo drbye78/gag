@@ -94,83 +94,61 @@ class PDLCBaseTool(BaseTool):
         )
 
 
-class ArchitectureEvaluator(BaseTool):
-    name = "architecture_evaluate"
-    description = (
-        "Evaluate architecture design for quality, consistency, and best practices"
-    )
-
-    PATTERNS_SCORES = {
-        "microservices": {"correctness": 0.85, "consistency": 0.9, "best_practices": 0.88},
-        "serverless": {"correctness": 0.9, "consistency": 0.85, "best_practices": 0.92},
-        "monolith": {"correctness": 0.95, "consistency": 0.95, "best_practices": 0.7},
-        "event-driven": {"correctness": 0.82, "consistency": 0.88, "best_practices": 0.85},
-        "cqrs": {"correctness": 0.88, "consistency": 0.82, "best_practices": 0.9},
-        "default": {"correctness": 0.8, "consistency": 0.8, "best_practices": 0.8},
-    }
-
-    async def execute(self, input: ToolInput) -> ToolOutput:
-        architecture_id = input.args.get("architecture_id", "")
-        criteria = input.args.get(
-            "criteria", ["correctness", "consistency", "best_practices"]
-        )
-
-        arch_lower = architecture_id.lower()
-        scores = {}
-        for c in criteria:
-            matched = False
-            for pattern, pattern_scores in self.PATTERNS_SCORES.items():
-                if pattern in arch_lower:
-                    scores[c] = pattern_scores.get(c, 0.8)
-                    matched = True
-                    break
-            if not matched:
-                scores[c] = self.PATTERNS_SCORES["default"].get(c, 0.8)
-
-        issues = []
-        recommendations = []
-
-        if scores.get("best_practices", 0) < 0.85:
-            issues.append("Architecture may not follow current best practices")
-            recommendations.append("Consider adopting modern architectural patterns")
-
-        if scores.get("consistency", 0) < 0.85:
-            issues.append("Architecture consistency could be improved")
-            recommendations.append("Standardize component interactions and data flow")
-
-        avg_score = sum(scores.values()) / len(scores) if scores else 0.8
-        if avg_score < 0.75:
-            issues.append("Overall architecture score below threshold")
-            recommendations.append("Review architecture against industry standards")
-
-        result = {
-            "architecture_id": architecture_id,
-            "scores": scores,
-            "issues": issues,
-            "recommendations": recommendations,
-        }
-
-        return ToolOutput(result=result, metadata={"evaluated": True})
-
-    def validate_input(self, input: Dict[str, Any]) -> bool:
-        return "architecture_id" in input
-
-
 class SecurityValidator(BaseTool):
     name = "security_validate"
     description = "Validate security aspects of code or architecture"
 
     VULNERABILITY_PATTERNS = [
+        # Hardcoded secrets
         (r"password\s*=\s*['\"][^'\"]{0,8}['\"]", "Hardcoded password detected"),
         (r"api[_-]?key\s*=\s*['\"][A-Za-z0-9]{20,}['\"]", "Potential hardcoded API key"),
+        (r"secret\s*=\s*['\"][^'\"]{0,12}['\"]", "Potential hardcoded secret"),
+        (r"token\s*=\s*['\"][A-Za-z0-9_\-]{20,}['\"]", "Potential hardcoded token"),
+        (r"aws[_-]?(access[_-]?key|secret)", "Potential AWS credential exposure"),
+        (r"(private[_-]?key|BEGIN\s+(RSA|DSA|EC)?\s*PRIVATE\s+KEY)", "Private key embedded in code"),
+        # Code injection
         (r"eval\s*\(", "Use of eval() is a security risk"),
         (r"exec\s*\(", "Use of exec() is a security risk"),
         (r"__import__\s*\(", "Dynamic imports can be a security risk"),
         (r"os\.system\s*\(", "Shell commands via os.system are risky"),
         (r"subprocess\.run\s*\([^,]+shell\s*=\s*True", "Shell injection vulnerability"),
+        (r"child_process\.exec\s*\(", "Shell injection via child_process.exec"),
+        (r"subprocess\.call\s*\([^,]+shell\s*=\s*True", "Shell injection via subprocess.call"),
+        # SQL injection
         (r"SELECT\s+\*\s+FROM", "SELECT * may expose sensitive data"),
         (r"GRANT\s+ALL", "Overly permissive database grant"),
+        (r"(INSERT|UPDATE|DELETE)\s+.*\+\s*", "Potential SQL injection via string concatenation"),
+        (r"f[\"'].*SELECT\s+.*\{", "Potential SQL injection via f-string formatting"),
+        (r"%s\s*.*SELECT|INSERT|UPDATE|DELETE", "Potential SQL injection via % formatting"),
+        (r"(?i)(union\s+select|or\s+1\s*=\s*1|drop\s+table)", "Potential SQL injection attack pattern"),
+        # XSS
+        (r"innerHTML\s*=", "innerHTML assignment may enable XSS"),
+        (r"document\.write\s*\(", "document.write may enable XSS"),
+        (r"\.html\s*\([^)]*\+", "jQuery .html() with concatenation may enable XSS"),
+        (r"dangerouslySetInnerHTML", "React dangerouslySetInnerHTML may enable XSS"),
+        (r"v-html\s*=", "Vue v-html directive may enable XSS"),
+        (r"<script[\s>]|javascript:|on\w+\s*=", "Potential XSS via script tag or event handler"),
+        # Path traversal
         (r"\.\.\/", "Potential path traversal"),
+        (r"\.\.\\\\", "Potential path traversal (Windows)"),
+        (r"os\.path\.join\s*\([^)]*input", "Path traversal via user input in os.path.join"),
+        (r"readFile\s*\([^)]*\+", "Potential path traversal in file read"),
+        # Insecure crypto
+        (r"(md5|MD5)\s*\(", "MD5 is cryptographically broken, do not use for security"),
+        (r"(sha1|SHA1)\s*\(", "SHA1 is deprecated for security use"),
+        (r"DES\s*\(|TripleDES\s*\(", "DES/3DES is outdated, use AES instead"),
+        (r"Math\.random\s*\(", "Math.random() is not cryptographically secure"),
+        (r"random\.random\s*\(", "random.random() is not cryptographically secure"),
+        # Open redirect
+        (r"redirect\s*\([^)]*\+", "Potential open redirect via concatenation"),
+        (r"window\.location\s*=\s*[^\"']", "Potential open redirect via window.location"),
+        (r"Response\.redirect\s*\([^)]*req\.", "Potential open redirect via request data"),
+        (r"(?i)redirect.*https?://", "Potential open redirect to external URL"),
+        # SSRF
+        (r"requests\.(get|post|put|delete)\s*\([^)]*\+", "Potential SSRF via user-controlled URL"),
+        (r"urllib\.request\.urlopen\s*\([^)]*\+", "Potential SSRF via user-controlled URL"),
+        (r"fetch\s*\([^)]*\+", "Potential SSRF via user-controlled URL"),
+        (r"axios\.(get|post)\s*\([^)]*\+", "Potential SSRF via user-controlled URL"),
     ]
 
     async def execute(self, input: ToolInput) -> ToolOutput:
@@ -243,10 +221,73 @@ class CostEstimator(BaseTool):
             return {"compute": 150, "storage": 100, "network": 60, "other": 40}
         return {"compute": 100, "storage": 75, "network": 50, "other": 25}
 
+    async def _estimate_with_llm(self, architecture_desc: str) -> Optional[Dict[str, Any]]:
+        """Try LLM-based cost estimation, return None if unavailable."""
+        try:
+            from llm.router import get_router
+            router = get_router()
+
+            prompt = f"""Estimate monthly cloud infrastructure costs for this architecture.
+Architecture: {architecture_desc}
+
+Respond ONLY with a JSON object containing:
+- compute: monthly compute cost in USD
+- storage: monthly storage cost in USD
+- network: monthly network cost in USD
+- other: monthly other costs (monitoring, logging, etc.) in USD
+- total: sum of all costs
+- confidence: low/medium/high
+- notes: brief explanation of cost drivers
+
+Use realistic current cloud pricing (AWS/GCP/Azure)."""
+
+            response = await router.chat(
+                prompt=prompt,
+                temperature=0.3,
+                max_tokens=1500,
+            )
+
+            from core.llm_utils import extract_json_from_response
+            data = extract_json_from_response(response)
+            if data is None:
+                raise ValueError("Failed to parse LLM response as JSON")
+
+            # Validate required keys
+            for key in ("compute", "storage", "network", "other", "total"):
+                if key not in data:
+                    raise ValueError(f"Missing required key: {key}")
+            return data
+
+        except Exception as e:
+            logger.debug("LLM cost estimation failed: %s", e)
+            return None
+
     async def execute(self, input: ToolInput) -> ToolOutput:
         architecture_id = input.args.get("architecture_id", "")
         traffic_estimate = input.args.get("traffic_estimate", "medium").lower()
 
+        # Try LLM-based estimation first
+        llm_result = await self._estimate_with_llm(architecture_id)
+        if llm_result is not None:
+            result = {
+                "architecture_id": architecture_id,
+                "traffic_estimate": traffic_estimate,
+                "estimated_monthly_cost": llm_result["total"],
+                "currency": "USD",
+                "breakdown": {
+                    "compute": llm_result["compute"],
+                    "storage": llm_result["storage"],
+                    "network": llm_result["network"],
+                    "other": llm_result["other"],
+                },
+                "method": "llm",
+                "confidence": llm_result.get("confidence", "medium"),
+                "notes": llm_result.get("notes", ""),
+            }
+            return ToolOutput(result=result, metadata={"estimated": True, "method": "llm"})
+
+        # Fall back to lookup table
+        logger.warning("LLM cost estimation unavailable, using lookup table for: %s", architecture_id)
         multiplier = self.TRAFFIC_MULTIPLIERS.get(traffic_estimate, 1.0)
         base_by_arch = self._estimate_by_architecture(architecture_id)
 
@@ -263,9 +304,13 @@ class CostEstimator(BaseTool):
             "estimated_monthly_cost": total,
             "currency": "USD",
             "breakdown": breakdown,
+            "method": "lookup_table",
+            "available": False,
+            "reliable": False,
+            "notes": "LLM estimation unavailable; using hardcoded lookup table",
         }
 
-        return ToolOutput(result=result, metadata={"estimated": True})
+        return ToolOutput(result=result, metadata={"estimated": True, "method": "lookup_table"})
 
     def validate_input(self, input: Dict[str, Any]) -> bool:
         return "architecture_id" in input

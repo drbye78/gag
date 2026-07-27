@@ -10,7 +10,7 @@ Returns service information and available endpoints.
 ```json
 {
   "service": "Engineering Intelligence System",
-  "version": "4.0.0",
+  "version": "5.0.0",
   "endpoints": ["/health", "/query", "/mcp", "/search/*", "/codegraph/*", ...]
 }
 ```
@@ -21,7 +21,7 @@ Health check with dependency status.
 ```json
 {
   "status": "healthy",
-  "version": "4.0.0"
+  "version": "5.0.0"
 }
 ```
 

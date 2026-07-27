@@ -53,6 +53,14 @@ class ReasoningEngine:
         self._llm_router = router
         self._llm_available = True
 
+    def _estimate_confidence(self, answer: str, sources: List[Dict[str, Any]], query: str) -> float:
+        """Estimate confidence based on source count and answer length."""
+        if not sources:
+            return 0.3
+        source_score = min(len(sources) / 5.0, 1.0) * 0.3
+        length_score = min(len(answer) / 500.0, 1.0) * 0.2
+        return round(min(0.5 + source_score + length_score, 1.0), 2)
+
     async def reason(
         self,
         query: str,
@@ -171,7 +179,7 @@ Provide a direct answer in 2-3 sentences."""
             "answer": answer,
             "reasoning_mode": "llm",
             "steps": [],
-            "confidence": 0.7,
+            "confidence": self._estimate_confidence(answer, facts, query),
             "sources": [f.get("source", "") for f in facts[:3]],
         }
 
@@ -209,7 +217,7 @@ Provide your reasoning steps and final answer."""
             "answer": answer,
             "reasoning_mode": "llm_chain",
             "steps": [],
-            "confidence": 0.75,
+            "confidence": self._estimate_confidence(answer, facts, query),
             "sources": [f.get("source", "") for f in facts[:3]],
         }
 
@@ -280,7 +288,7 @@ Which answer (A, B, or C) is the best? Respond with the letter, then provide the
         except Exception:
             # Fallback: pick the longest answer
             best_answer = max(branches, key=len) if branches else "No answer found."
-            confidence = 0.6
+            confidence = self._estimate_confidence(best_answer, facts, query)
 
         steps.append(ReasoningStep(
             step_id="select",
@@ -405,7 +413,7 @@ Provide the improved answer."""
                 confidence = 0.82
             except Exception:
                 final_answer = initial_answer
-                confidence = 0.65
+                confidence = self._estimate_confidence(final_answer, facts, query)
 
         steps.append(ReasoningStep(
             step_id="2",

@@ -17,7 +17,12 @@ def test_tooling_retriever_exists(tooling_type):
 @pytest.mark.claim
 def test_tooling_search_endpoints_exist():
     from api.main import app
-    routes = [r.path for r in app.routes]
+    routes = []
+    for r in app.routes:
+        if hasattr(r, 'path'):
+            routes.append(r.path)
+        if hasattr(r, 'original_router') and hasattr(r.original_router, 'routes'):
+            routes.extend(sr.path for sr in r.original_router.routes)
     expected = ["/search/kubernetes", "/search/helm", "/search/dockerfile", "/search/graphql", "/search/istio"]
     for endpoint in expected:
         assert endpoint in routes, f"Endpoint {endpoint} not found in API routes"

@@ -107,6 +107,12 @@ Respond ONLY with JSON array."""
                     type=target_type
                 ),
             ]
+        elif language in ("typescript", "ts"):
+            code = f"import {{ describe, it, expect }} from 'vitest';\ndescribe('{target}', () => {{ it('should be defined', () => {{ expect({target}).toBeDefined(); }}); }});"
+            return [GeneratedTest(name=f"test_{target}_basic", code=code, type=target_type)]
+        elif language in ("go",):
+            code = f"func Test{target}(t *testing.T) {{ t.Skip(\"not implemented\") }}"
+            return [GeneratedTest(name=f"test_{target}_basic", code=code, type=target_type)]
         return [GeneratedTest(name=f"test_{target}", code=f"# TODO: implement test", type=target_type)]
 
     def validate_input(self, input: Dict[str, Any]) -> bool:

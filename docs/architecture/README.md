@@ -33,7 +33,7 @@ Comprehensive technical documentation for the Engineering Intelligence System.
 ### Key Paths
 
 ```
-/home/roger/src/gag/
+/home/roger/src/gag5/
 ├── api/                    # FastAPI endpoints
 ├── agents/                 # Planner, Retriever, Reasoner, Executor, Validator
 ├── core/

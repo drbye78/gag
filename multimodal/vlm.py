@@ -213,7 +213,7 @@ class VLMProvider(ABC):
         """Analyze a video (if supported)."""
         if not self.supports_video:
             return {"error": f"Video analysis not supported by {self.provider_name}"}
-        return {"error": "Not implemented"}
+        raise NotImplementedError(f"{self.provider_name} does not implement video analysis")
     
     async def call_function(
         self, prompt: str, functions: List[Dict[str, Any]]
@@ -221,7 +221,7 @@ class VLMProvider(ABC):
         """Use function calling (if supported)."""
         if not self.supports_function_calling:
             return {"error": f"Function calling not supported by {self.provider_name}"}
-        return {"error": "Not implemented"}
+        raise NotImplementedError(f"{self.provider_name} does not implement function calling")
     
     async def generate_structured(
         self, prompt: str, schema: Dict[str, Any]
@@ -233,7 +233,7 @@ class VLMProvider(ABC):
             full_prompt = f"{prompt}\n\n{schema_prompt.format(schema=json.dumps(schema))}"
             result = await self.analyze_image("", full_prompt)
             return self._parse_structured(result, schema)
-        return {"error": "Not implemented"}
+        raise NotImplementedError(f"{self.provider_name} does not implement structured output")
     
     def _parse_structured(
         self, result: Dict[str, Any], schema: Dict[str, Any]
@@ -258,6 +258,16 @@ class VLMProvider(ABC):
     def provider_name(self) -> str:
         """Provider identifier for prompt selection."""
         return "openrouter"
+
+    _http_client: Optional[httpx.AsyncClient] = None
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        """Return a cached httpx.AsyncClient, creating one if needed."""
+        if VLMProvider._http_client is None or VLMProvider._http_client.is_closed:
+            VLMProvider._http_client = httpx.AsyncClient(
+                timeout=httpx.Timeout(60.0, connect=10.0)
+            )
+        return VLMProvider._http_client
 
 
 # =============================================================================

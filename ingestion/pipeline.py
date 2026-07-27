@@ -327,14 +327,18 @@ class IngestionPipeline:
         self,
         documents: List[Dict[str, str]],
         parallel: bool = True,
+        max_concurrency: int = 10,
     ) -> List[IngestionJob]:
         if parallel:
-            tasks = [
-                self.ingest_document(
-                    doc["content"], doc["id"], doc.get("type", "document")
-                )
-                for doc in documents
-            ]
+            semaphore = asyncio.Semaphore(max_concurrency)
+
+            async def ingest_with_limit(doc):
+                async with semaphore:
+                    return await self.ingest_document(
+                        doc["content"], doc["id"], doc.get("type", "document")
+                    )
+
+            tasks = [ingest_with_limit(doc) for doc in documents]
             results = await asyncio.gather(*tasks, return_exceptions=True)
             jobs = []
             failed = []

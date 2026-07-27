@@ -9,7 +9,6 @@ class RerankProvider(str, Enum):
     BGE = "bge-reranker"
     LLAMA_INDEX = "llama_index"
     SENTENCE_TRANSFORMER = "sentence_transformer"
-    CROSS_ENCODER = "cross_encoder"
     JINA = "jina"
 
 

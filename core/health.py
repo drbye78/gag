@@ -1,10 +1,13 @@
 """Health checking for external services."""
 
 import asyncio
+import logging
 import time
 from typing import Any, Dict
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 
 class HealthChecker:
@@ -22,7 +25,8 @@ class HealthChecker:
                 ok = resp.status_code == 200
                 self._qdrant_ok = ok
                 return ok
-        except Exception:
+        except Exception as e:
+            logger.warning("Health check failed for qdrant: %s", e)
             self._qdrant_ok = False
             return False
 
@@ -33,7 +37,8 @@ class HealthChecker:
                 ok = resp.status_code == 200
                 self._falkordb_ok = ok
                 return ok
-        except Exception:
+        except Exception as e:
+            logger.warning("Health check failed for falkordb: %s", e)
             self._falkordb_ok = False
             return False
 
@@ -57,7 +62,8 @@ class HealthChecker:
             # redis package not installed — mark as skipped, not failed
             self._redis_ok = False
             return False
-        except Exception:
+        except Exception as e:
+            logger.warning("Health check failed for redis: %s", e)
             self._redis_ok = False
             return False
 

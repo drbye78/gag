@@ -77,10 +77,12 @@ Be specific about what user wants."""
         source: str,
         feedback: str
     ) -> Dict[str, Any]:
+        logger.warning("LLM unavailable, using fallback for %s", self.name)
         return {
             "source": source,
             "feedback": feedback,
             "processed": True,
+            "reliable": False,
         }
     
     def validate_input(self, input: Dict[str, Any]) -> bool:
@@ -149,6 +151,7 @@ Be nuanced - detect mixed sentiment."""
         self,
         texts: List[str]
     ) -> List[Dict[str, Any]]:
+        logger.warning("LLM unavailable, using fallback for %s", self.name)
         positive_words = {"love", "great", "amazing", "excellent", "good", "best", "awesome"}
         negative_words = {"hate", "bad", "terrible", "awful", "worst", "poor", "broken", "slow"}
         
@@ -172,6 +175,7 @@ Be nuanced - detect mixed sentiment."""
                 "text": t,
                 "sentiment": sentiment,
                 "score": score,
+                "reliable": False,
             })
         
         return results
@@ -247,6 +251,7 @@ Generate realistic time series data."""
         metric: str,
         timeframe: str
     ) -> Dict[str, Any]:
+        logger.warning("LLM unavailable, using fallback for %s", self.name)
         return {
             "metric": metric,
             "timeframe": timeframe,
@@ -254,6 +259,7 @@ Generate realistic time series data."""
             "change_percent": None,
             "error": "LLM analysis unavailable",
             "available": False,
+            "reliable": False,
         }
     
     def validate_input(self, input: Dict[str, Any]) -> bool:
@@ -329,10 +335,12 @@ Assign realistic priority based on request content."""
         request: Dict[str, Any],
         action: str
     ) -> Dict[str, Any]:
+        logger.warning("LLM unavailable, using fallback for %s", self.name)
         import time
         return {
             "action": action,
             "id": f"FR-{int(time.time())}",
+            "reliable": False,
         }
     
     def validate_input(self, input: Dict[str, Any]) -> bool:
@@ -396,12 +404,14 @@ Generate realistic prediction."""
             raise
     
     async def _predict_churn_fallback(self, customer_id: str) -> Dict[str, Any]:
+        logger.warning("LLM unavailable, using fallback for %s", self.name)
         return {
             "customer_id": customer_id,
             "churn_probability": None,
             "risk_level": "unknown",
             "error": "LLM prediction unavailable",
             "available": False,
+            "reliable": False,
         }
     
     def validate_input(self, input: Dict[str, Any]) -> bool:

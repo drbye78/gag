@@ -282,6 +282,8 @@ class MCPHandler:
         return MCPResponse(jsonrpc="2.0", id=self._response_id(), result=result)
 
     async def _handle_notifications_listen(self, params: Dict[str, Any]) -> MCPResponse:
+        # TODO: Implement actual notification delivery (WebSocket/SSE push)
+        # Currently subscriptions are tracked but no events are pushed to subscribers
         topics = params.get("topics", [])
         stream = params.get("stream", False)
         subscription_id = f"sub_{uuid.uuid4().hex[:8]}"

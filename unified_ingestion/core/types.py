@@ -41,6 +41,13 @@ class ArtifactType(str, Enum):
     PLANTUML = "plantuml"
     MERMAID = "mermaid"
     C4 = "c4"
+    DRAWIO = "drawio"
+    CONFLUENCE = "confluence"
+    SAP_MTA = "sap_mta"
+    SAP_CDS = "sap_cds"
+    SAP_CAP = "sap_cap"
+    SAP_XSUAA = "sap_xsuaa"
+    TEMPLATE = "template"
 
 
 class ArtifactStatus(str, Enum):

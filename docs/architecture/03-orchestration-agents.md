@@ -5,9 +5,11 @@ The orchestration engine coordinates a multi-agent system for complex query reso
 ## Overview
 
 ```
-Query → Plan → Retrieve → Reason → Execute → Validate → Response
-                     ↑              ↓
-                   Retry (if failed)
+Query → Plan → [Retrieve‖Tool] → Analyze → Reason → Validate
+                 ↑                                  ↓
+           Re-Plan (if score < threshold) ← Issues fed back to planner
+                                    ↓ (if score >= threshold)
+                                Response
 ```
 
 ## Agent Types
@@ -55,11 +57,14 @@ INTENT_PATTERNS = {
 
 | Mode | Description |
 |------|-------------|
-| `CHAIN_OF_THOUGHT` | Step-by-step reasoning |
-| `TREE_OF_THOUGHTS` | Multiple perspectives |
-| `REFLECT` | Self-evaluation |
-| `CRITIQUE` | Risk assessment |
-| `DIRECT` | Direct answer |
+| `DIRECT` | Single-call concise answer |
+| `CHAIN_OF_THOUGHT` | Step-by-step reasoning with structured prompt |
+| `TREE_OF_THOUGHTS` | 3 parallel persona calls (architect, developer, support) → synthesis call (real multi-call) |
+| `REFLECT` | 2-pass: initial answer → self-critique of assumptions/omissions → final revised answer |
+| `CRITIQUE` | Answer → separate structured evaluation call (correctness, relevance, risks) |
+
+**Streaming**: `generate_answer_streaming()` yields tokens as they arrive via `router.chat(stream=True)`.
+**Citations**: When `require_citations=True`, context items are numbered [N] and the LLM cites sources inline. Extracted citations skip the validator's separate LLM faithfulness check.
 
 ### 4. ToolExecutor (`agents/executor.py`)
 
@@ -73,15 +78,18 @@ INTENT_PATTERNS = {
 
 ### 5. ValidatorAgent (`agents/validator.py`)
 
-**Responsibility**: Response validation
+**Responsibility**: Response validation with feedback loop integration
 
 | Validation | Description |
 |------------|-------------|
-| `ACCURACY` | Response matches retrieved context |
+| `ACCURACY` | Response matches retrieved context (coverage guard prevents inflated scores) |
 | `COHERENCE` | Reasoning chain is consistent |
 | `COMPLETENESS` | All query aspects addressed |
 | `CONFIDENCE` | Score based on coverage |
 | `SAFETY` | No dangerous patterns |
+
+**Optimizations**: When `citations_present=True` and citations are extracted from the reasoner's output, the validator skips the separate LLM faithfulness check, reducing LLM calls.
+**Feedback loop**: Validation scores below the `validation_threshold` (default 0.7) trigger automatic re-planning through the orchestrator.
 
 ## Main Orchestration Engine (`agents/orchestration.py`)
 
@@ -93,13 +101,30 @@ class OrchestrationEngine:
         self,
         max_iterations: int = 3,
         max_retries: int = 2,
-        parallel_execution: bool = True
+        parallel_execution: bool = True,
+        validation_threshold: float = 0.7,
+        require_citations: bool = True,
+        redis_url: Optional[str] = None,
     ):
         self.planner = PlannerAgent()
         self.retriever = RetrievalAgent()
         self.reasoner = ReasoningAgent()
         self.executor = ToolExecutor()
+        self.validator = ValidatorAgent()
 ```
+
+**Self-correcting execute() loop**: `Plan → [Retrieve‖Tool] → Analyze → Reason → Validate → Re-Plan if score < validation_threshold`
+
+**Topological sort** (`_compute_tiers()`): Steps declare dependencies via `depends_on` field. `_compute_tiers()` uses Kahn's algorithm to auto-compute execution tiers, replacing the hardcoded tier_map.
+
+**Wave execution** (`_execute_tier()`): Each tier executes in parallel; tiers run sequentially. Results from completed tiers feed into downstream steps.
+
+**State persistence**: `_save_execution_snapshot()` serializes `ExecutionState` to Redis for crash recovery. `resume_execution(trace_id)` restores and continues from the last completed tier.
+
+**Configuration**:
+- `validation_threshold` (default 0.7): Minimum score for convergence
+- `require_citations` (default True): Inline source citations in reasoning output
+- `max_iterations` (default 3): Maximum re-planning iterations
 
 ### Execution Modes
 

@@ -89,6 +89,7 @@ Use modern best practices: caching, matrix builds, artifact publishing."""
         include_tests: bool,
         include_deploy: bool
     ) -> Dict[str, Any]:
+        logger.warning("LLM unavailable, using fallback for %s", self.name)
         jobs = {
             "lint": {
                 "runs-on": "ubuntu-latest",
@@ -129,6 +130,7 @@ Use modern best practices: caching, matrix builds, artifact publishing."""
             "name": "CI",
             "on": ["push", "pull_request"],
             "jobs": jobs,
+            "reliable": False,
         }
     
     def validate_input(self, input: Dict[str, Any]) -> bool:
@@ -225,6 +227,7 @@ Use best practices: security context, resource limits, liveness/readiness probes
         env: Dict[str, str],
         service_type: str
     ) -> Dict[str, Any]:
+        logger.warning("LLM unavailable, using fallback for %s", self.name)
         resources = {
             "limits": {"cpu": "500m", "memory": "512Mi"},
             "requests": {"cpu": "100m", "memory": "128Mi"},
@@ -273,7 +276,7 @@ Use best practices: security context, resource limits, liveness/readiness probes
             }
         }
         
-        result = {"deployment": deployment, "service": service}
+        result = {"deployment": deployment, "service": service, "reliable": False}
         
         if env:
             result["configmap"] = {
@@ -363,6 +366,7 @@ Use production best practices."""
         version: str,
         app_version: str
     ) -> Dict[str, Any]:
+        logger.warning("LLM unavailable, using fallback for %s", self.name)
         chart_yaml = {
             "apiVersion": "v2",
             "name": name,
@@ -390,6 +394,7 @@ Use production best practices."""
         return {
             "Chart.yaml": chart_yaml,
             "values.yaml": values,
+            "reliable": False,
         }
     
     def validate_input(self, input: Dict[str, Any]) -> bool:
@@ -459,12 +464,14 @@ Use production best practices: modules, remote state, outputs."""
         provider: str,
         resources: List[str]
     ) -> Dict[str, Any]:
+        logger.warning("LLM unavailable, using fallback for %s", self.name)
         return {
             "provider": provider,
             f"{provider.lower()}_provider": {
                 "provider": f'"{provider.lower()}"',
                 "region": "us-east-1",
             },
+            "reliable": False,
         }
     
     def validate_input(self, input: Dict[str, Any]) -> bool:
@@ -531,6 +538,7 @@ Use healthchecks, restart policies, proper port mappings."""
         services: List[str],
         includes: List[str]
     ) -> Dict[str, Any]:
+        logger.warning("LLM unavailable, using fallback for %s", self.name)
         compose = {
             "version": "3.8",
             "services": {},
@@ -564,6 +572,7 @@ Use healthchecks, restart policies, proper port mappings."""
             }
         
         compose["volumes"] = {"db-data": None}
+        compose["reliable"] = False
         
         return compose
     
@@ -635,6 +644,7 @@ Be strict: catch missing required fields, invalid values, security issues."""
         config: Dict[str, Any],
         config_type: str
     ) -> Dict[str, Any]:
+        logger.warning("LLM unavailable, using fallback for %s", self.name)
         issues = []
         
         if config_type == "kubernetes":
@@ -670,6 +680,7 @@ Be strict: catch missing required fields, invalid values, security issues."""
         return {
             "valid": len([i for i in issues if i.get("severity") == "error"]) == 0,
             "issues": issues,
+            "reliable": False,
         }
     
     def validate_input(self, input: Dict[str, Any]) -> bool:

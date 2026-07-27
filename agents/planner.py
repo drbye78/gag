@@ -5,31 +5,33 @@ Detects user intent (design/explain/troubleshoot/optimize) and creates
 execution plans with retrieval steps and tool invocations.
 """
 
+import logging
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from agents.prompts import Intent, Step, create_planner_response
 
+logger = logging.getLogger(__name__)
 
+
+@dataclass
 class ExecutionStep:
-    def __init__(
-        self,
-        step_type: str,
-        action: str,
-        source: Optional[str] = None,
-        params: Optional[Dict[str, Any]] = None,
-    ):
-        self.step_type = step_type
-        self.action = action
-        self.source = source
-        self.params = params or {}
+    step_type: str
+    action: str
+    source: Optional[str] = None
+    params: Dict[str, Any] = field(default_factory=dict)
+    depends_on: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        result = {
             "step_type": self.step_type,
             "action": self.action,
             "source": self.source,
             "params": self.params,
         }
+        if self.depends_on:
+            result["depends_on"] = self.depends_on
+        return result
 
 
 class ExecutionPlan:
@@ -120,8 +122,9 @@ class PlannerAgent:
             classification = classifier.classify(query)
             primary_intent = classification.get("primary_intent", "fact")
             return self._classifier_intent_map.get(primary_intent, Intent.EXPLAIN)
-        except Exception:
+        except Exception as e:
             # Fallback to simple keyword matching if classifier unavailable
+            logger.warning("LLM planning failed, falling back to keyword: %s", e)
             return self._fallback_intent(query)
 
     def _fallback_intent(self, query: str) -> str:
@@ -163,17 +166,26 @@ Return ONLY valid JSON."""
             for source in sources:
                 plan.add_step(ExecutionStep(
                     step_type="retrieve", action="search",
-                    source=source, params={"limit": 10}
+                    source=source, params={"limit": 10},
+                    depends_on=[],
                 ))
             if tools:
                 plan.add_step(ExecutionStep(
                     step_type="tool", action="execute_tools",
-                    params={"tools": tools}
+                    params={"tools": tools},
+                    depends_on=[],
                 ))
-            plan.add_step(ExecutionStep(step_type="reason", action="generate_answer"))
-            plan.add_step(ExecutionStep(step_type="validate", action="validate_response"))
+            plan.add_step(ExecutionStep(
+                step_type="reason", action="generate_answer",
+                depends_on=["retrieve"],
+            ))
+            plan.add_step(ExecutionStep(
+                step_type="validate", action="validate_response",
+                depends_on=["reason"],
+            ))
             return plan
-        except Exception:
+        except Exception as e:
+            logger.warning("LLM planning failed, falling back to keyword: %s", e)
             return None
 
     def _identify_sources(self, query: str) -> List[str]:
@@ -238,32 +250,45 @@ Return ONLY valid JSON."""
 
         if intent == Intent.DESIGN:
             plan.add_step(
-                ExecutionStep(step_type="analyze", action="analyze_ir", source="ir")
+                ExecutionStep(step_type="analyze", action="analyze_ir", source="ir",
+                              depends_on=[])
             )
             plan.add_step(
-                ExecutionStep(step_type="retrieve", action="search", source="docs")
+                ExecutionStep(step_type="retrieve", action="search", source="docs",
+                              depends_on=[])
             )
             plan.add_step(
-                ExecutionStep(step_type="retrieve", action="search", source="code")
+                ExecutionStep(step_type="retrieve", action="search", source="code",
+                              depends_on=[])
             )
             plan.add_step(
-                ExecutionStep(step_type="reason", action="generate_architecture")
+                ExecutionStep(step_type="reason", action="generate_architecture",
+                              depends_on=["analyze", "retrieve"])
             )
 
         elif intent == Intent.TROUBLESHOOT:
             plan.add_step(
-                ExecutionStep(step_type="retrieve", action="search", source="tickets")
+                ExecutionStep(step_type="retrieve", action="search", source="tickets",
+                              depends_on=[])
             )
             plan.add_step(
-                ExecutionStep(step_type="retrieve", action="search", source="telemetry")
+                ExecutionStep(step_type="retrieve", action="search", source="telemetry",
+                              depends_on=[])
             )
-            plan.add_step(ExecutionStep(step_type="analyze", action="analyze_logs"))
-            plan.add_step(ExecutionStep(step_type="reason", action="diagnose"))
+            plan.add_step(
+                ExecutionStep(step_type="analyze", action="analyze_logs",
+                              depends_on=["retrieve"])
+            )
+            plan.add_step(
+                ExecutionStep(step_type="reason", action="diagnose",
+                              depends_on=["analyze"])
+            )
 
         else:
             if not sources:
                 plan.add_step(
-                    ExecutionStep(step_type="retrieve", action="search", source="all")
+                    ExecutionStep(step_type="retrieve", action="search", source="all",
+                                  depends_on=[])
                 )
             else:
                 seen_sources = set()
@@ -276,18 +301,26 @@ Return ONLY valid JSON."""
                                 action="search",
                                 source=source,
                                 params={"limit": 10},
+                                depends_on=[],
                             )
                         )
 
         if tools:
             plan.add_step(
                 ExecutionStep(
-                    step_type="tool", action="execute_tools", params={"tools": tools}
+                    step_type="tool", action="execute_tools", params={"tools": tools},
+                    depends_on=[],
                 )
             )
 
-        plan.add_step(ExecutionStep(step_type="reason", action="generate_answer"))
-        plan.add_step(ExecutionStep(step_type="validate", action="validate_response"))
+        plan.add_step(
+            ExecutionStep(step_type="reason", action="generate_answer",
+                          depends_on=["retrieve"])
+        )
+        plan.add_step(
+            ExecutionStep(step_type="validate", action="validate_response",
+                          depends_on=["reason"])
+        )
 
         for tool in tools:
             plan.add_tool(tool)
@@ -308,7 +341,6 @@ Return ONLY valid JSON."""
 
         if "docs" in sources:
             queries["docs_queries"].append(query)
-            queries["docs_queries"].append(f"SAP BTP {query}")
 
         if "code" in sources:
             queries["code_queries"].append(query)

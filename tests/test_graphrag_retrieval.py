@@ -124,19 +124,21 @@ class TestEnhancedHybridRetriever:
 
     @pytest.mark.asyncio
     async def test_get_entity_cache_stats(self):
-        stats = self.retriever.get_entity_cache_stats()
+        stats = await self.retriever.get_entity_cache_stats()
 
         assert "size" in stats
         assert "capacity" in stats
         assert "hit_rate" in stats
 
-    def test_invalidate_entity_cache_all(self):
-        result = self.retriever.invalidate_entity_cache()
+    @pytest.mark.asyncio
+    async def test_invalidate_entity_cache_all(self):
+        result = await self.retriever.invalidate_entity_cache()
 
         assert result == True
 
-    def test_invalidate_specific_entity(self):
-        result = self.retriever.invalidate_entity_cache("NonExistentEntity")
+    @pytest.mark.asyncio
+    async def test_invalidate_specific_entity(self):
+        result = await self.retriever.invalidate_entity_cache("NonExistentEntity")
 
         assert result in [True, False]
 

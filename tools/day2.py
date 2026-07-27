@@ -75,6 +75,7 @@ Use HPA/VPA best practices."""
         resource: str,
         target_metric: int
     ) -> Dict[str, Any]:
+        logger.warning("LLM unavailable, using fallback for %s", self.name)
         return {
             "resource": resource,
             "current_replicas": None,
@@ -82,6 +83,7 @@ Use HPA/VPA best practices."""
             "action": None,
             "error": "LLM autoscale unavailable",
             "available": False,
+            "reliable": False,
         }
     
     def validate_input(self, input: Dict[str, Any]) -> bool:
@@ -161,11 +163,13 @@ Generate complete rollout config."""
         version: str,
         strategy: str
     ) -> Dict[str, Any]:
+        logger.warning("LLM unavailable, using fallback for %s", self.name)
         return {
             "target": target,
             "version": version,
             "strategy": strategy,
             "max_unavailable": 1,
+            "reliable": False,
         }
     
     def validate_input(self, input: Dict[str, Any]) -> bool:
@@ -236,8 +240,9 @@ Group related alerts into single incidents."""
         self,
         alerts: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
+        logger.warning("LLM unavailable, using fallback for %s", self.name)
         return [
-            {"severity": a.get("severity", "critical"), "status": "open", "type": "availability"}
+            {"severity": a.get("severity", "critical"), "status": "open", "type": "availability", "reliable": False}
             for a in alerts
             if a.get("severity") == "critical"
         ]
@@ -303,12 +308,14 @@ Be thorough - don't stop at symptoms."""
             raise
     
     async def _analyze_root_cause_fallback(self, incident_id: str) -> Dict[str, Any]:
+        logger.warning("LLM unavailable, using fallback for %s", self.name)
         return {
             "incident_id": incident_id,
             "root_cause": None,
             "confidence": None,
             "error": "LLM RCA unavailable",
             "available": False,
+            "reliable": False,
         }
     
     def validate_input(self, input: Dict[str, Any]) -> bool:
@@ -373,12 +380,14 @@ Include specific commands and verification steps."""
             raise
     
     async def _generate_runbook_fallback(self, incident_type: str) -> Dict[str, Any]:
+        logger.warning("LLM unavailable, using fallback for %s", self.name)
         return {
             "title": f"Runbook for {incident_type}",
             "steps": [
                 {"step": 1, "action": "check_status"},
                 {"step": 2, "action": "notify_team"},
             ],
+            "reliable": False,
         }
     
     def validate_input(self, input: Dict[str, Any]) -> bool:
@@ -454,12 +463,14 @@ Include actual commands for recovery."""
         action: str,
         target: str
     ) -> Dict[str, Any]:
+        logger.warning("LLM unavailable, using fallback for %s", self.name)
         return {
             "action": action,
             "target": target,
             "status": None,
             "error": "LLM backup unavailable",
             "available": False,
+            "reliable": False,
         }
 
     def validate_input(self, input: Dict[str, Any]) -> bool:
@@ -533,11 +544,13 @@ Use realistic scaling patterns."""
         resource: str,
         growth_rate: int
     ) -> Dict[str, Any]:
+        logger.warning("LLM unavailable, using fallback for %s", self.name)
         return {
             "resource": resource,
             "current_capacity": 100,
             "projected_capacity": 150,
             "timeline_months": 12,
+            "reliable": False,
         }
     
     def validate_input(self, input: Dict[str, Any]) -> bool:

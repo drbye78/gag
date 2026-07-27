@@ -1,4 +1,6 @@
+import asyncio
 import contextvars
+import functools
 import json
 import logging
 from datetime import datetime, timezone
@@ -238,15 +240,28 @@ def with_trace(name: str, attributes: Optional[Dict[str, Any]] = None):
     if tracer is None:
         return lambda f: f
     def decorator(func):
-        def wrapper(*args, **kwargs):
-            with tracer.start_as_current_span(name, attributes=attributes or {}) as span:
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    span.set_status(Status(StatusCode.ERROR, str(e)))
-                    span.record_exception(e)
-                    raise
-        return wrapper
+        if asyncio.iscoroutinefunction(func):
+            @functools.wraps(func)
+            async def async_wrapper(*args, **kwargs):
+                with tracer.start_as_current_span(name, attributes=attributes or {}) as span:
+                    try:
+                        return await func(*args, **kwargs)
+                    except Exception as e:
+                        span.set_status(Status(StatusCode.ERROR, str(e)))
+                        span.record_exception(e)
+                        raise
+            return async_wrapper
+        else:
+            @functools.wraps(func)
+            def sync_wrapper(*args, **kwargs):
+                with tracer.start_as_current_span(name, attributes=attributes or {}) as span:
+                    try:
+                        return func(*args, **kwargs)
+                    except Exception as e:
+                        span.set_status(Status(StatusCode.ERROR, str(e)))
+                        span.record_exception(e)
+                        raise
+            return sync_wrapper
     return decorator
 
 __all__ = [

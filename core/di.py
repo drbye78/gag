@@ -199,4 +199,4 @@ def resolve(cls_type):
     try:
         return container.get_or_create(cls_type)
     except KeyError:
-        return None
+        raise ValueError(f"Service not registered: {cls_type.__name__}") from None

@@ -238,16 +238,9 @@ class DiagramIRBuilder:
             VLM-extracted DiagramIR
         """
         try:
-            from multimodal.vlm import QwenVLProvider
+            from multimodal.vlm import get_vlm_processor
 
-            client = QwenVLProvider()
-            if not client.api_key:
-                logger.warning("VLM not available for diagram extraction")
-                return DiagramIR(
-                    id=self._generate_id(image_url),
-                    diagram_type="unknown",
-                )
-
+            client = get_vlm_processor()
             result = await client.analyze_image(
                 image_url,
                 "Extract all entities and relationships from this architecture diagram."

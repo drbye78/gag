@@ -315,6 +315,12 @@ class CodeChunker(TextChunker):
 
         if language == "python":
             entities = self._extract_python_entities(lines)
+        elif language in ("javascript", "typescript", "tsx", "jsx"):
+            entities = self._extract_ts_entities(lines)
+        elif language == "go":
+            entities = self._extract_go_entities(lines)
+        elif language == "java":
+            entities = self._extract_java_entities(lines)
         else:
             entities = self._extract_generic_entities(lines)
 
@@ -462,6 +468,166 @@ class CodeChunker(TextChunker):
 
         return entities
 
+    def _extract_ts_entities(self, lines: List[str]) -> List[Dict[str, Any]]:
+        """Extract TypeScript/JavaScript entities using tree-sitter."""
+        try:
+            import tree_sitter_ts
+            from tree_sitter import Language, Parser
+        except ImportError:
+            return self._extract_generic_entities(lines)
+
+        code = "\n".join(lines)
+        parser = Parser()
+        parser.set_language(Language(tree_sitter_ts.language()))
+        tree = parser.parse(bytes(code, "utf-8"))
+
+        entities: List[Dict[str, Any]] = []
+
+        def _walk(node, depth=0):
+            if depth > 50:
+                return
+            if node.type == "function_declaration":
+                name_node = node.child_by_field_name("name")
+                if name_node:
+                    entities.append({"name": code[name_node.start_byte:name_node.end_byte], "type": "function", "line": node.start_point[0]+1})
+            elif node.type == "class_declaration":
+                name_node = node.child_by_field_name("name")
+                if name_node:
+                    entities.append({"name": code[name_node.start_byte:name_node.end_byte], "type": "class", "line": node.start_point[0]+1})
+            elif node.type == "method_definition":
+                name_node = node.child_by_field_name("name")
+                if name_node:
+                    entities.append({"name": code[name_node.start_byte:name_node.end_byte], "type": "method", "line": node.start_point[0]+1})
+            elif node.type in ("export_statement", "import_statement"):
+                entities.append({"name": f"module_{node.start_point[0]+1}", "type": "module", "line": node.start_point[0]+1})
+            for child in node.children:
+                _walk(child, depth+1)
+
+        _walk(tree.root_node)
+
+        # Convert to the standard entity format used by chunk_file
+        result = []
+        for ent in entities:
+            start_line = ent["line"] - 1
+            end_line = min(start_line + self.max_entity_lines, len(lines))
+            content = "\n".join(lines[start_line:end_line])
+            if len(content) > 10:
+                result.append({
+                    "name": ent["name"],
+                    "type": ent["type"],
+                    "content": content,
+                    "start_line": start_line,
+                    "end_line": end_line,
+                })
+        result.sort(key=lambda e: e["start_line"])
+        return result
+
+    def _extract_go_entities(self, lines: List[str]) -> List[Dict[str, Any]]:
+        """Extract Go entities using tree-sitter."""
+        try:
+            import tree_sitter_go
+            from tree_sitter import Language, Parser
+        except ImportError:
+            return self._extract_generic_entities(lines)
+
+        code = "\n".join(lines)
+        parser = Parser()
+        parser.set_language(Language(tree_sitter_go.language()))
+        tree = parser.parse(bytes(code, "utf-8"))
+
+        entities: List[Dict[str, Any]] = []
+
+        def _walk(node, depth=0):
+            if depth > 50:
+                return
+            if node.type == "function_declaration":
+                name_node = node.child_by_field_name("name")
+                if name_node:
+                    entities.append({"name": code[name_node.start_byte:name_node.end_byte], "type": "function", "line": node.start_point[0]+1})
+            elif node.type == "method_declaration":
+                name_node = node.child_by_field_name("name")
+                if name_node:
+                    entities.append({"name": code[name_node.start_byte:name_node.end_byte], "type": "method", "line": node.start_point[0]+1})
+            elif node.type == "type_declaration":
+                for child in node.children:
+                    if child.type == "type_spec":
+                        name_node = child.child_by_field_name("name")
+                        if name_node:
+                            entities.append({"name": code[name_node.start_byte:name_node.end_byte], "type": child.children[1].type if len(child.children) > 1 else "type", "line": node.start_point[0]+1})
+            for child in node.children:
+                _walk(child, depth+1)
+
+        _walk(tree.root_node)
+
+        # Convert to the standard entity format used by chunk_file
+        result = []
+        for ent in entities:
+            start_line = ent["line"] - 1
+            end_line = min(start_line + self.max_entity_lines, len(lines))
+            content = "\n".join(lines[start_line:end_line])
+            if len(content) > 10:
+                result.append({
+                    "name": ent["name"],
+                    "type": ent["type"],
+                    "content": content,
+                    "start_line": start_line,
+                    "end_line": end_line,
+                })
+        result.sort(key=lambda e: e["start_line"])
+        return result
+
+    def _extract_java_entities(self, lines: List[str]) -> List[Dict[str, Any]]:
+        """Extract Java entities using tree-sitter."""
+        try:
+            import tree_sitter_java
+            from tree_sitter import Language, Parser
+        except ImportError:
+            return self._extract_generic_entities(lines)
+
+        code = "\n".join(lines)
+        parser = Parser()
+        parser.set_language(Language(tree_sitter_java.language()))
+        tree = parser.parse(bytes(code, "utf-8"))
+
+        entities: List[Dict[str, Any]] = []
+
+        def _walk(node, depth=0):
+            if depth > 50:
+                return
+            if node.type == "method_declaration":
+                name_node = node.child_by_field_name("name")
+                if name_node:
+                    entities.append({"name": code[name_node.start_byte:name_node.end_byte], "type": "method", "line": node.start_point[0]+1})
+            elif node.type == "class_declaration":
+                name_node = node.child_by_field_name("name")
+                if name_node:
+                    entities.append({"name": code[name_node.start_byte:name_node.end_byte], "type": "class", "line": node.start_point[0]+1})
+            elif node.type == "interface_declaration":
+                name_node = node.child_by_field_name("name")
+                if name_node:
+                    entities.append({"name": code[name_node.start_byte:name_node.end_byte], "type": "interface", "line": node.start_point[0]+1})
+            for child in node.children:
+                _walk(child, depth+1)
+
+        _walk(tree.root_node)
+
+        # Convert to the standard entity format used by chunk_file
+        result = []
+        for ent in entities:
+            start_line = ent["line"] - 1
+            end_line = min(start_line + self.max_entity_lines, len(lines))
+            content = "\n".join(lines[start_line:end_line])
+            if len(content) > 10:
+                result.append({
+                    "name": ent["name"],
+                    "type": ent["type"],
+                    "content": content,
+                    "start_line": start_line,
+                    "end_line": end_line,
+                })
+        result.sort(key=lambda e: e["start_line"])
+        return result
+
     def _extract_generic_entities(self, lines: List[str]) -> List[Dict[str, Any]]:
         entities = []
         current_block = []
@@ -501,6 +667,7 @@ class CodeChunker(TextChunker):
             idx += 1
 
         if not entities:
+            # Fallback: split into fixed-size chunks when no structure is detected
             chunk_size = 100
             for i in range(0, len(lines), chunk_size):
                 chunk_lines = lines[i : i + chunk_size]

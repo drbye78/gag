@@ -1,3 +1,4 @@
+import time
 from typing import Any, Dict, List, Optional
 from core.knowledge.graph import get_knowledge_graph, NodeType, EdgeType
 from core.knowledge.usecases import get_use_case_repository
@@ -20,6 +21,8 @@ class KnowledgeRetriever:
         limit: int = 10,
         filters: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+        start_time = time.monotonic()
+
         query_lower = query.lower()
         results = []
         
@@ -40,12 +43,14 @@ class KnowledgeRetriever:
         
         results = results[:limit]
         
+        took_ms = int((time.monotonic() - start_time) * 1000)
+        
         return {
             "source": "knowledge",
             "results": results,
             "total": len(results),
             "platforms_detected": platforms,
-            "took_ms": 1,
+            "took_ms": took_ms,
         }
     
     def _detect_platforms(self, query: str) -> List[str]:

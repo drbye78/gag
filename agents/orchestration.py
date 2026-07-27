@@ -6,16 +6,19 @@ execution, retry logic, and metrics.
 """
 
 import asyncio
+import json
 import logging
 import time
 from abc import ABC, abstractmethod
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, AsyncGenerator, Dict, List, Optional, cast
+from uuid import uuid4
 
 from agents.planner import ExecutionPlan, ExecutionStep, PlannerAgent
 from agents.retrieval import RetrievalAgent
-from agents.reasoning import ReasoningAgent
+from agents.reasoning import AnswerWithCitations, ReasoningAgent
 from agents.executor import ToolExecutor
 from agents.validator import ValidatorAgent
 from agents.registry import _registry as _agent_registry
@@ -56,6 +59,7 @@ class ExecutionState:
     started_at: Optional[float] = None
     completed_at: Optional[float] = None
     retry_count: int = 0
+    trace_id: Optional[str] = None
     reasoning_trace: List[ReasoningTraceEntry] = field(default_factory=list)
 
     @property
@@ -135,7 +139,19 @@ class ReasonStepExecutor(StepExecutor):
         retrieved = context.get("retrieval_results", {})
         tools = context.get("tool_results", [])
         intent = context.get("intent", "explain")
-        return await self.reasoner.generate_answer(query, retrieved, tools, intent)
+        require_citations = context.get("require_citations", False)
+
+        result = await self.reasoner.generate_answer(
+            query, retrieved, tools, intent,
+            require_citations=require_citations,
+        )
+
+        # Unwrap AnswerWithCitations: store citations on context, return text
+        if isinstance(result, AnswerWithCitations):
+            context["_citations"] = result.citations
+            return result.answer
+
+        return result  # plain string (shouldn't happen with new code, but safe)
 
 
 class ValidateStepExecutor(StepExecutor):
@@ -152,6 +168,7 @@ class ValidateStepExecutor(StepExecutor):
         query = context.get("query", "")
         answer = context.get("reason_result", "") or ""
         retrieval_results = context.get("retrieval_results", {})
+        citations_present = bool(context.get("_citations", []))
         retrieved_context: List[Dict[str, Any]] = []
 
         # Flatten retrieval results into a list of context items
@@ -182,6 +199,7 @@ class ValidateStepExecutor(StepExecutor):
             response=answer,
             retrieved_context=retrieved_context,
             reasoning_trace=reasoning_trace,
+            citations_present=citations_present,
         )
 
         # Return as dict for JSON serialization
@@ -189,6 +207,7 @@ class ValidateStepExecutor(StepExecutor):
             "valid": result.valid,
             "score": result.score,
             "confidence": result.confidence,
+            "citations_present": result.citations_present,
             "issues": [
                 {
                     "category": issue.category,
@@ -316,10 +335,17 @@ class OrchestrationEngine:
         max_iterations: int = 3,
         max_retries: int = 2,
         parallel_execution: bool = True,
+        validation_threshold: float = 0.7,
+        require_citations: bool = True,
+        redis_url: Optional[str] = None,
     ):
         self.max_iterations = max_iterations
         self.max_retries = max_retries
         self.parallel_execution = parallel_execution
+        self.validation_threshold = validation_threshold
+        self.require_citations = require_citations
+        self.redis_url = redis_url
+        self._redis = None
 
         # Use the agent registry for agent creation; fall back to direct instantiation
         try:
@@ -420,7 +446,7 @@ class OrchestrationEngine:
         states = []
 
         for step in plan.steps:
-            state = ExecutionState(step=step)
+            state = ExecutionState(step=step, trace_id=context.get("trace_id"))
             states.append(state)
 
         tasks = [self._execute_step(s, context) for s in states]
@@ -440,7 +466,7 @@ class OrchestrationEngine:
         states = []
 
         for step in plan.steps:
-            state = ExecutionState(step=step)
+            state = ExecutionState(step=step, trace_id=context.get("trace_id"))
             state = await self._execute_step(state, context)
             states.append(state)
 
@@ -451,65 +477,116 @@ class OrchestrationEngine:
 
         return states
 
-    async def _execute_plan_waves(
+    # ── Topological sort: fallback dependency map for legacy steps ──
+    _FALLBACK_DEPENDENCIES: Dict[str, List[str]] = {
+        "retrieve":  [],
+        "tool":      [],
+        "analyze":   ["retrieve", "tool"],
+        "reason":    ["analyze"],
+        "validate":  ["reason"],
+    }
+
+    def _compute_tiers(
         self,
-        plan: ExecutionPlan,
+        steps: List[ExecutionStep],
+    ) -> Dict[int, List[ExecutionStep]]:
+        """Compute execution tiers via Kahn's topological sort.
+
+        Each step's `depends_on` declares upstream dependencies.
+        Steps with no dependencies are tier 0. Each subsequent tier
+        represents one level of dependency resolution.
+
+        Steps within a tier have no inter-dependencies and run in parallel.
+        Falls back to _FALLBACK_DEPENDENCIES when a step has no explicit depends_on.
+        """
+        step_types_present = {s.step_type for s in steps}
+        in_degree: Dict[str, int] = defaultdict(int)
+        adjacency: Dict[str, List[str]] = defaultdict(list)
+        step_by_type: Dict[str, ExecutionStep] = {}
+
+        for step in steps:
+            step_by_type[step.step_type] = step
+            deps = step.depends_on if step.depends_on else self._FALLBACK_DEPENDENCIES.get(
+                step.step_type, []
+            )
+            relevant_deps = [d for d in deps if d in step_types_present]
+            in_degree[step.step_type] = len(relevant_deps)
+            for dep in relevant_deps:
+                adjacency[dep].append(step.step_type)
+
+        # ── Kahn's algorithm ──
+        queue: deque = deque(sorted(st for st in step_types_present if in_degree[st] == 0))
+        tier: Dict[str, int] = {}
+        current_tier = 0
+
+        while queue:
+            next_queue: deque = deque()
+            for step_type in queue:
+                tier[step_type] = current_tier
+                for neighbor in sorted(adjacency[step_type]):
+                    in_degree[neighbor] -= 1
+                    if in_degree[neighbor] == 0:
+                        next_queue.append(neighbor)
+            queue = next_queue
+            current_tier += 1
+
+        # ── Cycle detection ──
+        if len(tier) < len(step_types_present):
+            unplaced = step_types_present - set(tier.keys())
+            logger.warning(
+                "Dependency cycle detected! Unplaced steps: %s — assigning to tier %d",
+                unplaced, current_tier,
+            )
+            for st in unplaced:
+                tier[st] = current_tier
+
+        # ── Group steps by tier ──
+        result: Dict[int, List[ExecutionStep]] = {}
+        for step_type, tier_num in tier.items():
+            result.setdefault(tier_num, []).append(step_by_type[step_type])
+
+        return result
+
+    async def _execute_tier(
+        self,
+        tier_num: int,
+        tier_steps: List[ExecutionStep],
         context: Dict[str, Any],
     ) -> List[ExecutionState]:
-        """Execute plan in dependency-ordered waves.
+        """Execute all steps in a tier in parallel, propagate results to context."""
+        states = [
+            ExecutionState(step=step, trace_id=context.get("trace_id"))
+            for step in tier_steps
+        ]
 
-        Wave 0: retrieve + tool (independent, run in parallel)
-        Wave 1: analyze (needs retrieval)
-        Wave 2: reason (needs retrieval + analyze)
-        Wave 3: validate (needs reason)
+        tasks = [self._execute_step(s, context) for s in states]
+        await asyncio.gather(*tasks, return_exceptions=True)
 
-        Each wave runs its steps in parallel; results propagate to the
-        next wave via the context dict.
-        """
-        tier_map = {
-            "retrieve": 0,
-            "tool": 0,
-            "analyze": 1,
-            "reason": 2,
-            "validate": 3,
-        }
+        for step, state in zip(tier_steps, states):
+            context[f"{step.step_type}_result"] = state.result
 
-        # Group steps by tier
-        tiers: Dict[int, List[ExecutionStep]] = {}
-        for step in plan.steps:
-            tier = tier_map.get(step.step_type, 0)
-            tiers.setdefault(tier, []).append(step)
+            if step.step_type == "retrieve":
+                if "retrieval_results" not in context:
+                    context["retrieval_results"] = {}
+                if state.result and isinstance(state.result, dict):
+                    source = state.result.get("source", step.source or "unknown")
+                    context["retrieval_results"][source] = state.result
 
-        all_states = []
-        for tier_num in sorted(tiers.keys()):
-            tier_steps = tiers[tier_num]
-            states = []
-            for step in tier_steps:
-                state = ExecutionState(step=step)
-                states.append(state)
+            elif step.step_type == "reason":
+                context["reason_result"] = state.result or ""
 
-            # Run all steps in this tier in parallel
-            tasks = [self._execute_step(s, context) for s in states]
-            await asyncio.gather(*tasks, return_exceptions=True)
+            elif step.step_type == "validate":
+                context["validation_result"] = state.result
 
-            # Propagate results into context for the next tier
-            for step, state in zip(tier_steps, states):
-                context[f"{step.step_type}_result"] = state.result
-                if step.step_type == "retrieve":
-                    # Aggregate retrieval results for downstream steps
-                    if "retrieval_results" not in context:
-                        context["retrieval_results"] = {}
-                    if state.result and isinstance(state.result, dict):
-                        source = state.result.get("source", step.source or "unknown")
-                        context["retrieval_results"][source] = state.result
-                elif step.step_type == "reason":
-                    context["reason_result"] = state.result or ""
-                elif step.step_type == "validate":
-                    context["validation_result"] = state.result
+        # ── Save execution snapshot for crash recovery ──
+        await self._save_execution_snapshot(
+            trace_id=context.get("trace_id", ""),
+            context=context,
+            states=states,
+            plan=ExecutionPlan(query=context.get("query", ""), intent=context.get("intent", "unknown"), steps=tier_steps),
+        )
 
-            all_states.extend(states)
-
-        return all_states
+        return states
 
     async def _should_revise(
         self,
@@ -548,12 +625,15 @@ class OrchestrationEngine:
     ) -> Dict[str, Any]:
         start_time = time.time()
         max_iterations = max_iterations or self.max_iterations
+        trace_id = str(uuid4())
 
-        context = {
+        context: Dict[str, Any] = {
             "query": query,
             "ir_context": ir_context or {},
             "retrieval_results": {},
             "tool_results": [],
+            "trace_id": trace_id,
+            "require_citations": self.require_citations,
         }
 
         memory = get_memory_system()
@@ -561,84 +641,127 @@ class OrchestrationEngine:
         if session_context:
             context["session_history"] = session_context
 
+        # ── Phase 1: initial plan ──
         plan = await self.planner.plan(query, ir_context)
         context["intent"] = plan.intent
 
-        all_states = []
+        all_states: List[ExecutionState] = []
+        final_validation: Optional[Dict[str, Any]] = None
+        validation_history: List[Dict[str, Any]] = []
 
+        # ── Phase 2: iterative execute → validate → re-plan loop ──
         for iteration in range(max_iterations):
             context["iteration"] = iteration
 
-            if self.parallel_execution:
-                states = await self._execute_plan_waves(plan, context)
-            else:
-                states = await self._execute_plan_sequential(plan, context)
+            # 2a. Compute tiers via topological sort
+            tiers = self._compute_tiers(plan.steps)
 
-            all_states.extend(states)
+            # 2b. Execute tiers sequentially, steps within each tier in parallel
+            converged = False
+            for tier_num in sorted(tiers.keys()):
+                tier_states = await self._execute_tier(tier_num, tiers[tier_num], context)
+                all_states.extend(tier_states)
 
-            context["retrieval_results"] = self._aggregate_results(states)
+                # Check for validation result after this tier
+                tier_validation = context.get("validation_result")
+                if tier_validation:
+                    score = tier_validation.get("score", 0.0)
+                    valid_flag = tier_validation.get("valid", True)
+                    final_validation = tier_validation
 
-            tool_results = context.get("tool_results", [])
-            if tool_results:
-                refined_query = _refine_query_from_tool_results(
-                    query,
-                    tool_results,
-                    context["retrieval_results"],
-                )
-                if refined_query != query:
-                    context["query"] = refined_query
+                    if score >= self.validation_threshold and valid_flag:
+                        logger.info(
+                            "Validation passed (score=%.2f) at iteration %d tier %d — converging",
+                            score, iteration, tier_num,
+                        )
+                        converged = True
+                        break
 
-            if not await self._revision_needed(states, context):
+                    # Below threshold: feed issues back for re-plan
+                    issues = tier_validation.get("issues", [])
+                    if issues:
+                        validation_history.append({
+                            "iteration": iteration,
+                            "tier": tier_num,
+                            "score": score,
+                            "issues": issues,
+                        })
+                        context["validation_issues"] = issues
+                        logger.info(
+                            "Validation below threshold (score=%.2f): %d issues — feeding back to planner",
+                            score, len(issues),
+                        )
+                        break  # exit tier loop, trigger re-plan
+
+            # 2c. Converged? Exit iteration loop
+            if converged:
                 break
 
-            should_revise = await self._should_revise(states, plan)
-            if should_revise and iteration < max_iterations - 1:
-                new_plan = await self.planner.plan(query, context)
-                plan = new_plan
+            # 2d. Check if we can re-plan
+            if iteration < max_iterations - 1:
+                should_revise = await self._should_revise(all_states, plan)
+                if should_revise:
+                    planner_context: Dict[str, Any] = {
+                        "previous_plan": plan.steps,
+                        "validation_issues": context.get("validation_issues", []),
+                        "failed_steps": [
+                            s.step.step_type for s in all_states
+                            if s.status == StepStatus.FAILED
+                        ],
+                    }
+                    plan = await self.planner.plan(query, planner_context)
+                    context.pop("validation_issues", None)
+                    logger.info(
+                        "Re-plan at iteration %d — new plan: %d steps",
+                        iteration, len(plan.steps),
+                    )
+                else:
+                    logger.info(
+                        "No revision at iteration %d, not converged — continuing",
+                        iteration,
+                    )
 
-        reasoning_state = ExecutionState(
-            step=ExecutionStep(step_type="reason", action="generate_answer")
-        )
-        reasoning_state = await self._execute_step(reasoning_state, context)
+        # ── Phase 3: Fallback — run standalone reasoning + validation if needed ──
+        if final_validation is None:
+            reasoning_state = ExecutionState(
+                step=ExecutionStep(step_type="reason", action="generate_answer"),
+                trace_id=trace_id,
+            )
+            reasoning_state = await self._execute_step(reasoning_state, context)
+            context["reason_result"] = reasoning_state.result or ""
 
-        # Store the reasoning result so the validate executor can access it
-        context["reason_result"] = reasoning_state.result or ""
+            validation_state = ExecutionState(
+                step=ExecutionStep(step_type="validate", action="validate_response"),
+                trace_id=trace_id,
+            )
+            validation_state = await self._execute_step(validation_state, context)
+            final_validation = (
+                validation_state.result
+                if validation_state.result
+                else {"valid": True, "score": 0.0, "confidence": 0.0, "issues": [], "metadata": {}}
+            )
 
-        # Run validation after reasoning
-        validation_state = ExecutionState(
-            step=ExecutionStep(step_type="validate", action="validate_response")
-        )
-        validation_state = await self._execute_step(validation_state, context)
-
+        # ── Phase 4: Persist execution trace ──
         execution_time = int((time.time() - start_time) * 1000)
-
-        has_errors = any(s.error for s in all_states) or reasoning_state.error or validation_state.error
+        has_errors = any(s.error for s in all_states)
         self._update_metrics(not has_errors, len(all_states), execution_time)
 
-        memory = get_memory_system()
         await memory.remember(
-            key=f"execution:{int(start_time)}",
+            key=f"execution:{trace_id}",
             value={
                 "query": query,
                 "intent": plan.intent,
                 "iterations": len(all_states),
+                "validation_result": final_validation,
+                "validation_history": validation_history,
                 "tool_results": context.get("tool_results", []),
             },
             tier=MemoryTier.PROJECT,
         )
 
-        # Extract validation result for the response
-        validation_result = validation_state.result if validation_state.result else {
-            "valid": True,
-            "score": 0.0,
-            "confidence": 0.0,
-            "issues": [],
-            "metadata": {},
-        }
-
         return {
             "query": query,
-            "answer": reasoning_state.result or "No response",
+            "answer": context.get("reason_result", "No response"),
             "intent": plan.intent,
             "plan": plan.to_dict(),
             "execution": {
@@ -646,9 +769,54 @@ class OrchestrationEngine:
                 "steps": [s.__dict__ for s in all_states],
                 "took_ms": execution_time,
             },
-            "validation": validation_result,
+            "validation": final_validation
+                or {"valid": True, "score": 0.0, "confidence": 0.0, "issues": [], "metadata": {}},
             "metrics": self.metrics,
         }
+
+    def _get_redis(self):
+        if self._redis is None and self.redis_url:
+            import redis.asyncio as aioredis
+            self._redis = aioredis.from_url(self.redis_url)
+        return self._redis
+
+    async def _save_execution_snapshot(
+        self,
+        trace_id: str,
+        context: Dict[str, Any],
+        states: List[ExecutionState],
+        plan: ExecutionPlan,
+    ):
+        redis = self._get_redis()
+        if not redis:
+            return
+        snapshot = {
+            "trace_id": trace_id,
+            "query": context.get("query", ""),
+            "intent": plan.intent,
+            "iteration": context.get("iteration", 0),
+            "steps": [
+                {
+                    "step_type": s.step.step_type,
+                    "status": s.status.value,
+                    "result": str(s.result)[:500],
+                }
+                for s in states
+            ],
+            "validation_result": context.get("validation_result", {}),
+        }
+        await redis.set(f"execution:{trace_id}", json.dumps(snapshot), ex=3600)
+
+    async def resume_execution(self, trace_id: str) -> Optional[Dict[str, Any]]:
+        redis = self._get_redis()
+        if not redis:
+            return None
+        data = await redis.get(f"execution:{trace_id}")
+        if not data:
+            return None
+        snapshot = json.loads(data)
+        # Fork execution from the saved snapshot
+        return await self.execute(snapshot["query"], max_iterations=2)
 
     def _aggregate_results(
         self,
@@ -689,12 +857,14 @@ class OrchestrationEngine:
         """Streaming execution that yields step-by-step progress updates."""
         start_time = time.time()
         max_iterations = max_iterations or self.max_iterations
+        trace_id = str(uuid4())
 
         context = {
             "query": query,
             "ir_context": ir_context or {},
             "retrieval_results": {},
             "tool_results": [],
+            "trace_id": trace_id,
         }
 
         yield {"type": "start", "query": query}
@@ -741,7 +911,8 @@ class OrchestrationEngine:
                 yield {"type": "plan_revised", "plan": plan.to_dict()}
 
         reasoning_state = ExecutionState(
-            step=ExecutionStep(step_type="reason", action="generate_answer")
+            step=ExecutionStep(step_type="reason", action="generate_answer"),
+            trace_id=trace_id,
         )
         reasoning_state = await self._execute_step(reasoning_state, context)
 
@@ -766,6 +937,7 @@ class OrchestrationEngine:
         branches: int = 3,
     ) -> Dict[str, Any]:
         start_time = time.time()
+        trace_id = str(uuid4())
 
         context = {
             "query": query,
@@ -773,6 +945,7 @@ class OrchestrationEngine:
             "retrieval_results": {},
             "tool_results": [],
             "branch_results": [],
+            "trace_id": trace_id,
         }
 
         branch_queries = await self._decompose_query_branches(query, branches)
@@ -842,8 +1015,8 @@ Return a JSON array of {branches} sub-query strings, each exploring a different 
             result = extract_json_from_response(response)
             if isinstance(result, list) and len(result) >= 2:
                 return [str(q) for q in result[:branches]]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("LLM query decomposition failed: %s", e)
 
         # Fallback: simple keyword-based decomposition
         return self._decompose_query_branches_fallback(query, branches)
@@ -907,6 +1080,7 @@ Return a JSON array of {branches} sub-query strings, each exploring a different 
         depth: int = 3,
     ) -> Dict[str, Any]:
         start_time = time.time()
+        trace_id = str(uuid4())
 
         context = {
             "query": query,
@@ -914,6 +1088,7 @@ Return a JSON array of {branches} sub-query strings, each exploring a different 
             "retrieval_results": {},
             "tool_results": [],
             "recursive_depth": 0,
+            "trace_id": trace_id,
         }
 
         final_result = await self._recursive_execute(query, context, depth)
@@ -1001,8 +1176,8 @@ Return a JSON array of 2-3 sub-query strings."""
             result = extract_json_from_response(response)
             if isinstance(result, list) and len(result) >= 1:
                 return [str(q) for q in result[:3]]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("LLM query decomposition failed: %s", e)
 
         # Fallback: truncation-based
         queries = []

@@ -8,6 +8,7 @@ Validates:
 - Confidence scoring
 """
 
+import logging
 import re
 import time
 from dataclasses import dataclass, field
@@ -15,6 +16,8 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from core.memory import get_memory_system
+
+logger = logging.getLogger(__name__)
 
 
 class ValidationSeverity(str, Enum):
@@ -46,6 +49,7 @@ class ValidationResult:
     score: float
     issues: List[ValidationIssue] = field(default_factory=list)
     confidence: float = 0.0
+    citations_present: bool = False
     metadata: Dict[str, Any] = field(default_factory=dict)
     timestamp: float = field(default_factory=time.time)
 
@@ -60,19 +64,32 @@ class ValidatorAgent:
         response: str,
         retrieved_context: List[Dict[str, Any]],
         reasoning_trace: Optional[List[Dict[str, Any]]] = None,
+        citations_present: bool = False,
     ) -> ValidationResult:
         issues = []
         total_checks = 0
         passed_checks = 0
 
+        # Accuracy check: always runs (cheap, no LLM)
         accuracy_issues = await self._check_accuracy(query, response, retrieved_context)
-        # Also run LLM-based faithfulness check
-        llm_issues = await self._llm_faithfulness_check(query, response, retrieved_context)
-        all_accuracy_issues = accuracy_issues + llm_issues
-        issues.extend(all_accuracy_issues)
+        issues.extend(accuracy_issues)
         total_checks += 1
-        if not all_accuracy_issues:
+        if not accuracy_issues:
             passed_checks += 1
+
+        # Faithfulness check: skip LLM call when citations are present
+        if citations_present:
+            logger.info(
+                "Skipping LLM faithfulness check — citations present in response"
+            )
+            total_checks += 1
+            passed_checks += 1
+        else:
+            llm_issues = await self._llm_faithfulness_check(query, response, retrieved_context)
+            issues.extend(llm_issues)
+            total_checks += 1
+            if not llm_issues:
+                passed_checks += 1
 
         coherence_issues = await self._check_coherence(response, reasoning_trace or [])
         issues.extend(coherence_issues)
@@ -103,19 +120,22 @@ class ValidatorAgent:
             coverage = len([r for r in retrieved_context if r.get("relevant")]) / len(
                 retrieved_context
             )
-            confidence = (score + coverage) / 2
+            if coverage > 0.0:
+                confidence = (score + coverage) / 2
 
         return ValidationResult(
             valid=not has_errors,
             score=score,
             issues=issues,
             confidence=confidence,
+            citations_present=citations_present,
             metadata={
                 "total_checks": total_checks,
                 "passed_checks": passed_checks,
                 "query_length": len(query),
                 "response_length": len(response),
                 "context_size": len(retrieved_context),
+                "citations_present": citations_present,
             },
         )
 
@@ -222,8 +242,8 @@ Return ONLY valid JSON."""
                             evidence=unsupported,
                             suggestion="Verify claims against retrieved context",
                         ))
-        except Exception:
-            pass  # LLM check is optional - don't fail validation if LLM unavailable
+        except Exception as e:
+            logger.debug("LLM faithfulness check skipped: %s", e)
 
         return issues
 
