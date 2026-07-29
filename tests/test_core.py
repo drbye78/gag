@@ -116,7 +116,7 @@ class TestRBAC:
 
         # Explicitly create user with engineer role for permission testing
         rbac = get_rbac_manager()
-        rbac.create_user("testuser_dev", "dev@test.com", "password123", roles=[Role.ENGINEER.value])
+        await rbac.create_user("testuser_dev", "dev@test.com", "password123", roles=[Role.ENGINEER.value])
         await create_token("testuser_dev")
         has_perm = await check_permission("testuser_dev", "read")
         assert isinstance(has_perm, bool)
@@ -129,7 +129,7 @@ class TestRBAC:
 
         # Explicitly create user with admin role
         rbac = get_rbac_manager()
-        rbac.create_user("admin_test", "admin@test.com", "password123", roles=[Role.ADMIN.value])
+        await rbac.create_user("admin_test", "admin@test.com", "password123", roles=[Role.ADMIN.value])
         await create_token("admin_test")
         is_admin = await check_role("admin_test", "admin")
         assert is_admin is True
@@ -140,7 +140,7 @@ class TestRBAC:
 
         # Explicitly create user with viewer role
         rbac = get_rbac_manager()
-        rbac.create_user("viewer_test", "viewer@test.com", "password123", roles=[Role.VIEWER.value])
+        await rbac.create_user("viewer_test", "viewer@test.com", "password123", roles=[Role.VIEWER.value])
         await create_token("viewer_test")
         can_read = await check_permission("viewer_test", "read")
         assert can_read is True

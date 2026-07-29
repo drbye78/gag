@@ -15,9 +15,16 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-# LlamaIndex - mandatory dependency
-from llama_index.core import SimpleDirectoryReader
-from llama_index.core.readers import StringIterableReader
+# LlamaIndex — try to import, fail gracefully if not installed
+try:
+    from llama_index.core import SimpleDirectoryReader
+    from llama_index.core.readers import StringIterableReader
+    LLAMA_INDEX_AVAILABLE = True
+except ImportError:
+    SimpleDirectoryReader = None  # type: ignore[assignment,misc]
+    StringIterableReader = None  # type: ignore[assignment,misc]
+    LLAMA_INDEX_AVAILABLE = False
+    logger.warning("LlamaIndex not installed — document parsing disabled")
 
 # Docling v2.x - optional dependency (graceful degradation if not installed)
 try:
@@ -299,7 +306,7 @@ def get_document_parser() -> HybridDocumentParser:
 
 
 def is_llama_index_available() -> bool:
-    return True
+    return LLAMA_INDEX_AVAILABLE
 
 
 def is_docling_available() -> bool:

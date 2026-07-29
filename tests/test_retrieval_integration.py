@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 class TestEntityCacheIntegration:
     @pytest.mark.integration
-    def test_entity_cache_lifecycle(self):
+    async def test_entity_cache_lifecycle(self):
         from retrieval.entity_cache import EntityGraphCache, EntityGraphCacheEntry
 
         cache = EntityGraphCache(capacity=3)
@@ -13,16 +13,16 @@ class TestEntityCacheIntegration:
         entry2 = EntityGraphCacheEntry(entity_name="Entity2", ttl=1)
         entry3 = EntityGraphCacheEntry(entity_name="Entity3", ttl=1)
 
-        cache.put("Entity1", entry1)
-        cache.put("Entity2", entry2)
-        cache.put("Entity3", entry3)
+        await cache.put("Entity1", entry1)
+        await cache.put("Entity2", entry2)
+        await cache.put("Entity3", entry3)
 
-        assert cache.get("Entity1") is not None
-        assert cache.get("Entity2") is not None
-        assert cache.get("Entity3") is not None
+        assert await cache.get("Entity1") is not None
+        assert await cache.get("Entity2") is not None
+        assert await cache.get("Entity3") is not None
 
-        cache.put("Entity4", entry1)
-        assert cache.get("Entity1") is None
+        await cache.put("Entity4", entry1)
+        assert await cache.get("Entity1") is None
 
 
 class TestCodeGraphFalkorDBIntegration:

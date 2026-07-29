@@ -1,60 +1,77 @@
 """
 README claim: "Reasoner -- Direct, chain-of-thought, tree-of-thoughts, reflection, and critique modes"
 Source: README.md line 93
+
+Tests the REAL reasoning engine at agents/reasoning.py — not the dead retrieval/reasoning.py.
 """
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from agents.reasoning import ReasonMode, ReasoningAgent
 
 
 @pytest.mark.claim
-@pytest.mark.parametrize("mode", ["DIRECT", "CHAIN_OF_THOUGHTS", "TREE_OF_THOUGHTS", "REFLECT", "CRITIQUE"])
+@pytest.mark.parametrize("mode", ["DIRECT", "CHAIN_OF_THOUGHT", "TREE_OF_THOUGHTS", "REFLECT", "CRITIQUE"])
 def test_reasoning_mode_exists(mode):
-    from retrieval.reasoning import ReasoningMode
-    assert hasattr(ReasoningMode, mode), f"ReasoningMode.{mode} does not exist"
+    assert hasattr(ReasonMode, mode), f"ReasonMode.{mode} does not exist"
 
 
 @pytest.mark.claim
 @pytest.mark.asyncio
 async def test_reasoning_uses_llm_not_string_concat():
-    from retrieval.reasoning import ReasoningEngine, ReasoningMode
-
-    llm_router = MagicMock()
-    llm_router.chat = AsyncMock(return_value=MagicMock(
-        text="LLM-generated answer",
+    mock_router = MagicMock()
+    mock_router.chat = AsyncMock(return_value=MagicMock(
         choices=[{"message": {"content": "LLM-generated answer"}}],
     ))
 
-    engine = ReasoningEngine(mode=ReasoningMode.CHAIN_OF_THOUGHTS)
-    engine._llm_router = llm_router
-    engine._llm_available = True
+    with patch("agents.reasoning.get_router", return_value=mock_router):
+        agent = ReasoningAgent(mode=ReasonMode.CHAIN_OF_THOUGHT)
 
-    facts = [
-        {"content": "Fact 1: JWT tokens are used", "score": 0.9, "source": "docs"},
-        {"content": "Fact 2: OAuth 2.0 is supported", "score": 0.85, "source": "docs"},
-    ]
+    retrieved_data = {
+        "results": [
+            {"source": "docs", "results": [
+                {"content": "Fact 1: JWT tokens are used"},
+                {"content": "Fact 2: OAuth 2.0 is supported"},
+            ]},
+        ],
+    }
 
-    result = await engine.reason("How does auth work?", facts)
+    result = await agent.generate_answer(
+        query="How does auth work?",
+        retrieved_data=retrieved_data,
+        intent="explain",
+    )
 
-    assert llm_router.chat.called, "LLM router was not called -- reasoning is using string concatenation"
-    assert "LLM-generated answer" in result.get("answer", ""), "Answer should come from LLM, not string concat"
+    assert mock_router.chat.called, "LLM router was not called -- reasoning is using string concatenation"
+    assert "LLM-generated answer" in result.answer, (
+        f"Answer should come from LLM, got: {result.answer}"
+    )
 
 
 @pytest.mark.claim
 @pytest.mark.asyncio
 async def test_tree_of_thoughts_makes_multiple_llm_calls():
-    from retrieval.reasoning import ReasoningEngine, ReasoningMode
-
-    llm_router = MagicMock()
-    llm_router.chat = AsyncMock(return_value=MagicMock(
-        text="Answer from branch",
+    mock_router = MagicMock()
+    mock_router.chat = AsyncMock(return_value=MagicMock(
         choices=[{"message": {"content": "Answer from branch"}}],
     ))
 
-    engine = ReasoningEngine(mode=ReasoningMode.TREE_OF_THOUGHTS)
-    engine._llm_router = llm_router
-    engine._llm_available = True
+    with patch("agents.reasoning.get_router", return_value=mock_router):
+        agent = ReasoningAgent(mode=ReasonMode.TREE_OF_THOUGHTS)
 
-    facts = [{"content": "Fact 1", "score": 0.9, "source": "docs"}]
-    await engine.reason("test query", facts)
+    retrieved_data = {
+        "results": [
+            {"source": "docs", "results": [{"content": "Fact 1"}]},
+        ],
+    }
 
-    assert llm_router.chat.call_count >= 2, f"ToT made only {llm_router.chat.call_count} call(s) -- should make multiple"
+    await agent.generate_answer(
+        query="test query",
+        retrieved_data=retrieved_data,
+        intent="explain",
+    )
+
+    # ToT: 3 parallel perspective calls + 1 synthesis call = 4 total calls
+    assert mock_router.chat.call_count >= 3, (
+        f"ToT made only {mock_router.chat.call_count} call(s) -- should make 4 (3 perspectives + 1 synthesis)"
+    )

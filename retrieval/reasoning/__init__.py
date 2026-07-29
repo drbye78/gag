@@ -1,15 +1,18 @@
 """
-Entity-Aware Reasoning Module.
+Reasoning Module.
 
-Provides reasoning capabilities that leverage entity graphs and
-relationship information for context-aware answer synthesis.
+Provides reasoning capabilities powered by agents/reasoning.py (the real engine).
+Backward-compatible wrappers for consumers that still import from retrieval.reasoning.
 """
 
-import sys
 from enum import Enum
+from typing import Any, Dict, List, Optional
+
+from agents.reasoning import ReasonMode, ReasoningAgent, AnswerWithCitations
 
 
 class ReasoningMode(str, Enum):
+    """Backward-compatible reasoning mode enum (maps to agents.reasoning.ReasonMode)."""
     DIRECT = "direct"
     CHAIN_OF_THOUGHTS = "chain_of_thoughts"
     TREE_OF_THOUGHTS = "tree_of_thoughts"
@@ -17,49 +20,109 @@ class ReasoningMode(str, Enum):
     CRITIQUE = "critique"
 
 
-_reasoning_engine_cls = None
+_MODE_MAP = {
+    ReasoningMode.DIRECT: ReasonMode.DIRECT,
+    ReasoningMode.CHAIN_OF_THOUGHTS: ReasonMode.CHAIN_OF_THOUGHT,
+    ReasoningMode.TREE_OF_THOUGHTS: ReasonMode.TREE_OF_THOUGHTS,
+    ReasoningMode.REFLECT: ReasonMode.REFLECT,
+    ReasoningMode.CRITIQUE: ReasonMode.CRITIQUE,
+}
 
 
-def _load_reasoning_engine():
-    global _reasoning_engine_cls
-    if _reasoning_engine_cls is not None:
-        return _reasoning_engine_cls
-    
-    reasoning_file = None
-    for path in sys.path:
-        import os
-        candidate = os.path.join(path, "retrieval", "reasoning.py")
-        if os.path.exists(candidate):
-            reasoning_file = candidate
-            break
-    
-    if reasoning_file:
-        import importlib.util
-        spec = importlib.util.spec_from_file_location("retrieval.reasoning_impl", reasoning_file)
-        module = importlib.util.module_from_spec(spec)
-        sys.modules["retrieval.reasoning_impl"] = module
-        spec.loader.exec_module(module)
-        _reasoning_engine_cls = module.ReasoningEngine
-        return _reasoning_engine_cls
-    
-    return None
+class ReasoningEngine:
+    """Backward-compatible wrapper around agents.reasoning.ReasoningAgent.
+
+    Presents the old .reason(query, facts) → dict API using the real LLM-backed
+    reasoning engine under the hood.
+    """
+
+    def __init__(
+        self,
+        mode: ReasoningMode = ReasoningMode.CHAIN_OF_THOUGHTS,
+        use_llm: bool = True,
+    ):
+        if isinstance(mode, str):
+            try:
+                mode = ReasoningMode(mode)
+            except ValueError:
+                mode = ReasoningMode.CHAIN_OF_THOUGHTS
+        self.mode = mode
+        self.use_llm = use_llm
+        self.max_steps = 10
+        self.max_branches = 3
+        self._agent = ReasoningAgent(mode=_MODE_MAP.get(mode, ReasonMode.CHAIN_OF_THOUGHT))
+
+    @property
+    def _llm_router(self):
+        """Backward-compat: expose the underlying router."""
+        return self._agent.router
+
+    @_llm_router.setter
+    def _llm_router(self, router):
+        self._agent.router = router
+
+    @property
+    def _llm_available(self):
+        return True
+
+    @_llm_available.setter
+    def _llm_available(self, value):
+        pass  # no-op; always available via real router
+
+    def _estimate_confidence(self, answer: str, sources: List[Dict[str, Any]], query: str) -> float:
+        """Estimate confidence based on source count and answer length."""
+        if not sources:
+            return 0.3
+        source_score = min(len(sources) / 5.0, 1.0) * 0.3
+        length_score = min(len(answer) / 500.0, 1.0) * 0.2
+        return round(min(0.5 + source_score + length_score, 1.0), 2)
+
+    async def reason(
+        self,
+        query: str,
+        retrieved_facts: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Reason over retrieved facts. Backward-compatible with old API."""
+        if not retrieved_facts:
+            return {
+                "query": query,
+                "answer": "No relevant information found.",
+                "reasoning_mode": self.mode.value,
+                "steps": [],
+                "confidence": 0.0,
+            }
+
+        retrieved_data = {
+            "results": [{"source": "facts", "results": retrieved_facts}],
+        }
+
+        result: AnswerWithCitations = await self._agent.generate_answer(
+            query=query,
+            retrieved_data=retrieved_data,
+            intent="explain",
+        )
+
+        sources = [f.get("source", "") for f in retrieved_facts[:3]]
+        confidence = self._estimate_confidence(result.answer, retrieved_facts, query)
+
+        return {
+            "query": query,
+            "answer": result.answer,
+            "reasoning_mode": self.mode.value,
+            "steps": [],
+            "confidence": confidence,
+            "sources": sources,
+        }
 
 
-def get_reasoning_engine(mode=ReasoningMode.CHAIN_OF_THOUGHTS):
-    cls = _load_reasoning_engine()
-    if cls is None:
-        raise RuntimeError("Could not load ReasoningEngine")
-    return cls(mode=mode)
+def get_reasoning_engine(
+    mode: ReasoningMode = ReasoningMode.CHAIN_OF_THOUGHTS,
+) -> ReasoningEngine:
+    """Factory for backward-compatible ReasoningEngine."""
+    return ReasoningEngine(mode=mode)
 
 
-def __getattr__(name):
-    if name == "ReasoningEngine":
-        cls = _load_reasoning_engine()
-        if cls is not None:
-            return cls
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-
+# Re-export entity-aware and iterative reasoning
 from retrieval.reasoning.entity_aware import (
     EntityAwareReasoningEngine,
     GraphPathType,
@@ -72,5 +135,6 @@ __all__ = [
     "GraphPathType",
     "EntityRelation",
     "ReasoningMode",
+    "ReasoningEngine",
     "get_reasoning_engine",
 ]

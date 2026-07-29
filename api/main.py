@@ -97,6 +97,12 @@ app.add_middleware(
 
 # --- Mount sub-routers ---
 try:
+    from api.auth_routes import router as auth_router
+    app.include_router(auth_router)
+except ImportError as e:
+    logging.getLogger(__name__).warning("Auth API not available: %s", e)
+
+try:
     from ingestion.api import router as ingestion_router
     app.include_router(ingestion_router)
 except ImportError as e:

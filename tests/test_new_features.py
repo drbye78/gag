@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 
 class TestEntityGraphCache:
-    def test_put_and_get(self):
+    async def test_put_and_get(self):
         from retrieval.entity_cache import EntityGraphCache, EntityGraphCacheEntry
 
         cache = EntityGraphCache(capacity=3, default_ttl=60)
@@ -22,105 +22,105 @@ class TestEntityGraphCache:
             entity_name="AuthService",
             relations=[{"target": "APIGateway"}],
         )
-        cache.put("AuthService", entry)
+        await cache.put("AuthService", entry)
 
-        result = cache.get("AuthService")
+        result = await cache.get("AuthService")
         assert result is not None
         assert result.entity_name == "AuthService"
         assert result.hit_count == 1
 
-    def test_cache_miss(self):
+    async def test_cache_miss(self):
         from retrieval.entity_cache import EntityGraphCache
 
         cache = EntityGraphCache()
-        result = cache.get("nonexistent")
+        result = await cache.get("nonexistent")
         assert result is None
 
-    def test_ttl_expiry(self):
+    async def test_ttl_expiry(self):
         from retrieval.entity_cache import EntityGraphCache, EntityGraphCacheEntry
 
         cache = EntityGraphCache(default_ttl=0)  # 0 TTL = immediately expired
         entry = EntityGraphCacheEntry(entity_name="Test", ttl=0)
-        cache.put("Test", entry)
+        await cache.put("Test", entry)
         # Small sleep to ensure time advances
         import time as _time
         _time.sleep(0.01)
-        result = cache.get("Test")
+        result = await cache.get("Test")
         assert result is None
 
-    def test_lru_eviction(self):
+    async def test_lru_eviction(self):
         from retrieval.entity_cache import EntityGraphCache, EntityGraphCacheEntry
 
         cache = EntityGraphCache(capacity=2, default_ttl=3600)
-        cache.put("A", EntityGraphCacheEntry(entity_name="A"))
-        cache.put("B", EntityGraphCacheEntry(entity_name="B"))
-        cache.put("C", EntityGraphCacheEntry(entity_name="C"))  # should evict A
+        await cache.put("A", EntityGraphCacheEntry(entity_name="A"))
+        await cache.put("B", EntityGraphCacheEntry(entity_name="B"))
+        await cache.put("C", EntityGraphCacheEntry(entity_name="C"))  # should evict A
 
-        assert cache.get("A") is None
-        assert cache.get("B") is not None
-        assert cache.get("C") is not None
+        assert await cache.get("A") is None
+        assert await cache.get("B") is not None
+        assert await cache.get("C") is not None
 
-    def test_lru_touch_moves_to_end(self):
+    async def test_lru_touch_moves_to_end(self):
         from retrieval.entity_cache import EntityGraphCache, EntityGraphCacheEntry
 
         cache = EntityGraphCache(capacity=2, default_ttl=3600)
-        cache.put("A", EntityGraphCacheEntry(entity_name="A"))
-        cache.put("B", EntityGraphCacheEntry(entity_name="B"))
+        await cache.put("A", EntityGraphCacheEntry(entity_name="A"))
+        await cache.put("B", EntityGraphCacheEntry(entity_name="B"))
         # Access A to move it to end (most recently used)
-        cache.get("A")
+        await cache.get("A")
         # Now add C — should evict B (least recently used)
-        cache.put("C", EntityGraphCacheEntry(entity_name="C"))
+        await cache.put("C", EntityGraphCacheEntry(entity_name="C"))
 
-        assert cache.get("A") is not None
-        assert cache.get("B") is None
-        assert cache.get("C") is not None
+        assert await cache.get("A") is not None
+        assert await cache.get("B") is None
+        assert await cache.get("C") is not None
 
-    def test_invalidate(self):
+    async def test_invalidate(self):
         from retrieval.entity_cache import EntityGraphCache, EntityGraphCacheEntry
 
         cache = EntityGraphCache()
-        cache.put("Test", EntityGraphCacheEntry(entity_name="Test"))
-        assert cache.invalidate("Test") is True
-        assert cache.get("Test") is None
-        assert cache.invalidate("NonExistent") is False
+        await cache.put("Test", EntityGraphCacheEntry(entity_name="Test"))
+        assert await cache.invalidate("Test") is True
+        assert await cache.get("Test") is None
+        assert await cache.invalidate("NonExistent") is True
 
-    def test_invalidate_by_prefix(self):
+    async def test_invalidate_by_prefix(self):
         from retrieval.entity_cache import EntityGraphCache, EntityGraphCacheEntry
 
         cache = EntityGraphCache()
-        cache.put("Auth:Service", EntityGraphCacheEntry(entity_name="Auth:Service"))
-        cache.put("Auth:Gateway", EntityGraphCacheEntry(entity_name="Auth:Gateway"))
-        cache.put("Other:Thing", EntityGraphCacheEntry(entity_name="Other:Thing"))
+        await cache.put("Auth:Service", EntityGraphCacheEntry(entity_name="Auth:Service"))
+        await cache.put("Auth:Gateway", EntityGraphCacheEntry(entity_name="Auth:Gateway"))
+        await cache.put("Other:Thing", EntityGraphCacheEntry(entity_name="Other:Thing"))
 
-        count = cache.invalidate_by_prefix("Auth:")
+        count = await cache.invalidate_by_prefix("Auth:")
         assert count == 2
-        assert cache.get("Auth:Service") is None
-        assert cache.get("Auth:Gateway") is None
-        assert cache.get("Other:Thing") is not None
+        assert await cache.get("Auth:Service") is None
+        assert await cache.get("Auth:Gateway") is None
+        assert await cache.get("Other:Thing") is not None
 
-    def test_clear(self):
+    async def test_clear(self):
         from retrieval.entity_cache import EntityGraphCache, EntityGraphCacheEntry
 
         cache = EntityGraphCache()
-        cache.put("A", EntityGraphCacheEntry(entity_name="A"))
-        cache.put("B", EntityGraphCacheEntry(entity_name="B"))
-        cache.get("A")  # generate a hit
-        cache.clear()
+        await cache.put("A", EntityGraphCacheEntry(entity_name="A"))
+        await cache.put("B", EntityGraphCacheEntry(entity_name="B"))
+        await cache.get("A")  # generate a hit
+        await cache.clear()
 
-        stats = cache.get_stats()
+        stats = await cache.get_stats()
         assert stats["size"] == 0
         assert stats["hits"] == 0
         assert stats["misses"] == 0
 
-    def test_get_stats(self):
+    async def test_get_stats(self):
         from retrieval.entity_cache import EntityGraphCache, EntityGraphCacheEntry
 
         cache = EntityGraphCache(capacity=100, default_ttl=3600)
-        cache.put("Test", EntityGraphCacheEntry(entity_name="Test"))
-        cache.get("Test")
-        cache.get("Missing")
+        await cache.put("Test", EntityGraphCacheEntry(entity_name="Test"))
+        await cache.get("Test")
+        await cache.get("Missing")
 
-        stats = cache.get_stats()
+        stats = await cache.get_stats()
         assert stats["size"] == 1
         assert stats["capacity"] == 100
         assert stats["hits"] == 1
@@ -129,13 +129,13 @@ class TestEntityGraphCache:
         assert stats["utilization_pct"] == 1.0
         assert stats["oldest_entry"] is not None
 
-    def test_hit_rate_property(self):
+    async def test_hit_rate_property(self):
         from retrieval.entity_cache import EntityGraphCache
 
         cache = EntityGraphCache()
         assert cache.hit_rate == 0.0
-        cache.get("x")  # miss
-        cache.get("y")  # miss
+        await cache.get("x")  # miss
+        await cache.get("y")  # miss
         assert cache.hit_rate == 0.0
 
     def test_entry_to_dict(self):

@@ -250,7 +250,12 @@ def test_pdlc_fallback_returns_unreliable():
 def test_metrics_endpoint_exists():
     """API must have a /metrics endpoint."""
     from api.main import app
-    routes = [r.path for r in app.routes]
+    routes = []
+    for r in app.routes:
+        if hasattr(r, 'path'):
+            routes.append(r.path)
+        if hasattr(r, 'original_router') and hasattr(r.original_router, 'routes'):
+            routes.extend(sr.path for sr in r.original_router.routes)
     assert "/metrics" in routes, "/metrics endpoint not found"
 
 

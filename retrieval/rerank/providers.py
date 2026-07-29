@@ -14,6 +14,21 @@ class CohereReranker(BaseReranker):
         self.model = model
         self.api_key = api_key
         self.top_n = top_n
+        self._client: Optional[Any] = None
+
+    def _get_client(self):
+        """Return a cached httpx.AsyncClient, creating one if needed."""
+        import httpx
+
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(timeout=30.0)
+        return self._client
+
+    async def close(self) -> None:
+        """Close cached HTTP client."""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
 
     @property
     def provider(self) -> RerankProvider:
@@ -37,25 +52,23 @@ class CohereReranker(BaseReranker):
         if not self.api_key:
             return self._fallback_results(results, top_n)
 
-        import httpx
-
         docs = [r.get("content", r.get("text", "")) for r in results]
 
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    "https://api.cohere.com/v1/rerank",
-                    json={
-                        "query": query,
-                        "documents": docs,
-                        "model": self.model,
-                        "top_n": top_n or self.top_n,
-                    },
-                    headers={"Authorization": f"Bearer {self.api_key}"},
-                    timeout=30.0,
-                )
-                resp.raise_for_status()
-                data = resp.json()
+            client = self._get_client()
+            resp = await client.post(
+                "https://api.cohere.com/v1/rerank",
+                json={
+                    "query": query,
+                    "documents": docs,
+                    "model": self.model,
+                    "top_n": top_n or self.top_n,
+                },
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                timeout=30.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
         except Exception:
             return self._fallback_results(results, top_n)
 
@@ -223,6 +236,21 @@ class JinaReranker(BaseReranker):
         self.model = model
         self.api_key = api_key or os.getenv("JINA_API_KEY")
         self.top_n = top_n
+        self._client: Optional[Any] = None
+
+    def _get_client(self):
+        """Return a cached httpx.AsyncClient, creating one if needed."""
+        import httpx
+
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(timeout=30.0)
+        return self._client
+
+    async def close(self) -> None:
+        """Close cached HTTP client."""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
 
     @property
     def provider(self) -> RerankProvider:
@@ -241,25 +269,23 @@ class JinaReranker(BaseReranker):
         if not self.api_key:
             return self._fallback_results(results, top_n)
 
-        import httpx
-
         docs = [r.get("content", r.get("text", "")) for r in results]
 
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    "https://api.jina.ai/v1/rerank",
-                    json={
-                        "query": query,
-                        "documents": docs,
-                        "model": self.model,
-                        "top_n": top_n or self.top_n,
-                    },
-                    headers={"Authorization": f"Bearer {self.api_key}"},
-                    timeout=30.0,
-                )
-                resp.raise_for_status()
-                data = resp.json()
+            client = self._get_client()
+            resp = await client.post(
+                "https://api.jina.ai/v1/rerank",
+                json={
+                    "query": query,
+                    "documents": docs,
+                    "model": self.model,
+                    "top_n": top_n or self.top_n,
+                },
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                timeout=30.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
         except Exception:
             return self._fallback_results(results, top_n)
 

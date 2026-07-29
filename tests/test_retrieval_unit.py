@@ -103,16 +103,16 @@ class TestEntityGraphCache:
         entry = EntityGraphCacheEntry(entity_name="test_func")
         assert entry.entity_name == "test_func"
 
-    def test_cache_eviction(self):
+    async def test_cache_eviction(self):
         from retrieval.entity_cache import EntityGraphCache, EntityGraphCacheEntry
         cache = EntityGraphCache(capacity=2)
         entry1 = EntityGraphCacheEntry(entity_name="key1")
         entry2 = EntityGraphCacheEntry(entity_name="key2")
         entry3 = EntityGraphCacheEntry(entity_name="key3")
-        cache.put("key1", entry1)
-        cache.put("key2", entry2)
-        cache.put("key3", entry3)
-        result = cache.get("key1")
+        await cache.put("key1", entry1)
+        await cache.put("key2", entry2)
+        await cache.put("key3", entry3)
+        result = await cache.get("key1")
         assert result is None
 
     def test_cache_entry_expired(self):

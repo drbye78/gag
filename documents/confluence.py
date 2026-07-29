@@ -84,6 +84,16 @@ class ConfluenceClient:
         creds = f"{self.email}:{self.api_token}"
         return base64.b64encode(creds.encode()).decode()
 
+    def _get_client(self) -> httpx.AsyncClient:
+        """Return a shared httpx AsyncClient (lazy init)."""
+        if not hasattr(self, "_client") or self._client is None:
+            self._client = httpx.AsyncClient(
+                headers=self._headers,
+                timeout=60.0,
+                follow_redirects=False,
+            )
+        return self._client
+
     # ──────────────────────────────────────────────────────────
     # Attachments API
     # ──────────────────────────────────────────────────────────
@@ -139,51 +149,72 @@ class ConfluenceClient:
         if download_url.startswith("/"):
             download_url = f"{self.url}{download_url}"
 
-        # SSRF protection: validate the final URL's hostname
+        # SSRF protection: resolve hostname once, validate, then use literal IP
+        # to prevent TOCTOU DNS rebinding attacks.
         try:
             parsed = httpx.URL(download_url)
             hostname = parsed.host
-            if hostname:
-                if hostname == self.url.replace("https://", "").replace("http://", "").split("/")[0]:
-                    pass  # Same domain, allowed
-                elif self._is_private_ip(hostname):
-                    raise ValueError("Private IP addresses not allowed")
-                else:
-                    raise ValueError(f"Hostname {hostname} not allowed - SSRF protection")
+            path = parsed.full_path or "/"
+            if not hostname:
+                raise ValueError("Missing hostname in download URL")
+
+            # Same-domain check: resolve via our own getaddrinfo (same call
+            # used by _is_private_ip), avoiding httpx's second resolution.
+            is_private, resolved_ip = self._is_private_ip(hostname)
+            expected_domain = self.url.replace("https://", "").replace("http://", "").split("/")[0]
+            if hostname == expected_domain:
+                pass  # Same domain, use hostname as-is (trusted)
+                final_url = download_url
+                final_headers = dict(self._headers)
+            elif is_private or not resolved_ip:
+                raise ValueError("Private IP addresses not allowed or unresolvable hostname")
+            else:
+                # Use literal IP with Host header to eliminate TOCTOU window
+                final_url = f"https://{resolved_ip}{path}"
+                final_headers = {**self._headers, "Host": hostname}
+        except ValueError:
+            raise
         except Exception as e:
             logging.getLogger(__name__).warning(f"SSRF validation failed for {download_url}: {e}")
             return None
 
         client = self._get_client()
         resp = await client.get(
-            download_url,
-            headers=self._headers,
+            final_url,
+            headers=final_headers,
             timeout=60.0,
         )
         if resp.status_code == 200:
             return resp.content
         return None
 
-    def _is_private_ip(self, hostname: str) -> bool:
-        """Check if hostname resolves to a private IP address.
+    def _is_private_ip(self, hostname: str) -> tuple[bool, str]:
+        """Check if hostname resolves to any private IP address.
 
         SECURITY: Must check ALL resolved IPs, not just the first.
         A hostname that resolves to both public and private IPs enables
         DNS rebinding attacks — the first lookup returns public (passes
         the check), then the actual request goes to the private IP.
+
+        Returns:
+            (is_private, first_resolved_ip) — the IP is empty string
+            on resolution failure.
         """
         import ipaddress
         try:
             addrs = socket.getaddrinfo(hostname, None)
+            first_ip = ""
             for addr in addrs:
                 ip = addr[4][0]
+                if not first_ip:
+                    first_ip = ip
                 network = ipaddress.ip_address(ip)
                 if network.is_private or network.is_loopback or network.is_link_local:
-                    return True
-            return False
+                    return True, first_ip
+            return False, first_ip
         except Exception:
             pass
-        return False
+        return False, ""
 
     async def get_page_attachments(
         self,
@@ -213,57 +244,6 @@ class ConfluenceClient:
     # ──────────────────────────────────────────────────────────
     # Child pages with recursive support
     # ──────────────────────────────────────────────────────────
-
-    async def get_page_children(
-        self,
-        page_id: str,
-        depth: int = 1,
-    ) -> List[ConfluencePage]:
-        children = []
-
-        client = self._get_client()
-        resp = await client.get(
-            f"{self.base_url}/pages/{page_id}/children",
-            headers=self._headers,
-            timeout=30.0,
-        )
-        if resp.status_code != 200:
-            return children
-
-        data = resp.json()
-        results = data.get("results", [])
-
-        # Fetch all child pages and bodies in parallel to avoid N+1
-        async def _fetch_child(item: dict) -> Optional[ConfluencePage]:
-            child_id = item.get("id")
-            child_page, body = await asyncio.gather(
-                self.get_page(child_id),
-                self.get_page_body(child_id),
-            )
-            if not child_page:
-                return None
-            child = ConfluencePage(
-                page_id=child_id,
-                title=child_page.get("title", ""),
-                space_key=child_page.get("spaceId", ""),
-                content=body or "",
-                version=child_page.get("version", {}).get("number", 1),
-            )
-            if depth > 1:
-                child.children = await self.get_page_children(
-                    child_id, depth - 1
-                )
-            return child
-
-        child_results = await asyncio.gather(
-            *[_fetch_child(item) for item in results],
-            return_exceptions=True,
-        )
-        for cr in child_results:
-            if isinstance(cr, ConfluencePage):
-                children.append(cr)
-
-        return children
 
     async def get_page_tree(
         self,

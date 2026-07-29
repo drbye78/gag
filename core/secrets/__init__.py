@@ -20,8 +20,16 @@ class SecretsProvider(ABC):
     """Base class for secrets providers."""
     
     @abstractmethod
-    async def get_secret(self, key: str) -> Optional[str]:
-        """Get a secret value by key."""
+    async def get_secret(self, key: str, json_key: Optional[str] = None) -> Optional[str]:
+        """Get a secret value.
+
+        Args:
+            key: Provider-specific secret identifier (e.g., AWS Secret ID,
+                 Vault path, Azure secret name, env var name).
+            json_key: Optional JSON field name within the secret value.
+                      If None, return the entire secret string.
+                      If provided, parse as JSON and return that field.
+        """
         pass
     
     @abstractmethod
@@ -38,7 +46,7 @@ class VaultSecretsProvider(SecretsProvider):
         self.token = token or os.getenv("VAULT_TOKEN")
         self.mount = mount
     
-    async def get_secret(self, key: str) -> Optional[str]:
+    async def get_secret(self, key: str, json_key: Optional[str] = None) -> Optional[str]:
         if not self.token:
             logger.warning("Vault token not configured")
             return None
@@ -50,7 +58,11 @@ class VaultSecretsProvider(SecretsProvider):
                 path=key,
                 mount_point=self.mount
             )
-            return secret["data"]["data"].get("value")
+            value = secret["data"]["data"].get("value")
+            if json_key and value:
+                secret_dict = json.loads(value)
+                return secret_dict.get(json_key)
+            return value
         except Exception as e:
             logger.error("Failed to get Vault secret %s: %s", key, e)
             return None
@@ -89,7 +101,15 @@ class AWSSecretsManagerProvider(SecretsProvider):
         self.region = region or os.getenv("AWS_REGION", "us-east-1")
         self.profile = profile
     
-    async def get_secret(self, key: str) -> Optional[str]:
+    async def get_secret(self, key: str, json_key: Optional[str] = None) -> Optional[str]:
+        """Get a secret from AWS Secrets Manager.
+
+        Args:
+            key: AWS Secret ID (e.g., "prod/database/credentials").
+            json_key: Optional JSON field name within the secret value.
+                      If None, return the entire JSON secret string.
+                      If provided, parse as JSON and return that field.
+        """
         try:
             import boto3
             import asyncio
@@ -103,8 +123,10 @@ class AWSSecretsManagerProvider(SecretsProvider):
                 response = client.get_secret_value(SecretId=key)
                 secret_string = response.get("SecretString")
                 if secret_string:
-                    secret_dict = json.loads(secret_string)
-                    return secret_dict.get(key)
+                    if json_key:
+                        secret_dict = json.loads(secret_string)
+                        return secret_dict.get(json_key)
+                    return secret_string
                 return None
 
             return await asyncio.to_thread(_fetch)
@@ -147,7 +169,7 @@ class AzureKeyVaultProvider(SecretsProvider):
         self.tenant_id = tenant_id or os.getenv("AZURE_TENANT_ID")
         self.client_id = client_id or os.getenv("AZURE_CLIENT_ID")
     
-    async def get_secret(self, key: str) -> Optional[str]:
+    async def get_secret(self, key: str, json_key: Optional[str] = None) -> Optional[str]:
         if not self.vault_url:
             logger.warning("Azure Key Vault not configured")
             return None
@@ -161,7 +183,11 @@ class AzureKeyVaultProvider(SecretsProvider):
                 credential = DefaultCredential(tenant_id=self.tenant_id, client_id=self.client_id)
                 client = SecretClient(vault_url=self.vault_url, credential=credential)
                 secret = client.get_secret(key)
-                return secret.value
+                value = secret.value
+                if json_key and value:
+                    secret_dict = json.loads(value)
+                    return secret_dict.get(json_key)
+                return value
 
             return await asyncio.to_thread(_fetch)
         except Exception as e:
@@ -196,8 +222,15 @@ class AzureKeyVaultProvider(SecretsProvider):
 class EnvironmentSecretsProvider(SecretsProvider):
     """Fallback to environment variables."""
     
-    async def get_secret(self, key: str) -> Optional[str]:
-        return os.getenv(key)
+    async def get_secret(self, key: str, json_key: Optional[str] = None) -> Optional[str]:
+        value = os.getenv(key)
+        if json_key and value:
+            try:
+                secret_dict = json.loads(value)
+                return secret_dict.get(json_key)
+            except (json.JSONDecodeError, TypeError):
+                return None
+        return value
     
     async def get_secrets(self, prefix: str = "") -> Dict[str, str]:
         prefix = prefix.upper()
@@ -226,10 +259,10 @@ def get_secrets_provider() -> SecretsProvider:
     return EnvironmentSecretsProvider()
 
 
-async def get_secret(key: str, default: str = None) -> str:
+async def get_secret(key: str, default: str = None, json_key: Optional[str] = None) -> str:
     """Get a secret from the configured provider."""
     provider = get_secrets_provider()
-    return await provider.get_secret(key) or default
+    return await provider.get_secret(key, json_key=json_key) or default
 
 
 async def get_all_secrets(prefix: str = "") -> Dict[str, str]:

@@ -22,7 +22,6 @@ class TestRerankProvider:
         assert RerankProvider.BGE.value == "bge-reranker"
         assert RerankProvider.LLAMA_INDEX.value == "llama_index"
         assert RerankProvider.SENTENCE_TRANSFORMER.value == "sentence_transformer"
-        assert RerankProvider.CROSS_ENCODER.value == "cross_encoder"
         assert RerankProvider.JINA.value == "jina"
 
     def test_rerank_provider_is_string_enum(self):

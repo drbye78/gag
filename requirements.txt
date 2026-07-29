@@ -70,3 +70,13 @@ langdetect>=1.0.9
 
 # ColBERT — late interaction embeddings (optional, enables COLBERT_ENABLED=true)
 fastembed>=0.3.0
+
+# ────────────────────────────────────────────────────────
+# Security
+# ────────────────────────────────────────────────────────
+cryptography>=41.0.0
+
+# ────────────────────────────────────────────────────────
+# Dev / test dependencies
+# ────────────────────────────────────────────────────────
+hypothesis>=6.0.0

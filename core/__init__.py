@@ -9,5 +9,6 @@ from core.middleware import (
     sanitize_html,
     get_error_handler,
 )
+from core.rate_limiter import DistributedRateLimiter, get_distributed_rate_limiter
 from core.metrics import get_metrics, observe_request, observe_retrieval, observe_llm
 from core.background import get_task_runner, get_ws_manager

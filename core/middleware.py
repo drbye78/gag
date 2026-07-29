@@ -6,6 +6,7 @@ from typing import Callable, Dict, Optional
 
 from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from core.config import get_settings
 
@@ -90,6 +91,40 @@ def get_rate_limiter() -> RateLimiter:
             settings.rate_limit_requests, settings.rate_limit_window
         )
     return _rate_limiter
+
+
+class DistributedRateLimitMiddleware(BaseHTTPMiddleware):
+    """Redis-backed rate limiting middleware.
+
+    Uses DistributedRateLimiter with Redis for accurate per-client
+    counting across multiple worker processes/replicas.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        from core.rate_limiter import get_distributed_rate_limiter
+
+        limiter = await get_distributed_rate_limiter()
+
+        # Key by client IP (or X-Forwarded-For)
+        client_ip = request.client.host if request.client else "unknown"
+        forwarded = request.headers.get("X-Forwarded-For", "")
+        rate_key = forwarded.split(",")[0].strip() if forwarded else client_ip
+
+        allowed, remaining = await limiter.is_allowed(rate_key)
+
+        if not allowed:
+            return JSONResponse(
+                status_code=429,
+                content={"error": "Rate limit exceeded", "retry_after": limiter.window_seconds},
+                headers={
+                    "Retry-After": str(limiter.window_seconds),
+                    "X-RateLimit-Remaining": "0",
+                },
+            )
+
+        response = await call_next(request)
+        response.headers["X-RateLimit-Remaining"] = str(remaining)
+        return response
 
 
 def sanitize_input(text: str, max_length: int = 10000) -> str:
@@ -262,13 +297,8 @@ def setup_middleware(app) -> None:
         response = await call_next(request)
         return response
 
-    rate_limiter = get_rate_limiter()
-
-    @app.middleware("http")
-    async def rate_limit_middleware(request, call_next):
-        await rate_limiter(request)
-        response = await call_next(request)
-        return response
+    # Distributed (Redis-backed) rate limiting — accurate across workers
+    app.add_middleware(DistributedRateLimitMiddleware)
 
     error_handler = get_error_handler()
     app.add_exception_handler(Exception, error_handler.handle)
