@@ -238,8 +238,8 @@ async def codegraph_visualize(request: CodeGraphVisualizeRequest):
     elif request.query_type == "show_relationships":
         if not request.node_name:
             return {"error": "node_name is required for show_relationships query", "url": None}
-        from core.security import sanitize_filename
-        safe_name = sanitize_filename(request.node_name)
+        from core.security import safe_cypher_identifier
+        safe_name = safe_cypher_identifier(request.node_name)
         builder = CypherBuilder(allowed_types={"Component", "Service", "Function", "Class", "Module", "File", "Entity"})
         builder.match_node(["Entity"], {"name": safe_name})
         builder.return_clause("n")

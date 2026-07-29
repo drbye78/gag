@@ -1,5 +1,6 @@
 """Tests for UIPatternMatcher - pattern matching and Cypher generation."""
 
+import pytest
 from datetime import datetime
 
 from ui.pattern_matcher import (
@@ -134,8 +135,10 @@ class TestBuildPatternCypher:
 
 
 class TestBuildFullCypherIntegration:
-    def test_build_full_cypher_integration(self):
+    @pytest.mark.asyncio
+    async def test_build_full_cypher_integration(self):
         """Pattern Cypher combines with graph builder."""
+        from unittest.mock import AsyncMock, MagicMock, patch
         from ui.graph_builder import UIGraphBuilder
 
         elements = [
@@ -145,13 +148,18 @@ class TestBuildFullCypherIntegration:
         ]
         result = _make_sample_result(elements=elements)
         builder = UIGraphBuilder()
-        cypher = builder.build_cypher(result)
 
-        assert "UISketch" in cypher
-        assert "UIElement" in cypher
-        assert "UILayout" in cypher
-        assert "UIPattern" in cypher
-        assert "MATCHES_PATTERN" in cypher
+        mock_client = MagicMock()
+        mock_client.execute = AsyncMock(return_value={"results": []})
+        with patch("graph.client.get_falkordb_client", return_value=mock_client):
+            await builder.build(result)
+
+        call_args_str = str(mock_client.execute.call_args)
+        assert "UISketch" in call_args_str
+        assert "UIElement" in call_args_str
+        assert "UILayout" in call_args_str
+        assert "UIPattern" in call_args_str
+        assert "MATCHES_PATTERN" in call_args_str
 
 
 class TestSAPMappingCypher:

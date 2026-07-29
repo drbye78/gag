@@ -49,6 +49,16 @@ All settings are loaded from environment variables. The `Settings` class in `cor
 | `REDIS_URL` | `redis://localhost:6379` | Redis URL for cache invalidation and state persistence |
 | `TOKEN_BUDGET` | `10000` | Per-request token budget limit (LLM calls blocked when exceeded) |
 
+## Security
+
+| Variable | Default | Description |
+|---|---|---|
+| `JWT_SECRET` | (required) | JWT signing secret — must be changed from default in production |
+| `JWT_EXPIRATION_MINUTES` | `60` | JWT token expiration time in minutes |
+| `RATE_LIMIT_DEFAULT` | `100` | Max requests per rate-limit window |
+| `RATE_LIMIT_WINDOW_SECONDS` | `60` | Rate-limit sliding window size in seconds |
+| `CREDENTIAL_ENCRYPT_KEY` | (required) | 32-character key for Fernet credential encryption |
+
 ## Embeddings
 
 | Variable | Default | Description |

@@ -178,41 +178,65 @@ class TestLayoutNodeCypher:
         assert "CREATE (s)-[:HAS_LAYOUT]->(l)" in cypher
 
 
-class TestFullBuildCypher:
-    def test_full_cypher_contains_all_node_types(self):
+class TestFullBuild:
+    @pytest.mark.asyncio
+    async def test_full_cypher_contains_all_node_types(self):
         builder = UIGraphBuilder()
-        result = _make_sample_result()
-        cypher = builder.build_cypher(result)
+        mock_client = MagicMock()
+        mock_client.execute = AsyncMock(return_value={"results": []})
+        with patch("graph.client.get_falkordb_client", return_value=mock_client):
+            result = _make_sample_result()
+            await builder.build(result)
 
-        assert "UISketch" in cypher
-        assert "UIElement" in cypher
-        assert "UILayout" in cypher
+        call_args_str = str(mock_client.execute.call_args)
+        assert "UISketch" in call_args_str
+        assert "UIElement" in call_args_str
+        assert "UILayout" in call_args_str
 
-    def test_full_cypher_contains_relationships(self):
+    @pytest.mark.asyncio
+    async def test_full_cypher_contains_relationships(self):
         builder = UIGraphBuilder()
-        result = _make_sample_result()
-        cypher = builder.build_cypher(result)
+        mock_client = MagicMock()
+        mock_client.execute = AsyncMock(return_value={"results": []})
+        with patch("graph.client.get_falkordb_client", return_value=mock_client):
+            result = _make_sample_result()
+            await builder.build(result)
 
-        assert "CONTAINS_ELEMENT" in cypher
-        assert "HAS_LAYOUT" in cypher
+        call_args_str = str(mock_client.execute.call_args)
+        assert "CONTAINS_ELEMENT" in call_args_str
+        assert "HAS_LAYOUT" in call_args_str
 
-    def test_full_cypher_with_embedding(self):
+    @pytest.mark.asyncio
+    async def test_full_cypher_with_embedding(self):
         builder = UIGraphBuilder()
-        embedding = [0.1, 0.2, 0.3]
-        result = _make_sample_result(visual_embedding=embedding)
-        cypher = builder.build_cypher(result)
+        mock_client = MagicMock()
+        mock_client.execute = AsyncMock(return_value={"results": []})
+        with patch("graph.client.get_falkordb_client", return_value=mock_client):
+            embedding = [0.1, 0.2, 0.3]
+            result = _make_sample_result(visual_embedding=embedding)
+            response = await builder.build(result)
 
-        assert "visual_embedding" in cypher
+        assert response["success"] is True
+        mock_client.execute.assert_called_once()
+        # Verify the sketch_props param was passed to execute
+        args, _ = mock_client.execute.call_args
+        assert len(args) >= 2
+        assert "sketch_props" in args[1]
 
-    def test_full_cypher_with_empty_elements(self):
+    @pytest.mark.asyncio
+    async def test_full_cypher_with_empty_elements(self):
         builder = UIGraphBuilder()
-        result = _make_sample_result(elements=[])
-        cypher = builder.build_cypher(result)
+        mock_client = MagicMock()
+        mock_client.execute = AsyncMock(return_value={"results": []})
+        with patch("graph.client.get_falkordb_client", return_value=mock_client):
+            result = _make_sample_result(elements=[])
+            await builder.build(result)
 
-        assert "UISketch" in cypher
-        assert "UILayout" in cypher
-        assert "UIElement" not in cypher
-        assert "CONTAINS_ELEMENT" not in cypher
+        call_args_str = str(mock_client.execute.call_args)
+        assert "UISketch" in call_args_str
+        assert "UILayout" in call_args_str
+        assert "UIElement" not in call_args_str
+        assert "CONTAINS_ELEMENT" not in call_args_str
 
 
 class TestBuild:

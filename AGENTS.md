@@ -80,6 +80,7 @@ LLM_API_KEY=your-key
 JWT_SECRET=<strong-random-key>
 CREDENTIAL_ENCRYPT_KEY=<32-char-key>
 CORS_ORIGINS=https://your-domain.com
+REDIS_URL=redis://localhost:6379
 ```
 
 ## Docker
@@ -114,6 +115,14 @@ docker-compose up -d  # Full stack: API + Qdrant + FalkorDB + Redis
 - **Graph** (1): query_graph
 - **Infrastructure** (2): security_validate, cost_estimate
 - **Multi-modal** (5): extract_from_image, analyze_visual, parse_document_advanced, colpal_search, ui_sketch_search
+
+## Security Features
+
+- **User persistence**: Redis-backed user store (`core/user_store.py`) survives restarts and shares state across replicas
+- **Token blacklist**: JWT revocation via Redis TTL-based blacklist (`core/token_blacklist.py`) — `POST /auth/revoke`
+- **Rate limiting**: Distributed sliding window via Redis (`core/rate_limiter.py`) — accurate across all workers
+- **SSRF prevention**: TOCTOU-safe DNS resolution (`core/security.py`) for Confluence/WebDAV
+- **Cypher safety**: `safe_cypher_identifier()` for graph query node names
 
 ## CodeGraphContext (retrieval/code_graph.py)
 

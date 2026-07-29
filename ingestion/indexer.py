@@ -433,8 +433,6 @@ class GraphIndexer:
                 cypher = "\n".join(cypher_parts)
                 params = all_params
 
-                params = {"nodes": node_data}
-
                 client = await self._get_client()
                 resp = await client.post(
                     f"{self.base_url}/query",
@@ -551,8 +549,6 @@ class GraphIndexer:
                     """)
                 cypher = "\n".join(cypher_parts)
                 params = all_params
-
-                params = {"edges": edge_data}
 
                 client = await self._get_client()
                 resp = await client.post(

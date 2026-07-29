@@ -118,3 +118,32 @@ def sanitize_filename(name: str) -> str:
         raise ValueError("Filename is empty after sanitization")
 
     return sanitized
+
+
+def safe_cypher_identifier(name: str, max_length: int = 64) -> str:
+    """Sanitize a string for use as a Cypher node/relationship label or identifier.
+
+    Allows only alphanumeric characters and underscores.
+    Replaces all other characters with underscores.
+    Truncates to max_length if too long.
+
+    Args:
+        name: Raw identifier string
+        max_length: Maximum allowed length (default 64)
+
+    Returns:
+        Safe identifier string for Cypher queries
+    """
+    # Replace any non-alphanumeric, non-underscore char with underscore
+    safe = re.sub(r'[^A-Za-z0-9_]', '_', name)
+    # Collapse multiple underscores
+    safe = re.sub(r'_+', '_', safe)
+    # Strip leading/trailing underscores
+    safe = safe.strip('_')
+    # Truncate
+    if len(safe) > max_length:
+        safe = safe[:max_length].rstrip('_')
+    # Fallback for empty results
+    if not safe:
+        safe = "node"
+    return safe

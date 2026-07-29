@@ -87,6 +87,48 @@ Lists all available MCP tools and schema.
 
 ---
 
+## Authentication
+
+### `POST /auth/register`
+Register a new user account.
+
+**Request:**
+```json
+{
+  "username": "admin",
+  "password": "secure-password",
+  "email": "admin@example.com"
+}
+```
+
+### `POST /auth/token`
+Login and receive a JWT access token.
+
+**Request:**
+```json
+{
+  "username": "admin",
+  "password": "secure-password"
+}
+```
+
+**Response:**
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIs...",
+  "token_type": "bearer",
+  "expires_in": 3600
+}
+```
+
+### `POST /auth/revoke`
+Revoke the current JWT token (adds to blacklist).
+
+Requires `Authorization: Bearer <token>` header.
+Blacklisted tokens auto-expire when the JWT naturally expires via Redis TTL.
+
+---
+
 ## Multimodal
 
 ### `POST /multimodal/extract`

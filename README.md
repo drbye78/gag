@@ -82,7 +82,7 @@ This system answers complex engineering questions by reasoning over your codebas
 - **6 strategies**: Vector-only, Graph-only, Hybrid, Multi-hop, Cascade, Iterative
 - **Platform-aware retrieval**: Auto-detects AWS/Azure/GCP/SAP/Tanzu/PowerPlatform from queries
 - **Knowledge graph integration**: Queries use cases, ADRs, reference architectures, and platform services
-- **Entity graph cache**: LRU eviction (500 entries, 1h TTL) with distributed Redis pub/sub invalidation and REST API for monitoring
+- **Entity graph cache**: LRU eviction (500 entries, 1h TTL) with distributed Redis pub/sub invalidation and REST API
 - **4 fusion methods**: RRF, Score-normalized, Weighted, Combined
 - **5 rerank providers**: Cohere, BGE, SentenceTransformers, Jina, LlamaIndex
 - **6 citation styles**: Parenthetical, Verbatim, Footnote, Highlight, Structured, Diagram
@@ -104,6 +104,15 @@ This system answers complex engineering questions by reasoning over your codebas
 - **Redis-backed state persistence**: Execution snapshots for crash recovery and resumption
 - Retry logic with exponential backoff
 - Streaming execution with token-level progress yields
+
+### 🔒 Security
+- **Redis-backed user persistence**: Users survive restarts and share across replicas — no more in-memory-only user stores
+- **JWT token blacklist**: Revoked tokens auto-expire via Redis TTL, matching natural token expiry
+- **Token revocation**: `POST /auth/revoke` with `jti` claims in all JWTs
+- **Distributed rate limiting**: Redis sliding window (INCR+EXPIRE) — accurate across all uvicorn workers
+- **SSRF prevention**: TOCTOU-safe DNS resolution with literal IP + Host header for Confluence/WebDAV
+- **Parameterized Cypher**: All graph queries use `$param` placeholders with identifier validation
+- **Secrets management**: AWS Secrets Manager, Azure Key Vault, HashiCorp Vault providers with async SDK calls
 
 ### 🖼️ Multimodal & Diagrams
 - Vision Language Model (VLM) processor for architecture diagrams
@@ -196,6 +205,10 @@ pip install -e ".[prod]"                     # Production
 | `/health` | GET | Health check with dependency status |
 | `/query` | POST | Main query endpoint (orchestration engine) |
 | `/mcp` | POST/GET | MCP JSON-RPC 2.0 handler |
+| `/auth/register` | POST | Register a new user |
+| `/auth/token` | POST | Login and receive JWT token |
+| `/auth/revoke` | POST | Revoke (blacklist) current JWT token |
+| `/metrics` | GET | Prometheus-compatible metrics |
 | `/multimodal/extract` | POST | Extract text from images via VLM |
 | `/reasoning/chain` | POST | Chain-of-thoughts reasoning |
 | `/reasoning/entity` | POST | Entity-aware reasoning with graph traversal |
@@ -307,9 +320,10 @@ python -m pytest tests/ -v
 ./eis.py eval                       # Run evaluation pipeline
 ./eis.py eval --limit 3             # Run first 3 test cases
 ./eis.py eval --case tc001           # Run specific test case
+./eis.py check                     # Lint + type checking
 ```
 
-**713+ tests (113/114 claim tests passing).**
+**733+ tests (113/114 claim tests passing, zero failures).**
 
 ---
 
@@ -328,6 +342,7 @@ python -m pytest tests/ -v
 
 | Version | Highlights |
 |---|---|
+| **v6.1** | Security hardening: Redis-backed user persistence, JWT token blacklist with auto-expiry and `/auth/revoke` endpoint, distributed rate limiting (Redis sliding window), TOCTOU SSRF fix, AWS Secrets Manager key lookup fix, dead code removal (774-line reasoning engine, protocols.py, PublicEndpoint), `cryptography` + `hypothesis` in deps, `llama_index` conditional import, 6 httpx client pooling fixes, 733+ tests (zero failures) |
 | **v6.0** | Self-correcting orchestration: validation feedback loop with topological-sort wave execution, real multi-call reasoning (ToT with 3 parallel calls, Reflect 2-pass, Critique separate eval), streaming token output, distributed entity cache invalidation (Redis pub/sub), execution state persistence, token budget controls, AST-aware chunking for JS/TS/Go/Java, dynamic knowledge graph CRUD, 7 new artifact types (40 total), automated evaluation pipeline (`./eis.py eval`) |
 | **v5.0** | Production-quality refactor: all 22 README claims verified by tests, 17 architecture fixes, real LLM reasoning (5 modes), Louvain GraphRAG, ValidatorAgent wired, wave-based orchestration, APOC-free Cypher, /metrics endpoint, TraceMiddleware, 713 tests |
 | **v4.0** | Comprehensive architecture audit (15 modules documented), 560 tests, 126 config fields, 69 MCP tools, GraphRAG pipeline, ColPali, Confluence/WebDAV integration |
