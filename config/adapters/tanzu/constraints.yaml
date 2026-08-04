@@ -1,0 +1,11 @@
+# VMware Tanzu Platform Constraints
+constraints:
+  spring_boot:
+    min_java_version: "17"
+    recommended_memory_mb: 1024
+  knative:
+    max_concurrency_per_revision: 1000
+    max_timeout_seconds: 3600
+  tkg:
+    min_kubernetes_version: "1.26"
+    max_worker_nodes: 100

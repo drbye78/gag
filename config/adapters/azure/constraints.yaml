@@ -1,0 +1,28 @@
+# Azure Platform Constraints — real service limits and compatibility rules
+# Sources: Azure documentation, service quotas (as of 2025)
+
+constraints:
+  functions:
+    consumption_max_timeout_seconds: 600
+    premium_max_timeout_seconds: 3600
+    max_memory_mb: 1536
+    max_instance_count: 200
+  aks:
+    max_node_count: 100
+    max_pods_per_node: 250
+    min_kubernetes_version: "1.27"
+  cosmos_db:
+    max_item_size_bytes: 2097152
+    max_throughput: 1000000
+    min_throughput: 400
+  event_hubs:
+    max_event_size_bytes: 1048576
+    max_throughput_units: 40
+  cross_service:
+    incompatible_combinations:
+      - services: [functions, aks]
+        condition: direct_integration
+        message: "Azure Functions should not be deployed inside AKS — use Container Apps or App Service instead for containerized workloads"
+    recommended_combinations:
+      - services: [functions, cosmos_db]
+        reason: "Cosmos DB change feed triggers Azure Functions for event-driven processing"

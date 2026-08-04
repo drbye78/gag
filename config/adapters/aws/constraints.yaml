@@ -1,0 +1,76 @@
+# AWS Platform Constraints — real service limits and compatibility rules
+# Sources: AWS documentation, service quotas (as of 2025)
+
+constraints:
+  lambda:
+    max_timeout_seconds: 900
+    max_memory_mb: 10240
+    max_ephemeral_storage_mb: 10240
+    max_deployment_package_bytes: 262144000  # 250MB unzipped
+    max_deployment_package_zipped_bytes: 52428800  # 50MB zipped
+    max_concurrent_executions: 1000  # default account limit
+    vpc_required_for:
+      - efs  # EFS mount requires VPC config
+      - rds_proxy  # RDS Proxy requires VPC
+    internet_access_requirements:
+      - nat_gateway  # Lambda in VPC needs NAT Gateway for internet
+    regional_availability:
+      us-east-1:
+        arm_supported: true
+        graviton_supported: true
+      us-west-1:
+        arm_supported: false
+        graviton_supported: false
+      eu-west-1:
+        arm_supported: true
+        graviton_supported: true
+
+  dynamodb:
+    max_item_size_bytes: 409600  # 400KB
+    max_global_secondary_indexes: 20
+    max_local_secondary_indexes: 5
+    on_demand_default_limits:
+      write_capacity_units: 40000
+      read_capacity_units: 40000
+    provisioned_default_limits:
+      write_capacity_units: 40000
+      read_capacity_units: 40000
+
+  ecs_fargate:
+    max_cpu_units: 16384  # 16 vCPU
+    max_memory_mb: 122880  # 120 GB
+    min_cpu_units: 256
+    min_memory_mb: 512
+    max_ephemeral_storage_gb: 200
+
+  api_gateway:
+    max_timeout_ms: 29000  # 29 seconds
+    max_payload_mb: 10
+
+  s3:
+    max_bucket_name_length: 63
+    min_bucket_name_length: 3
+    max_object_size_bytes: 5497558138880  # 5TB
+    max_single_upload_bytes: 5368709120  # 5GB
+
+  step_functions:
+    standard_max_execution_seconds: 31536000  # 1 year
+    express_max_execution_seconds: 300  # 5 minutes
+    max_history_events: 25000
+
+  cross_service:
+    incompatible_combinations:
+      - services: [lambda, efs]
+        condition: no_vpc_config
+        message: "Lambda cannot mount EFS without VPC configuration"
+      - services: [lambda, rds_proxy]
+        condition: no_vpc_config
+        message: "Lambda requires VPC configuration to use RDS Proxy"
+      - services: [apigateway, lambda]
+        condition: timeout_gt_29000
+        message: "API Gateway maximum integration timeout is 29 seconds"
+    recommended_combinations:
+      - services: [cloudfront, s3]
+        reason: "CloudFront provides CDN caching for S3 origins"
+      - services: [cloudfront, waf]
+        reason: "WAF protects CloudFront distributions from common web exploits"

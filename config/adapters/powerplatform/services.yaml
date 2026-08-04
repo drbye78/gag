@@ -1,0 +1,26 @@
+# Microsoft Power Platform Service Catalog — organized by category
+services:
+  apps:
+    - canvas_apps
+    - model_driven_apps
+    - portals
+    - pages
+
+  automation:
+    - power_automate
+    - desktop_rpa
+    - process_mining
+
+  data:
+    - dataverse
+    - dataverse_streaming
+    - ai_builder
+
+  analytics:
+    - power_bi
+    - dataverse_analytics
+
+  ai:
+    - copilot
+    - ai_builder
+    - document_automation

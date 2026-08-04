@@ -1,0 +1,31 @@
+# Microsoft Power Platform Architecture Patterns
+patterns:
+  - id: canvas-copilot
+    name: Canvas App + Copilot
+    domain: application
+    triggers:
+      - has_low_code
+    components:
+      - canvas_apps
+      - copilot
+      - dataverse
+
+  - id: model-driven-enterprise
+    name: Model-Driven Enterprise App
+    domain: application
+    triggers:
+      - has_model_driven
+    components:
+      - model_driven_apps
+      - dataverse
+      - power_automate
+
+  - id: power-automate-integration
+    name: Power Automate Integration
+    domain: automation
+    triggers:
+      - has_automation
+    components:
+      - power_automate
+      - dataverse
+      - ai_builder

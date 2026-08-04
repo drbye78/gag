@@ -1,0 +1,47 @@
+# Azure Service Catalog — organized by category
+services:
+  compute:
+    - functions
+    - virtual_machines
+    - aks
+    - container_instances
+    - app_service
+    - batch
+  
+  storage:
+    - blob_storage
+    - disk_storage
+    - file_storage
+    - queue_storage
+    - table_storage
+    - data_lake
+  
+  database:
+    - cosmos_db
+    - sql_database
+    - postgresql
+    - mysql
+    - redis_cache
+    - synapse
+  
+  networking:
+    - virtual_network
+    - load_balancer
+    - application_gateway
+    - front_door
+    - cdn
+    - dns
+  
+  integration:
+    - event_hubs
+    - service_bus
+    - event_grid
+    - logic_apps
+    - api_management
+  
+  security:
+    - active_directory
+    - key_vault
+    - defender
+    - sentinel
+    - ddos_protection

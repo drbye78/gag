@@ -7,12 +7,32 @@ from models.ir import IRFeature, PlatformContext
 
 
 class VMwareTanzuAdapter(RecommendationMixin, PlatformAdapter):
+    def __init__(self):
+        super().__init__()
+        self._config_loader = None
+    
+    def _get_config_loader(self):
+        if self._config_loader is None:
+            from core.adapters.config_loader import get_config_loader
+            self._config_loader = get_config_loader()
+        return self._config_loader
+    
     @property
     def platform_id(self) -> str:
         return "tanzu"
     
     @property
     def supported_services(self) -> List[str]:
+        """Load services from YAML config if available, else use defaults."""
+        loader = self._get_config_loader()
+        services = loader.load_services("tanzu")
+        if services:
+            # Flatten categorized services into flat list
+            result = []
+            for category_services in services.values():
+                result.extend(category_services)
+            return sorted(set(result))
+        # Fallback to defaults
         return [
             "spring-boot",
             "spring-cloud-function",

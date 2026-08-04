@@ -1,0 +1,17 @@
+# Platform V (Платформа V) On-Premises Service Catalog
+# SberTech's FSTEC-certified on-premises/private-cloud enterprise platform
+# NOT Cloud.ru Evolution — this is the bare-metal private cloud suite
+services:
+  platform:
+    - sberlinux            # SberLinux OS Server — RPM-based Linux OS (FSTEC #4884)
+    - dropapp              # DropApp — Kubernetes container orchestration, Go operators (FSTEC #4883)
+    - kintsugi             # Kintsugi — Istio-based service mesh (mTLS, Egress Gateway)
+
+  data:
+    - pangolindb           # Pangolin DB — FSTEC-certified DBMS, migration from Oracle/PostgreSQL/MS SQL/DB2 (FSTEC #4704)
+
+  security:
+    - iam-se               # IAM SE — Authentication/Authorization, SSO, OpenID Connect, JWT (FSTEC #4999)
+    - idm                  # IDM — Centralized identity lifecycle management, SCIM protocol
+    - sowa                 # SOWA — API gateway, WAF, AI-Guardrails for LLM prompt injection prevention
+    - iam-proxy            # IAM Proxy — OpenID Connect-based per-service authentication proxy

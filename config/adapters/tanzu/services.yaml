@@ -1,0 +1,25 @@
+# VMware Tanzu Service Catalog — organized by category
+services:
+  runtime:
+    - spring_boot
+    - tanzu_application_platform
+    - build_service
+
+  serverless:
+    - knative_serving
+    - knative_eventing
+
+  data:
+    - gemfire
+    - rabbitmq
+    - sql
+    - redis
+
+  kubernetes:
+    - tkg
+    - tmc
+    - tsm
+
+  observability:
+    - wavefront
+    - tanzu_observability

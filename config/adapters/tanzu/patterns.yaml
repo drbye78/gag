@@ -1,0 +1,32 @@
+# VMware Tanzu Architecture Patterns
+patterns:
+  - id: spring-boot-tap
+    name: Spring Boot on Tanzu Application Platform
+    domain: microservices
+    triggers:
+      - has_microservices
+      - has_spring
+    components:
+      - spring_boot
+      - build_service
+      - tanzu_application_platform
+
+  - id: knative-serverless
+    name: Knative Serverless
+    domain: serverless
+    triggers:
+      - has_serverless
+    components:
+      - knative_serving
+      - knative_eventing
+
+  - id: tkg-microservices
+    name: TKG Microservices
+    domain: microservices
+    triggers:
+      - has_container
+      - has_kubernetes
+    components:
+      - tkg
+      - spring_boot
+      - gemfire

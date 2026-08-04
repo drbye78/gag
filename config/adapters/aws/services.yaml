@@ -1,0 +1,52 @@
+# AWS Service Catalog — organized by category
+services:
+  compute:
+    - lambda
+    - ec2
+    - ecs
+    - eks
+    - fargate
+    - batch
+    - lightsail
+  
+  storage:
+    - s3
+    - ebs
+    - efs
+    - fsx
+    - glacier
+    - storage_gateway
+  
+  database:
+    - dynamodb
+    - rds
+    - aurora
+    - redshift
+    - elasticache
+    - neptune
+    - timestream
+  
+  networking:
+    - vpc
+    - cloudfront
+    - route53
+    - api_gateway
+    - elb
+    - direct_connect
+  
+  integration:
+    - sns
+    - sqs
+    - eventbridge
+    - step_functions
+    - appflow
+    - mq
+  
+  security:
+    - iam
+    - cognito
+    - kms
+    - secrets_manager
+    - waf
+    - shield
+    - guardduty

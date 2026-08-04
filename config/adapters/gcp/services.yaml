@@ -1,0 +1,43 @@
+# GCP Service Catalog — organized by category
+services:
+  compute:
+    - cloud_functions
+    - cloud_run
+    - gke
+    - compute_engine
+    - app_engine
+    - batch
+  
+  storage:
+    - cloud_storage
+    - persistent_disk
+    - filestore
+  
+  database:
+    - firestore
+    - cloud_sql
+    - bigtable
+    - spanner
+    - memorystore
+    - bigquery
+  
+  networking:
+    - vpc
+    - cloud_load_balancing
+    - cloud_cdn
+    - cloud_dns
+    - cloud_nat
+  
+  integration:
+    - pubsub
+    - cloud_tasks
+    - cloud_scheduler
+    - eventarc
+    - workflows
+  
+  security:
+    - iam
+    - cloud_kms
+    - secret_manager
+    - cloud_armor
+    - security_command_center

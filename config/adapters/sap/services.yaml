@@ -1,0 +1,31 @@
+# SAP BTP Service Catalog — organized by category
+services:
+  platform:
+    - xsuaa
+    - identity
+    - destination
+    - connectivity
+    - auditlog
+
+  data:
+    - hana
+    - hdi-container
+    - object-store
+
+  application:
+    - mta
+    - approuter
+    - workflow
+    - business-logic
+    - html5-apps
+
+  integration:
+    - cloud-integration
+    - api-management
+    - event-mesh
+    - open-connectors
+
+  analytics:
+    - analytics-cloud
+    - data-intelligence
+    - data-warehouse-cloud

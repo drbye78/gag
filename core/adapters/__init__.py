@@ -9,6 +9,7 @@ from core.adapters.base import (
 from core.adapters.sap import SAPBTPAdapter
 from core.adapters.tanzu import VMwareTanzuAdapter
 from core.adapters.powerplatform import PowerPlatformAdapter
+from core.adapters.platformv import PlatformVAdapter
 from core.adapters.clouds import AWSAdapter, AzureAdapter, GCPAdapter, register_cloud_adapters
 
 _adapter_registry_instance: AdapterRegistry = None
@@ -21,6 +22,7 @@ def _ensure_registry() -> AdapterRegistry:
         _adapter_registry_instance.register(SAPBTPAdapter())
         _adapter_registry_instance.register(VMwareTanzuAdapter())
         _adapter_registry_instance.register(PowerPlatformAdapter())
+        _adapter_registry_instance.register(PlatformVAdapter())
         # Cloud adapters
         _adapter_registry_instance.register(AWSAdapter())
         _adapter_registry_instance.register(AzureAdapter())
@@ -41,6 +43,7 @@ __all__ = [
     "SAPBTPAdapter",
     "VMwareTanzuAdapter",
     "PowerPlatformAdapter",
+    "PlatformVAdapter",
     "AWSAdapter",
     "AzureAdapter",
     "GCPAdapter",

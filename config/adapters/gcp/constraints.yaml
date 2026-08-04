@@ -1,0 +1,29 @@
+# GCP Platform Constraints — real service limits and compatibility rules
+# Sources: GCP documentation, service quotas (as of 2025)
+
+constraints:
+  cloud_functions:
+    max_timeout_seconds: 540
+    max_timeout_gen2_seconds: 3600
+    max_memory_mb: 16384
+    max_instances: 1000
+  cloud_run:
+    max_memory_mb: 32768
+    max_cpu: 8
+    max_timeout_seconds: 3600
+    max_concurrent_requests: 1000
+  firestore:
+    max_document_size_bytes: 1048576
+    max_document_depth: 100
+    max_write_rate_per_database: 10000
+  pubsub:
+    max_message_size_bytes: 10485760
+    max_ack_deadline_seconds: 600
+  cross_service:
+    incompatible_combinations:
+      - services: [cloud_functions, gke]
+        condition: direct_integration
+        message: "Cloud Functions should not be deployed inside GKE — use Cloud Run for containerized workloads"
+    recommended_combinations:
+      - services: [cloud_run, pubsub]
+        reason: "Pub/Sub triggers Cloud Run for event-driven microservices"

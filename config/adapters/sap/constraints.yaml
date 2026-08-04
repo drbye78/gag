@@ -1,0 +1,23 @@
+# SAP BTP Platform Constraints
+constraints:
+  mta:
+    xsuaa_required: true
+    deployment_targets:
+      - cloud-foundry
+      - kyma
+    max_module_count: 50
+    max_resource_count: 50
+  hana:
+    max_storage_gb: 2048
+    max_memory_gb: 4096
+    min_units: 2
+  cross_service:
+    incompatible_combinations:
+      - services: [mta, kyma]
+        condition: xsuaa_missing
+        message: "Both MTA and Kyma deployments require XSUAA service binding"
+    recommended_combinations:
+      - services: [approuter, xsuaa]
+        reason: "AppRouter requires XSUAA for authentication flow"
+      - services: [hdi-container, hana]
+        reason: "HDI containers provide schema-level isolation on HANA"

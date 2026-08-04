@@ -1,0 +1,67 @@
+# AWS Architecture Patterns
+patterns:
+  - id: lambda-event-driven
+    name: Lambda Event-Driven
+    domain: serverless
+    triggers:
+      - has_serverless
+      - has_event_source
+    conditions:
+      - feature: event_source_type
+        operator: in
+        value: ["s3", "dynamodb", "sqs", "sns", "eventbridge"]
+    components:
+      - aws_lambda_function
+      - aws_iam_role
+      - aws_cloudwatch_log_group
+    relationships:
+      - source: aws_lambda_function
+        target: aws_iam_role
+        relationship_type: uses
+        description: Lambda execution role
+  
+  - id: api-gateway-lambda
+    name: API Gateway + Lambda
+    domain: serverless
+    triggers:
+      - has_serverless
+      - has_rest_api
+    components:
+      - aws_api_gateway_rest_api
+      - aws_api_gateway_resource
+      - aws_api_gateway_method
+      - aws_lambda_function
+      - aws_lambda_permission
+  
+  - id: fargate-service
+    name: Fargate Microservice
+    domain: microservices
+    triggers:
+      - has_container
+      - has_microservices
+    components:
+      - aws_ecs_task_definition
+      - aws_ecs_service
+      - aws_ecs_cluster
+      - aws_iam_role
+      - aws_security_group
+  
+  - id: s3-static-site
+    name: S3 Static Website
+    domain: web
+    triggers:
+      - has_static_content
+    components:
+      - aws_s3_bucket
+      - aws_cloudfront_distribution
+      - aws_route53_record
+  
+  - id: eventbridge-orchestration
+    name: EventBridge Orchestration
+    domain: event-driven
+    triggers:
+      - has_event_bus
+    components:
+      - aws_cloudwatch_event_rule
+      - aws_cloudwatch_event_target
+      - aws_lambda_function

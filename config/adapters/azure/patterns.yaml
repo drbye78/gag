@@ -1,0 +1,42 @@
+# Azure Architecture Patterns
+patterns:
+  - id: azure-function
+    name: Azure Function Serverless
+    domain: serverless
+    triggers:
+      - has_serverless
+    components:
+      - azurerm_function_app
+      - azurerm_storage_account
+      - azurerm_application_insights
+
+  - id: azure-aks
+    name: Azure Kubernetes Service
+    domain: microservices
+    triggers:
+      - has_container
+      - has_microservices
+    components:
+      - azurerm_kubernetes_cluster
+      - azurerm_container_registry
+      - azurerm_log_analytics_workspace
+
+  - id: azure-cosmos
+    name: Cosmos DB Event-Driven
+    domain: event-driven
+    triggers:
+      - has_database
+      - has_event_source
+    components:
+      - azurerm_cosmosdb_account
+      - azurerm_function_app
+      - azurerm_event_hub
+
+  - id: azure-apim
+    name: API Management + Functions
+    domain: api
+    triggers:
+      - has_rest_api
+    components:
+      - azurerm_api_management
+      - azurerm_function_app

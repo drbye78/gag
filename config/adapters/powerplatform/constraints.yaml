@@ -1,0 +1,17 @@
+# Microsoft Power Platform Constraints
+constraints:
+  canvas_apps:
+    max_data_source_connections: 30
+    max_screens_per_app: 200
+  power_automate:
+    max_actions_per_flow: 500
+    max_runs_per_day: 100000
+  dataverse:
+    max_storage_gb: 10000
+    max_api_requests_per_day: 50000
+    require_authentication: true
+  cross_service:
+    incompatible_combinations: []
+    recommended_combinations:
+      - services: [canvas_apps, dataverse]
+        reason: "Canvas Apps natively integrate with Dataverse for data storage"

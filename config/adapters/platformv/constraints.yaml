@@ -1,0 +1,112 @@
+# Platform V (Платформа V) Constraints
+# SberTech's FSTEC-certified on-premises/private-cloud platform
+# NOT Cloud.ru Evolution — on-premises deployment model only
+constraints:
+  platform:
+    deployment_model: "on-premises"
+    public_cloud: false
+    fstec_required: true
+    sanctions_notice: "SberTech is under US/EU sanctions since 2022"
+    documentation_access: "auth-gated at platformv.sbertech.ru"
+    language: "Russian (primary)"
+    os: "SberLinux OS Server (RPM-based)"
+
+  sberlinux:
+    package_format: "RPM"
+    compatible_with:
+      - "rhel"
+      - "centos"
+      - "oracle-linux"
+    fstec_certificate: "4884"
+    migration_scale: "43,000+ servers migrated from RHEL"
+
+  dropapp:
+    orchestrator: "kubernetes"
+    operator_language: "Go"
+    operator_framework: "Kubebuilder/controller-runtime"
+    fstec_certificate: "4883"
+    min_kubernetes_version: "1.24"
+
+  kintsugi:
+    base: "Istio"
+    features:
+      - "mTLS"
+      - "Egress Gateway"
+    requires:
+      - "dropapp"
+
+  pangolindb:
+    migration_sources:
+      - "oracle"
+      - "postgresql"
+      - "mssql"
+      - "db2"
+    fstec_certificate: "4704"
+    sql_standard: "ANSI SQL"
+
+  iam_se:
+    protocols:
+      - "openid-connect"
+      - "jwt"
+      - "saml"
+    fstec_certificate: "4999"
+    required_for: "all-services"
+    role_model: "RBAC (ANSI INCITS 359-2012 Core RBAC)"
+
+  idm:
+    protocols:
+      - "scim"
+    depends_on:
+      - "iam-se"
+    features:
+      - "identity-lifecycle-management"
+      - "provisioning"
+      - "deprovisioning"
+
+  sowa:
+    features:
+      - "api-gateway"
+      - "waf"
+      - "ai-guardrails"
+    ai_guardrails: "LLM prompt injection prevention"
+    depends_on:
+      - "iam-se"
+
+  iam_proxy:
+    protocol: "openid-connect"
+    depends_on:
+      - "iam-se"
+    usage: "Per-service authentication gateway — fronts every Platform V service"
+
+  cross_service:
+    incompatible_combinations: []
+    recommended_combinations:
+      - services:
+          - "dropapp"
+          - "kintsugi"
+        reason: "Kintsugi (Istio) provides mTLS for all DropApp (Kubernetes) services"
+      - services:
+          - "iam-se"
+          - "iam-proxy"
+        reason: "IAM Proxy fronts each service with IAM SE authentication"
+      - services:
+          - "sowa"
+          - "iam-se"
+        reason: "SOWA delegates authentication to IAM SE via OpenID Connect"
+      - services:
+          - "pangolindb"
+          - "dropapp"
+        reason: "Pangolin DB accessed from DropApp services via Istio mTLS"
+      - services:
+          - "sberlinux"
+          - "dropapp"
+        reason: "DropApp runs on SberLinux OS Server hosts"
+    required_combinations:
+      - services:
+          - "iam-se"
+          - "idm"
+        reason: "IDM requires IAM SE for auth provider"
+      - services:
+          - "dropapp"
+          - "sberlinux"
+        reason: "DropApp Kubernetes requires SberLinux OS Server"

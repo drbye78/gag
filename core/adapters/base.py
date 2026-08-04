@@ -28,11 +28,13 @@ class AdapterOutput(BaseModel):
     architecture_diagram: Optional[str] = None
     config_templates: Dict[str, str] = Field(default_factory=dict)
     code_snippets: Dict[str, str] = Field(default_factory=dict)
+    terraform: Optional[str] = None
     deployment_manifests: Dict[str, str] = Field(default_factory=dict)
     explanation: str = ""
     confidence: float = 0.0
     can_deploy: bool = True
     platform: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 class PlatformAdapter(ABC):
@@ -80,6 +82,20 @@ class PlatformAdapter(ABC):
             depth=1
         )
         return [n.id for n in related]
+    
+    def _get_config_loader(self):
+        """Get the singleton AdapterConfigLoader for YAML-based configs."""
+        from core.adapters.config_loader import get_config_loader
+        return get_config_loader()
+    
+    def reload(self) -> None:
+        """Reload platform configs from YAML (called on hot-reload notification).
+        
+        Subclasses that store cached YAML-loaded data should override this
+        to re-read patterns, services, and constraints from the config loader.
+        """
+        # Default: no-op — subclasses with YAML support override this
+        pass
 
 
 class AdapterRegistry:
@@ -146,6 +162,7 @@ class AdapterRegistry:
             "salesforce": ["sf", "salesforce", "lightning", "apex", "visualforce"],
             "powerplatform": ["powerapps", "powerautomate", "powerpages", "dataverse", "dax"],
             "tanzu": ["tanzu", "pivotal", "spring", "cf", "kubernetes"],
+            "platformv": ["platform_v", "platformv", "sbertech", "sbercloud", "cloud.ru", "arenadata", "fstec", "ptiatforma_v"],
             "aws": ["lambda", "s3", "dynamodb", "iam", "ec2", "ecs"],
             "azure": ["azure", "function", "app service", "cosmos", "aks"],
         }

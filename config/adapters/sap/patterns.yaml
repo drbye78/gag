@@ -1,0 +1,43 @@
+# SAP BTP Architecture Patterns
+patterns:
+  - id: cap-mta
+    name: CAP MTA Application
+    domain: application
+    triggers:
+      - has_serverless
+      - has_mta
+    components:
+      - mta
+      - hdi-container
+      - xsuaa
+      - approuter
+
+  - id: sap-cloud-workflow
+    name: SAP Cloud Workflow
+    domain: workflow
+    triggers:
+      - has_workflow
+    components:
+      - workflow
+      - destination
+      - business-logic
+
+  - id: sap-kyma
+    name: SAP Kyma Runtime
+    domain: microservices
+    triggers:
+      - has_container
+    components:
+      - kyma
+      - xsuaa
+      - approuter
+
+  - id: sap-integration
+    name: SAP Cloud Integration
+    domain: integration
+    triggers:
+      - has_integration
+    components:
+      - cloud-integration
+      - api-management
+      - connectivity

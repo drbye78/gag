@@ -1,0 +1,64 @@
+# Platform V (Платформа V) Architecture Patterns
+# SberTech's on-premises/private-cloud patterns
+# Uses Platform V products: SberLinux, DropApp, Kintsugi, Pangolin DB, IAM SE, IDM, SOWA, IAM Proxy
+patterns:
+  - id: microservice-mesh
+    name: "Microservices with Service Mesh"
+    domain: microservices
+    triggers:
+      - has_microservices
+      - has_container
+    components:
+      - dropapp
+      - kintsugi
+      - iam-se
+      - iam-proxy
+    description: "Kubernetes-based microservices with Istio mTLS and centralized IAM"
+
+  - id: secure-api-gateway
+    name: "Secure API Gateway Pattern"
+    domain: api
+    triggers:
+      - has_api
+    components:
+      - sowa
+      - iam-se
+      - iam-proxy
+    description: "SOWA API Gateway + WAF with IAM SE authentication and AI-Guardrails"
+
+  - id: database-migration
+    name: "Database Migration to Pangolin DB"
+    domain: data
+    triggers:
+      - has_database
+    components:
+      - pangolindb
+    migration_from:
+      - oracle
+      - postgresql
+      - mssql
+      - db2
+    description: "Migration from foreign DBMS to FSTEC-certified Pangolin DB"
+
+  - id: sberlinux-migration
+    name: "OS Migration to SberLinux"
+    domain: platform
+    triggers:
+      - has_container
+    components:
+      - sberlinux
+    migration_from:
+      - rhel
+      - oracle_linux
+    description: "Migration from RHEL/Oracle Linux to FSTEC-certified SberLinux OS Server"
+
+  - id: iam-centralized-auth
+    name: "Centralized IAM with Per-Service Proxy"
+    domain: security
+    triggers:
+      - has_auth
+    components:
+      - iam-se
+      - idm
+      - iam-proxy
+    description: "IAM SE for centralized auth + IDM for lifecycle management + IAM Proxy per service"
