@@ -5,14 +5,14 @@
 
 # Python caches
 __pycache__
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
 .Python
 *.so
 .pytest_cache
 .mypy_cache
 .ruff_cache
+.hypothesis
+.crush
 
 # Virtual environments
 .venv
@@ -36,6 +36,13 @@ helm
 .python-version
 .worktrees
 uv.lock
+.qwen
+.opencode
+.claude
+.vscode
+.idea
+.sisyphus
+.eggs
 
 # Build artifacts
 dist

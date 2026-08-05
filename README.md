@@ -2,7 +2,7 @@
 
 A production-grade **Cognitive Architecture** for domain-specific reasoning within enterprise AI PDLC pipelines. Goes beyond traditional RAG by combining multimodal understanding, hybrid retrieval (vector + graph + runtime), structured reasoning, tool-augmented decision making, and stateful orchestration.
 
-![Version](https://img.shields.io/badge/version-5.0.0-blue)
+![Version](https://img.shields.io/badge/version-0.7-blue)
 ![Python](https://img.shields.io/badge/python-3.12+-green)
 ![Tests](https://img.shields.io/badge/tests-713+-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)

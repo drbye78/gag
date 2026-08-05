@@ -169,7 +169,7 @@ def test_docs_uses_shared_embedder():
 def test_version_file_exists():
     """__version__.py should exist with version string."""
     from __version__ import __version__
-    assert __version__ == "5.0.0"
+    assert __version__ == "0.7"
 
 
 # Phase 6.1-6.2: Externalized URLs and timeouts
